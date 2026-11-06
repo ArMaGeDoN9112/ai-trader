@@ -10,14 +10,32 @@ from news_futures.local import run
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description='Локальная ИМИТАЦИЯ news-futures/01, без API и брокера.')
+    parser = argparse.ArgumentParser(description='news-futures: контрольные сценарии.')
     commands = parser.add_subparsers(dest='command', required=True)
     run_command = commands.add_parser('run', help='Сохранить новый контрольный запуск')
     run_command.add_argument('directory', nargs='?', type=Path)
     show_command = commands.add_parser('show', help='Прочитать сохранённую трассу')
     show_command.add_argument('directory', type=Path)
+    analyze_command = commands.add_parser('analyze', help='Аналитик и критик через OpenRouter, без брокера')
+    analyze_command.add_argument('directory', nargs='?', type=Path)
+    analyze_command.add_argument('--config', type=Path, default=Path(__file__).with_name('openrouter-models.json'))
+    analyze_command.add_argument('--context', type=Path)
     args = parser.parse_args()
     try:
+        if args.command == 'analyze':
+            try:
+                from news_futures.analysis import run_cycle
+                directory = args.directory or Path('.local/news-futures-03') / str(uuid4())
+                trace = run_cycle(args.config, directory, context_path=args.context)
+                print(json.dumps({
+                    'mode': trace['mode'], 'status': trace['status'],
+                    'directory': str(directory.resolve()),
+                    'trace_file': str((directory / 'trace.json').resolve()),
+                }, ensure_ascii=False, indent=2))
+                return 1 if trace['status'] == 'rejected' else 0
+            except Exception as error:
+                print(f'OpenRouter: {type(error).__name__}. См. локальную инструкцию README.', file=sys.stderr)
+                return 1
         if args.command == 'run':
             directory = args.directory or Path('.local/news-futures') / str(uuid4())
             trace = run(directory)

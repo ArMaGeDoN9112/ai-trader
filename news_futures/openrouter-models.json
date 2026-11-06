@@ -1,0 +1,12 @@
+{
+  "analyst": {
+    "model": "openai/gpt-4.1-mini",
+    "max_tokens": 2048,
+    "timeout_ms": 60000
+  },
+  "critic": {
+    "model": "openai/gpt-4.1-mini",
+    "max_tokens": 2048,
+    "timeout_ms": 60000
+  }
+}

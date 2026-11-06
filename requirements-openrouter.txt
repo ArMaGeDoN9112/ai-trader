@@ -1,0 +1,9 @@
+-c requirements-openrouter.lock
+langgraph==1.2.20
+langchain-core==1.7.6
+pydantic==2.12.5
+langchain-openai==1.7.4
+openai==3.46.0
+# Required only to reproduce the upstream metadata regression test.
+langchain-openrouter==0.2.9
+openrouter==0.11.46
