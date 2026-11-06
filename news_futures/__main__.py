@@ -20,6 +20,15 @@ def main() -> int:
     analyze_command.add_argument('directory', nargs='?', type=Path)
     analyze_command.add_argument('--config', type=Path, default=Path(__file__).with_name('openrouter-models.json'))
     analyze_command.add_argument('--context', type=Path)
+    login_command = commands.add_parser('telegram-login', help='Локальная пользовательская авторизация')
+    login_command.add_argument('--session', type=Path)
+    telegram_command = commands.add_parser('telegram', help='Непрерывный приём Telegram, обработка — имитация')
+    telegram_command.add_argument('--session', type=Path)
+    telegram_command.add_argument('--config', type=Path, default=Path(__file__).with_name('telegram-sources.json'))
+    telegram_command.add_argument('--database', type=Path, default=Path('.local/telegram/archive.sqlite3'))
+    telegram_command.add_argument('--once', action='store_true', help='История и все доступные изменения, затем выход')
+    archive_command = commands.add_parser('publications', help='Прочитать архив, редакции и статусы')
+    archive_command.add_argument('--database', type=Path, default=Path('.local/telegram/archive.sqlite3'))
     args = parser.parse_args()
     try:
         if args.command == 'analyze':
@@ -36,6 +45,29 @@ def main() -> int:
             except Exception as error:
                 print(f'OpenRouter: {type(error).__name__}. См. локальную инструкцию README.', file=sys.stderr)
                 return 1
+        if args.command in {'telegram', 'telegram-login'}:
+            import asyncio
+            from news_futures.telegram import default_session, login_telegram, run_telegram
+            try:
+                session = args.session or default_session()
+                if args.command == 'telegram-login':
+                    return asyncio.run(login_telegram(session))
+                return asyncio.run(run_telegram(args.config, args.database, session, args.once))
+            except KeyboardInterrupt:
+                return 130
+            except Exception as error:
+                print(f'Telegram: {type(error).__name__}. См. локальную инструкцию README.', file=sys.stderr)
+                return 1
+        if args.command == 'publications':
+            from news_futures.publications import Archive
+            if not args.database.is_file():
+                raise ValueError('Архив не найден')
+            archive = Archive(args.database)
+            try:
+                print(json.dumps(archive.report(), ensure_ascii=False, indent=2))
+            finally:
+                archive.db.close()
+            return 0
         if args.command == 'run':
             directory = args.directory or Path('.local/news-futures') / str(uuid4())
             trace = run(directory)

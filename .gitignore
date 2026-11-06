@@ -3,3 +3,5 @@ __pycache__/
 .venv/
 .mypy_cache/
 .local/
+*.session*
+.env

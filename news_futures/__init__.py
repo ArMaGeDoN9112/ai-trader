@@ -1,1 +1,1 @@
-"""Local news-to-futures simulation; no external integrations."""
+"""News archive and explicitly simulated news-to-futures control processing."""
