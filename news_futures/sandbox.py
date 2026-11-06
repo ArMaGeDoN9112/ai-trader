@@ -118,7 +118,7 @@ def redact(value: Any, token: str) -> Any:
     if isinstance(value, list):
         return [redact(item, token) for item in value]
     if isinstance(value, str):
-        if value.startswith(('{', '[')):
+        if value.lstrip().startswith(('{', '[')):
             try:
                 return json.dumps(redact(json.loads(value), token), ensure_ascii=False)
             except ValueError:
@@ -225,7 +225,7 @@ def extract(result: types.CallToolResult, binding: Binding) -> Any:
 async def diagnose(session: Session, settings: Settings, directory: Path, *,
                    token: str, source: Literal['sandbox_mcp', 'control'],
                    now: datetime | None = None) -> dict[str, Any]:
-    now = now or datetime.now(timezone.utc)
+    started_at = now or datetime.now(timezone.utc)
     directory.mkdir(parents=True, exist_ok=False)
     tools: list[types.Tool] = []
     cursor = None
@@ -246,7 +246,7 @@ async def diagnose(session: Session, settings: Settings, directory: Path, *,
         raise ValueError('duplicate_tool_names')
     report: dict[str, Any] = {
         'source': source, 'environment': 'sandbox', 'endpoint': SANDBOX_URL,
-        'observed_at': now.isoformat(), 'operations': {}, 'capabilities': {},
+        'observed_at': started_at.isoformat(), 'operations': {}, 'capabilities': {},
         'execution_enabled': False,
         'oco': 'not_verified', 'reduce_only': 'not_verified', 'atomic_entry': 'not_verified',
     }
@@ -292,7 +292,9 @@ async def diagnose(session: Session, settings: Settings, directory: Path, *,
         except Exception:
             section[operation] = {'availability': 'unavailable', 'tool': binding.tool,
                                   'limitation': limitation}
-    report['contract'] = confirm_contract(data, now)
+    checked_at = now or datetime.now(timezone.utc)
+    report['checked_at'] = checked_at.isoformat()
+    report['contract'] = confirm_contract(data, checked_at)
     report['status'] = 'data_confirmed' if (report['contract']['confirmed'] and all(
         report['operations'][name]['availability'] == 'available' for name in READS)) else 'limited'
     report = redact(report, token)

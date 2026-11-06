@@ -1,6 +1,7 @@
 import argparse
 from io import TextIOWrapper
 import json
+import logging
 from pathlib import Path
 import sys
 from typing import cast
@@ -35,6 +36,9 @@ def main() -> int:
     args = parser.parse_args()
     try:
         if args.command == 'sandbox-diagnostics':
+            previous_logging = logging.root.manager.disable
+            # MCP may log raw server payloads, including echoed credentials.
+            logging.disable(logging.CRITICAL)
             try:
                 import asyncio
                 from news_futures.sandbox import run_sandbox
@@ -45,6 +49,8 @@ def main() -> int:
             except Exception:
                 print('Sandbox: подключение или настройки не подтверждены. См. docs/sandbox.md.', file=sys.stderr)
                 return 1
+            finally:
+                logging.disable(previous_logging)
         if args.command == 'analyze':
             try:
                 from news_futures.analysis import run_cycle

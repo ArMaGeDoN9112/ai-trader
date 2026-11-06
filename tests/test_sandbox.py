@@ -1,9 +1,10 @@
 import asyncio
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import importlib.util
 from io import StringIO
 import json
+import logging
 import os
 from pathlib import Path
 import tempfile
@@ -59,6 +60,7 @@ class ControlSession:
         self.calls: list[str] = []
         self.error: str | None = None
         self.text = False
+        self.text_prefix = ''
 
     def settings(self) -> Settings:
         return Settings(environment='sandbox', endpoint=SANDBOX_URL, bindings={
@@ -80,7 +82,9 @@ class ControlSession:
             raise AssertionError('WRITE WAS CALLED')
         data = self.data[operation]
         if self.text:
-            return types.CallToolResult(content=[types.TextContent(type='text', text=json.dumps(data))])
+            return types.CallToolResult(content=[types.TextContent(
+                type='text', text=self.text_prefix + json.dumps(data),
+            )])
         # MCP structuredContent must be an object, so wrap list results.
         return types.CallToolResult(content=[], structuredContent={'data': data})
 
@@ -187,6 +191,7 @@ class SandboxTest(unittest.TestCase):
         report = self.report(session)
         self.assertNotIn('another-secret', json.dumps(report))
         session.text = True
+        session.text_prefix = ' \n\t'
         report = self.report(session)
         self.assertNotIn('another-secret', json.dumps(report))
 
@@ -212,6 +217,21 @@ class SandboxTest(unittest.TestCase):
                        {'units': '1', 'nano': 0, 'currency': 'usd'}):
             session.data['margin']['tick_value'] = amount
             self.assertFalse(self.report(session)['contract']['confirmed'])
+
+    def test_quote_received_during_reads_uses_completion_time(self) -> None:
+        session = ControlSession()
+        settings = session.settings()
+        for operation in READS:
+            settings.bindings[operation].result_path = '/data'
+        session.data['quote']['timestamp'] = (NOW + timedelta(seconds=1)).isoformat()
+        with tempfile.TemporaryDirectory() as temporary, patch(
+            'news_futures.sandbox.datetime', wraps=datetime,
+        ) as clock:
+            clock.now.side_effect = [NOW, NOW + timedelta(seconds=2)]
+            report = asyncio.run(diagnose(session, settings, Path(temporary) / 'report',
+                                         token=TOKEN, source='control'))
+        self.assertTrue(report['contract']['confirmed'])
+        self.assertEqual(report['checked_at'], (NOW + timedelta(seconds=2)).isoformat())
 
     def test_existing_directory_is_not_overwritten(self) -> None:
         session = ControlSession()
@@ -269,7 +289,12 @@ class SandboxTest(unittest.TestCase):
                 factory.assert_not_called()
 
     def test_cli_does_not_echo_configuration_or_authorization_errors(self) -> None:
-        with patch('news_futures.sandbox.run_sandbox', side_effect=RuntimeError(TOKEN)), patch(
+        previous_logging = logging.root.manager.disable
+        async def fail(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            logging.warning(TOKEN)
+            logging.getLogger('mcp.client.streamable_http').error(TOKEN)
+            raise RuntimeError(TOKEN)
+        with patch('news_futures.sandbox.run_sandbox', side_effect=fail), patch(
             'sys.argv', ['news_futures', 'sandbox-diagnostics'],
         ), patch('sys.stderr', new_callable=StringIO) as error, patch(
             'sys.stdout', new_callable=StringIO,
@@ -277,6 +302,7 @@ class SandboxTest(unittest.TestCase):
             self.assertEqual(main(), 1)
             self.assertNotIn(TOKEN, error.getvalue())
             self.assertEqual(output.getvalue(), '')
+        self.assertEqual(logging.root.manager.disable, previous_logging)
 
 
 if __name__ == '__main__':
