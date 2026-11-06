@@ -1,0 +1,5 @@
+{
+  "environment": "sandbox",
+  "endpoint": "https://sandbox-invest-public-api.tbank.ru/mcp",
+  "bindings": {}
+}

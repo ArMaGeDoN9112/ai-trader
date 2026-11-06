@@ -12,6 +12,9 @@ from news_futures.local import run
 def main() -> int:
     parser = argparse.ArgumentParser(description='news-futures: контрольные сценарии.')
     commands = parser.add_subparsers(dest='command', required=True)
+    sandbox_command = commands.add_parser('sandbox-diagnostics', help='Диагностика sandbox MCP без заявок')
+    sandbox_command.add_argument('directory', nargs='?', type=Path)
+    sandbox_command.add_argument('--config', type=Path, default=Path(__file__).with_name('sandbox-settings.json'))
     run_command = commands.add_parser('run', help='Сохранить новый контрольный запуск')
     run_command.add_argument('directory', nargs='?', type=Path)
     show_command = commands.add_parser('show', help='Прочитать сохранённую трассу')
@@ -31,6 +34,17 @@ def main() -> int:
     archive_command.add_argument('--database', type=Path, default=Path('.local/telegram/archive.sqlite3'))
     args = parser.parse_args()
     try:
+        if args.command == 'sandbox-diagnostics':
+            try:
+                import asyncio
+                from news_futures.sandbox import run_sandbox
+                directory = args.directory or Path('.local/news-futures-04') / str(uuid4())
+                report = asyncio.run(run_sandbox(args.config, directory))
+                print(json.dumps(report, ensure_ascii=False, indent=2))
+                return 0 if report['status'] == 'data_confirmed' else 1
+            except Exception:
+                print('Sandbox: подключение или настройки не подтверждены. См. docs/sandbox.md.', file=sys.stderr)
+                return 1
         if args.command == 'analyze':
             try:
                 from news_futures.analysis import run_cycle
