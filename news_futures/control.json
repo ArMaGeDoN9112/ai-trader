@@ -1,0 +1,44 @@
+{
+  "mode": "simulation",
+  "clock": "2026-11-06T09:00:02Z",
+  "publication": {
+    "id": "control-source:publication-001",
+    "external_id": "publication-001",
+    "source": "control-source",
+    "url": "https://example.invalid/control/publication-001",
+    "text": "ИМИТАЦИЯ: Компания «Контроль» сообщила о росте прибыли на 20%.",
+    "published_at": "2026-11-06T09:00:00Z",
+    "received_at": "2026-11-06T09:00:01Z"
+  },
+  "catalog": {
+    "company": { "id": "control-company", "name": "Компания «Контроль»" },
+    "share": { "id": "control-share", "company_id": "control-company", "ticker": "CTRL" },
+    "future": {
+      "id": "control-future-2026-12",
+      "underlying_share_id": "control-share",
+      "expires_on": "2026-12-17"
+    }
+  },
+  "router_response": {
+    "publication_id": "control-source:publication-001",
+    "company_id": "control-company",
+    "reason": "В контрольном тексте прямо названа контрольная компания."
+  },
+  "analyst_response": {
+    "id": "control-proposal-001",
+    "publication_id": "control-source:publication-001",
+    "company_id": "control-company",
+    "contract_id": "control-future-2026-12",
+    "side": "long",
+    "quantity": 1,
+    "entry_price": 300,
+    "stop_loss": 290,
+    "take_profit": 320,
+    "entry_reason": "Рост прибыли контрольной компании на 20% в контрольной публикации."
+  },
+  "critic_response": {
+    "proposal_id": "control-proposal-001",
+    "approved": true,
+    "reason": "В фиксированном контрольном примере существенных возражений нет."
+  }
+}

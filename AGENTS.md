@@ -1,3 +1,8 @@
+## Stack
+
+Use Python for application code and tests. The user chose Python because it is
+easier for them to read and maintain. Prefer the standard library when sufficient.
+
 ## Commits
 
 Use Conventional Commits: `<type>[optional scope][!]: <description>`
