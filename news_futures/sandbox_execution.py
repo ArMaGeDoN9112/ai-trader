@@ -39,6 +39,7 @@ class Protection:
     trigger_points: Points
     side: Literal['buy', 'sell']
     status: Literal['active', 'canceled', 'executed', 'expired'] = 'active'
+    terms_confirmed: bool = True
 
 
 @dataclass(frozen=True, config=BROKER_DATA)
@@ -63,6 +64,10 @@ class TradeState:
 TRADE_STATE = TypeAdapter(TradeState)
 
 
+class SubmissionRejected(ValueError):
+    """The broker definitively refused a submission before creating an order."""
+
+
 class SandboxBroker(Protocol):
     @property
     def source(self) -> Literal['control', 'sandbox']: ...
@@ -70,24 +75,23 @@ class SandboxBroker(Protocol):
     @property
     def account_id(self) -> str: ...
 
-    @property
-    def paired_protection_confirmed(self) -> bool:
-        """The platform independently enforces that the pair cannot over-close."""
-        ...
-
     def read_risk(self, account_id: str, contract_id: str) -> object: ...
-    def read_trade(self, entry: EntryReservation, operations: dict[str, str]) -> TradeState: ...
+    def read_trade(
+        self, entry: EntryReservation, operations: dict[str, str], receipts: dict[str, str | None],
+    ) -> TradeState: ...
 
-    def enter(self, entry: EntryReservation, operation_id: str) -> None:
+    def enter(self, entry: EntryReservation, operation_id: str) -> str | None:
         """Submit a limit order in points, immediate fill-or-cancel in lots."""
         ...
 
-    def protect(self, entry: EntryReservation, operation_id: str, lots: int) -> None:
-        """Install position-bound native SL and TP with no application-side timer."""
+    def protect(
+        self, entry: EntryReservation, operation_id: str, lots: int, kind: Literal['sl', 'tp'],
+    ) -> str | None:
+        """Submit one native stop and return its broker ID."""
         ...
 
     def cancel_protection(self, entry: EntryReservation, operation_id: str, ids: tuple[str, ...]) -> None: ...
-    def close(self, entry: EntryReservation, operation_id: str, lots: int) -> None: ...
+    def close(self, entry: EntryReservation, operation_id: str, lots: int) -> str | None: ...
 
 
 def trade_journal(events: EventArchive) -> list[dict[str, Any]]:
@@ -140,9 +144,14 @@ class SandboxExecutor:
             else:
                 yield True
 
-    def start(self, publications: Archive, approval: Path, *, allowed_contracts: Set[str]) -> dict[str, str]:
-        if self.broker.source not in ('control', 'sandbox') or self.broker.paired_protection_confirmed is not True:
-            return {'status': 'rejected', 'reason': 'safe_native_protection_unconfirmed'}
+    def start(
+        self, publications: Archive, approval: Path, *,
+        allowed_contracts: Set[str], allow_independent_stops: bool = False,
+    ) -> dict[str, str]:
+        if self.broker.source not in ('control', 'sandbox'):
+            return {'status': 'rejected', 'reason': 'unsupported_broker_source'}
+        if self.broker.source == 'sandbox' and allow_independent_stops is not True:
+            return {'status': 'rejected', 'reason': 'independent_stops_require_opt_in'}
 
         def record(entry: EntryReservation) -> None:
             if self.db.execute(
@@ -170,7 +179,7 @@ class SandboxExecutor:
             self._send(entry, operations, 'enter', lambda key: self.broker.enter(entry, key))
             return self._advance(entry, operations, close=False)
 
-    def reconcile(self, *, close: bool = False) -> dict[str, str]:
+    def reconcile(self, *, close: bool = False, contract_id: str | None = None) -> dict[str, str]:
         with self._exclusive() as acquired:
             if not acquired:
                 return {'status': 'blocked', 'reason': 'executor_busy'}
@@ -182,6 +191,8 @@ class SandboxExecutor:
             if row['source'] != self.broker.source:
                 return {'status': 'blocked', 'reason': 'broker_source_mismatch'}
             entry = EntryReservation.model_validate_json(row['terms'])
+            if contract_id is not None and contract_id != entry.contract_id:
+                return {'status': 'blocked', 'reason': 'sandbox_selection_mismatch'}
             operations = {
                 details['action']: details['operation_id']
                 for event in self.db.execute(
@@ -203,19 +214,21 @@ class SandboxExecutor:
 
     def _send(
         self, entry: EntryReservation, operations: dict[str, str], action: str,
-        submit: Callable[[str], None], **terms: Any,
+        submit: Callable[[str], str | None], **terms: Any,
     ) -> None:
-        if action in operations:
+        if action in operations and action != 'cancel_protection':
             raise ValueError('operation_already_attempted')
         key = uuid5(UUID(entry.id), action).hex
         self._log(entry, 'intent', action=action, operation_id=key, **terms)
         operations[action] = key
         try:
-            submit(key)
+            broker_id = submit(key)
+        except SubmissionRejected as error:
+            self._log(entry, 'response_rejected', action=action, operation_id=key, reason=str(error))
         except Exception:
             self._log(entry, 'response_uncertain', operation_id=key)
         else:
-            self._log(entry, 'response_received', operation_id=key)
+            self._log(entry, 'response_received', action=action, operation_id=key, broker_id=broker_id)
 
     def _finish(self, entry: EntryReservation, status: str, reason: str = '') -> dict[str, str]:
         with self.db:
@@ -234,9 +247,18 @@ class SandboxExecutor:
             WHERE cycle_id = ? AND kind = 'confirmed_fills' ORDER BY seq DESC LIMIT 1
         """, (entry.id,)).fetchone()
         confirmed = json.loads(previous['details'])['fills'] if previous else {}
+        cancel_attempted = False
         while True:
+            receipts = {}
+            for row in self.db.execute("""
+                SELECT kind, details FROM sandbox_journal
+                WHERE cycle_id = ? AND kind IN ('response_received', 'response_rejected')
+            """, (entry.id,)):
+                details = json.loads(row['details'])
+                if row['kind'] == 'response_rejected' or details.get('broker_id'):
+                    receipts[details['action']] = details.get('broker_id')
             try:
-                observation = self.broker.read_trade(entry, dict(operations))
+                observation = self.broker.read_trade(entry, dict(operations), receipts)
             except Exception:
                 return self._finish(entry, 'blocked', 'broker_read_unavailable')
             try:
@@ -244,6 +266,17 @@ class SandboxExecutor:
             except ValidationError:
                 return self._finish(entry, 'blocked', 'invalid_broker_state')
             self._log(entry, 'reconciliation', state=asdict(state))
+            active = tuple(stop for stop in state.protection if stop.status == 'active')
+            if ((active and not operations.keys() & {'sl', 'tp', 'protect'})
+                    or len({stop.id for stop in state.protection}) != len(state.protection)):
+                return self._finish(entry, 'blocked', 'protection_ownership_unconfirmed')
+            native_exit = any(stop.status == 'executed' for stop in state.protection)
+            if active and (native_exit or close) and not cancel_attempted:
+                ids = tuple(stop.id for stop in active)
+                cancel_attempted = True
+                self._send(entry, operations, 'cancel_protection',
+                           lambda key: self.broker.cancel_protection(entry, key, ids), stop_ids=ids)
+                continue
             if not state.settled or state.active_orders or state.other_exposure:
                 return self._finish(entry, 'blocked', 'unresolved_broker_state')
             sign = 1 if entry.side == 'long' else -1
@@ -259,29 +292,31 @@ class SandboxExecutor:
             if current != confirmed:
                 self._log(entry, 'confirmed_fills', fills=current)
                 confirmed = current
-            active = tuple(stop for stop in state.protection if stop.status == 'active')
             expected_side = 'sell' if sign == 1 else 'buy'
             expected = {('sl', entry.stop_loss), ('tp', entry.take_profit)}
-            if (active and 'protect' not in operations
-                    or len({stop.id for stop in state.protection}) != len(state.protection)):
-                return self._finish(entry, 'blocked', 'protection_ownership_unconfirmed')
             if not remaining and not active:
                 return self._finish(entry, 'closed' if entry_lots else 'no_fill')
             safe_fill = (state.entry is not None
                          and sign * state.entry.price_points <= sign * entry.entry_price
                          and min(entry.stop_loss, entry.take_profit) < state.entry.price_points
                          < max(entry.stop_loss, entry.take_profit))
-            if remaining and not close and safe_fill and self.broker.paired_protection_confirmed is True:
-                if (len(active) == 2
-                        and {(stop.kind, stop.trigger_points) for stop in active} == expected
-                        and all(stop.lots == remaining and stop.side == expected_side for stop in active)):
+            if remaining and not close and safe_fill and 'cancel_protection' not in operations:
+                verified = {(stop.kind, stop.trigger_points) for stop in active
+                            if stop.lots == remaining and stop.side == expected_side and stop.terms_confirmed}
+                if len(active) == 2 and verified == expected:
                     return self._finish(entry, 'protected')
-                if 'protect' not in operations and not state.exits:
-                    self._send(entry, operations, 'protect',
-                               lambda key: self.broker.protect(entry, key, remaining), lots=remaining)
+                if not state.exits and not operations.keys() & {'sl', 'tp', 'protect'}:
+                    self._send(entry, operations, 'sl',
+                               lambda key: self.broker.protect(entry, key, remaining, 'sl'), lots=remaining)
                     continue
-            if active and 'cancel_protection' not in operations:
+                if (not state.exits and 'sl' in operations and 'tp' not in operations
+                        and len(active) == 1 and verified == {('sl', entry.stop_loss)}):
+                    self._send(entry, operations, 'tp',
+                               lambda key: self.broker.protect(entry, key, remaining, 'tp'), lots=remaining)
+                    continue
+            if active and not cancel_attempted:
                 ids = tuple(stop.id for stop in active)
+                cancel_attempted = True
                 self._send(entry, operations, 'cancel_protection',
                            lambda key: self.broker.cancel_protection(entry, key, ids), stop_ids=ids)
             elif active or 'close' in operations:

@@ -58,7 +58,17 @@ def main() -> int:
     reason_command = commands.add_parser('entry-reason', help='Сохранить исходную причину входа в позицию')
     reason_command.add_argument('record', type=Path)
     trades_command = commands.add_parser('sandbox-trades', help='Показать журнал сделок в песочнице')
-    for command in (match_command, events_command, correct_command, decision_command, reason_command, trades_command):
+    trade_command = commands.add_parser('sandbox-trade', help='Вход и сверка выбранного счёта Т-Инвестиций в песочнице')
+    trade_command.add_argument('action', choices=('start', 'reconcile', 'close'))
+    trade_command.add_argument('--account', required=True)
+    trade_command.add_argument('--contract', required=True)
+    trade_command.add_argument('--company')
+    trade_command.add_argument('--approval', type=Path)
+    trade_command.add_argument('--publications', type=Path, default=Path('.local/telegram/archive.sqlite3'))
+    trade_command.add_argument('--ca-file', type=Path)
+    trade_command.add_argument('--allow-independent-stops', action='store_true')
+    for command in (match_command, events_command, correct_command, decision_command, reason_command,
+                    trades_command, trade_command):
         command.add_argument('--database', type=Path, default=Path('.local/events.sqlite3'))
     args = parser.parse_args()
     try:
@@ -169,6 +179,32 @@ def main() -> int:
             with EventArchive(args.database) as events:
                 print(json.dumps(trade_journal(events), ensure_ascii=False, indent=2))
             return 0
+        if args.command == 'sandbox-trade':
+            from news_futures.tbank_execution import run_sandbox_trade
+            if not args.database.is_file():
+                raise ValueError('Архив событий не найден')
+            if args.action == 'start':
+                if not args.allow_independent_stops:
+                    raise ValueError('Для входа требуется --allow-independent-stops')
+                if args.approval is None or not args.company or not args.publications.is_file():
+                    raise ValueError('Укажите --approval, --company и существующий архив --publications')
+            elif args.approval is not None or args.company is not None:
+                raise ValueError('--approval и --company используются только для start')
+            try:
+                result = run_sandbox_trade(
+                    account_id=args.account, contract_id=args.contract, company_id=args.company,
+                    database=args.database, ca_file=args.ca_file, approval=args.approval,
+                    publications=args.publications, close=args.action == 'close',
+                    allow_independent_stops=args.allow_independent_stops,
+                )
+            except CredentialsError:
+                raise
+            except Exception:
+                print('Sandbox: подключение или настройки не подтверждены. См. docs/sandbox-execution.md.',
+                      file=sys.stderr)
+                return 1
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 1 if result['status'] in ('blocked', 'rejected') else 0
         if args.command in {'event-match', 'events', 'event-correct'}:
             from news_futures.events import EventArchive, match_route
             if args.command != 'event-match' and not args.database.is_file():
