@@ -87,7 +87,8 @@ async def collect(transport: Transport, archive: Archive, source: Source) -> int
             pts = difference.pts
         checkpoint_time = (requested_at if difference.final and not difference.too_long
                            else datetime.fromisoformat(state['checked_at']))
-        archive.save_batch(source.id, pts, publications, notices=notices, checked_at=checkpoint_time)
+        archive.save_batch(source.id, pts, publications, historical=difference.too_long,
+                           notices=notices, checked_at=checkpoint_time)
         state = archive.cursor(source.id)
         assert state is not None
         if difference.final and not difference.too_long:

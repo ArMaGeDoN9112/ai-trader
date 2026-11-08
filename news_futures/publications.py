@@ -127,6 +127,16 @@ class Archive:
             self.db.execute('INSERT INTO notices(source, observed_at, code) VALUES (?, ?, ?)',
                             (source, utc_now().isoformat(), code))
 
+    def latest_revision(self, publication_id: str) -> dict[str, Any] | None:
+        row = self.db.execute("""
+            SELECT revision, historical, publication FROM revisions
+            WHERE json_extract(publication, '$.id') = ?
+            ORDER BY (json_extract(publication, '$.change') = 'delete') DESC, rowid DESC LIMIT 1
+        """, (publication_id,)).fetchone()
+        if row is None:
+            return None
+        return dict(row) | {'publication': json.loads(row['publication'])}
+
     def process_pending(self) -> None:
         rows = self.db.execute("SELECT * FROM revisions WHERE status='pending'").fetchall()
         for row in rows:

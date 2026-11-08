@@ -121,6 +121,8 @@ class CollectionTest(unittest.IsolatedAsyncioTestCase):
                       [row['code'] for row in report['notices']])
         self.assertEqual(report['channels'][0]['pts'], 20)
         self.assertEqual(len(report['revisions']), 2)
+        self.assertEqual(report['revisions'][-1]['historical'], 1)
+        self.assertEqual(report['revisions'][-1]['status'], 'context_only')
         self.assertEqual(transport.requests[-1], 20)
         self.assertEqual(transport.windows[-1][0], transport.windows[0][0])
 

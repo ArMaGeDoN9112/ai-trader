@@ -270,10 +270,11 @@ def validate_company_proposal(proposal: dict[str, Any], context: dict[str, Any])
 
 
 def analyze_event(archive: EventArchive, decision_id: int, snapshot_path: Path,
-                  config: Path, directory: Path) -> dict[str, Any]:
+                  config: Path, directory: Path, *,
+                  mode: Literal['observation', 'sandbox'] = 'observation') -> dict[str, Any]:
     snapshot = Snapshot.model_validate_json(snapshot_path.read_bytes())
     context = prepare_context(archive, decision_id, snapshot)
-    trace = review_cycle(config, directory, context, model_factory=chat_model, mode='observation',
+    trace = review_cycle(config, directory, context, model_factory=chat_model, mode=mode,
                          system=SYSTEM, proposal_schema=CompanyProposal, validate=validate_company_proposal)
     if not any(row['decision_id'] == decision_id for row in archive.history(current_only=True)):
         trace.update(status='rejected', approved_proposal=None, error='superseded_event')

@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from news_futures.credentials import load_token
 from news_futures.local import publication_digest, write_json
 from news_futures.openrouter_model import OpenRouterChat
+from news_futures.publications import utc_now
 
 
 class Contract(BaseModel):
@@ -225,7 +226,7 @@ def review_cycle(
                data: dict[str, Any], *, proposal_id: str | None = None) -> ModelResult:
         role_settings = getattr(settings, role)
         record: dict[str, Any] = {
-            'role': role, 'requested_model': role_settings.model,
+            'role': role, 'mode': mode, 'requested_model': role_settings.model,
             'actual_model': None, 'provider': None, 'settings_version': version,
             'input': data, 'output': None, 'error': None, 'usage': None, 'cost': None,
         }
@@ -265,6 +266,7 @@ def review_cycle(
                 if previous and output == {key: value for key, value in previous.items() if key != 'id'}:
                     raise ValueError('unchanged_revision')
                 output['id'] = proposal_id
+                record['formed_at'] = utc_now().isoformat()
             else:
                 if output['proposal_id'] != data['proposal']['id']:
                     raise ValueError('review_for_another_proposal')
@@ -332,5 +334,5 @@ def review_cycle(
         'status': 'no_action' if no_action else 'approved_for_checks' if approved else 'rejected',
         'approved_proposal': proposal_payload(state) if approved and not no_action else None,
         'error': state['error'], 'calls': calls,
-        'execution': {'status': 'not_requested', 'notice': 'No broker; risk checks belong to ticket 08.'},
+        'execution': {'status': 'not_requested'},
     }
