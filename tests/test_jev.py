@@ -4,8 +4,11 @@ from tempfile import TemporaryDirectory
 import unittest
 
 import httpx
+from pydantic import ValidationError
 
+from news_futures.analysis import AnalysisContext, control_context
 from news_futures.jev import route_publication
+from news_futures.local import publication_digest
 
 
 def answer(choice: str, probability: float = 1.0) -> dict[str, object]:
@@ -54,14 +57,20 @@ class JevTests(unittest.TestCase):
             publication, catalog, config = self.inputs(root, 1)
             cases = [
                 ('empty', {'company_0': answer('none')}, None),
+                ('uncertain', {'company_0': {
+                    'type': 'choice', 'choice': 'none', 'confidence': 0.1,
+                    'probabilities': {'none': 0.3, 'direct': 0.29, 'industry': 0.22,
+                                      'uncertain': 0.19, 'commodity': 0, 'regulation': 0},
+                }}, None),
                 ('unknown', {'unknown-asset': answer('direct')}, 'invalid_decision'),
                 ('malformed', {'company_0': answer('direct', 0.1)}, 'invalid_decision'),
+                ('malformed-envelope', None, 'invalid_decision'),
                 ('unavailable', None, 'service_unavailable'),
             ]
             for name, answers, expected_error in cases:
                 with self.subTest(name=name):
                     def respond(request: httpx.Request) -> httpx.Response:
-                        if answers is None:
+                        if name == 'unavailable':
                             raise httpx.ConnectError('fake secret', request=request)
                         return httpx.Response(200, json={
                             'model': 'typesafe/jev-1.14', 'id': 'fake secret',
@@ -73,10 +82,21 @@ class JevTests(unittest.TestCase):
                                                    client=client, token='fake secret')
                     self.assertEqual(result['error'], expected_error)
                     self.assertEqual(result['status'], 'failed' if expected_error else 'completed')
-                    self.assertEqual(result['links'], None if expected_error else [])
+                    if name == 'uncertain':
+                        self.assertEqual([link['kind'] for link in result['links']], ['uncertain'])
+                    else:
+                        self.assertEqual(result['links'], None if expected_error else [])
                     self.assertNotIn('fake secret', (root / name / 'batch-001.json').read_text(encoding='utf-8'))
-                    if answers is not None:
+                    if name != 'unavailable':
                         self.assertEqual(result['cost_usd'], 0.01)
+
+    def test_analyst_accepts_the_routed_publication_and_rejects_a_different_revision(self) -> None:
+        context = control_context()
+        context['company_link']['publication_sha256'] = publication_digest(context['publication'])
+        AnalysisContext.model_validate(context)
+        context['publication']['text'] += ' Исправление.'
+        with self.assertRaisesRegex(ValidationError, 'company_link_publication_revision_mismatch'):
+            AnalysisContext.model_validate(context)
 
     def test_later_batch_failure_keeps_the_audit_but_withholds_all_links(self) -> None:
         with TemporaryDirectory() as temp:

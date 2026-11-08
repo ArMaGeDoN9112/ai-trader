@@ -1,10 +1,15 @@
 """Persist the source before processing fixed, explicitly simulated responses."""
 
+from hashlib import sha256
 import json
 from pathlib import Path
 from typing import Any
 
 from news_futures.execution import simulate_execution
+
+
+def publication_digest(publication: dict[str, Any]) -> str:
+    return sha256(json.dumps(publication, sort_keys=True, allow_nan=False).encode()).hexdigest()
 
 
 def write_json(path: Path, value: object) -> None:
