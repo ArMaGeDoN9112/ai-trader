@@ -57,7 +57,8 @@ def main() -> int:
     decision_command.add_argument('--config', type=Path, default=Path(__file__).with_name('openrouter-models.json'))
     reason_command = commands.add_parser('entry-reason', help='Сохранить исходную причину входа в позицию')
     reason_command.add_argument('record', type=Path)
-    for command in (match_command, events_command, correct_command, decision_command, reason_command):
+    trades_command = commands.add_parser('sandbox-trades', help='Показать журнал сделок в песочнице')
+    for command in (match_command, events_command, correct_command, decision_command, reason_command, trades_command):
         command.add_argument('--database', type=Path, default=Path('.local/events.sqlite3'))
     args = parser.parse_args()
     try:
@@ -159,6 +160,14 @@ def main() -> int:
                 print(json.dumps(archive.report(), ensure_ascii=False, indent=2))
             finally:
                 archive.db.close()
+            return 0
+        if args.command == 'sandbox-trades':
+            from news_futures.events import EventArchive
+            from news_futures.sandbox_execution import trade_journal
+            if not args.database.is_file():
+                raise ValueError('Архив событий не найден')
+            with EventArchive(args.database) as events:
+                print(json.dumps(trade_journal(events), ensure_ascii=False, indent=2))
             return 0
         if args.command in {'event-match', 'events', 'event-correct'}:
             from news_futures.events import EventArchive, match_route

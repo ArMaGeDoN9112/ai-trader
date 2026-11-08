@@ -23,7 +23,7 @@ from news_futures.publications import Archive, Publication, utc_now
 from news_futures.risk import Admission, ContractSnapshot, RiskSnapshot, cancel_unsubmitted, reserve_entry
 
 
-class RiskAdmissionTest(unittest.TestCase):
+class RiskFixture(unittest.TestCase):
     def setUp(self) -> None:
         temporary = TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -91,6 +91,8 @@ class RiskAdmissionTest(unittest.TestCase):
             self.assertEqual(trace['status'], 'approved_for_checks')
         return directory
 
+
+class RiskAdmissionTest(RiskFixture):
     def reserve(
         self, directory: Path, *,
         reader: Callable[[str, str], object] | None = None, allowed: set[str] | None = None,
@@ -138,6 +140,11 @@ class RiskAdmissionTest(unittest.TestCase):
         self.assertEqual(result.reservation.lots, 2)
         self.assertEqual(result.reservation.contracts, 4)
         self.assertEqual(result.reservation.initial_margin, Decimal('4000'))
+
+    def test_short_leverage_accounts_for_price_improvement_up_to_the_stop(self) -> None:
+        self.snapshot['equity'] = Decimal('1500')
+        approval = self.approved(side='short', stop_loss=310, take_profit=280)
+        self.assertEqual(self.reserve(approval), Admission(reason='leverage_limit_exceeded'))
 
     def test_leverage_uses_fresh_quote_and_equity_at_boundary(self) -> None:
         directory = self.approved()

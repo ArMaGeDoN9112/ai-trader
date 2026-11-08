@@ -207,7 +207,9 @@ def _size(
     entry_ticks, stop_ticks, _, quote_ticks = ticks
     tick_value_per_lot = Fraction(contract.tick_value_per_contract) * contract.contracts_per_lot
     risk = abs(entry_ticks - stop_ticks) * tick_value_per_lot + Fraction(contract.round_trip_cost_per_lot)
-    exposure = max(entry_ticks, quote_ticks) * tick_value_per_lot
+    # A short limit can fill above its limit price, up to the protective range.
+    exposure_ticks = max(entry_ticks, quote_ticks, stop_ticks) if side == 'short' else max(entry_ticks, quote_ticks)
+    exposure = exposure_ticks * tick_value_per_lot
     margin = contract.margin_per_lot_buy if side == 'long' else contract.margin_per_lot_sell
     limits = {
         'risk_budget_exceeded': MAX_PLANNED_RISK // risk,
@@ -232,8 +234,9 @@ def _size(
 def reserve_entry(
     events: EventArchive, publications: Archive, directory: Path, *, account_id: str,
     allowed_contracts: Set[str], read_snapshot: Callable[[str, str], object],
+    on_reserve: Callable[[EntryReservation], None] | None = None,
 ) -> Admission:
-    """Re-read the account and contract, then reserve one entry in the shared event database."""
+    """Re-read risk data and reserve an entry. The callback records intent in the same transaction."""
     try:
         proposal, proposal_id, formed_at, context = _approval(directory)
         contract_id = proposal.contract_id
@@ -265,6 +268,8 @@ def reserve_entry(
             events.db.execute('INSERT INTO entry_reservations VALUES (?, ?, ?)', (
                 account_id, reservation.id, reservation.model_dump_json(),
             ))
+            if on_reserve is not None:
+                on_reserve(reservation)
         return Admission(reservation=reservation)
     except Rejected as error:
         return Admission(reason=str(error))
