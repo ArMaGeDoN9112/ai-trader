@@ -39,6 +39,18 @@ def main() -> int:
     telegram_command.add_argument('--once', action='store_true', help='История и все доступные изменения, затем выход')
     archive_command = commands.add_parser('publications', help='Прочитать архив, редакции и статусы')
     archive_command.add_argument('--database', type=Path, default=Path('.local/telegram/archive.sqlite3'))
+    match_command = commands.add_parser('event-match', help='Сопоставить редакцию из трассы route с событием')
+    match_command.add_argument('directory', type=Path)
+    match_command.add_argument('--config', type=Path, default=Path(__file__).with_name('event-model.json'))
+    events_command = commands.add_parser('events', help='Показать историю событий и контекст компаний')
+    events_command.add_argument('--company')
+    correct_command = commands.add_parser('event-correct', help='Записать исправление сопоставления')
+    correct_command.add_argument('revision')
+    correct_command.add_argument('--kind', choices=('separate', 'repeat', 'update'), required=True)
+    correct_command.add_argument('--event')
+    correct_command.add_argument('--reason', required=True)
+    for command in (match_command, events_command, correct_command):
+        command.add_argument('--database', type=Path, default=Path('.local/events.sqlite3'))
     args = parser.parse_args()
     try:
         if args.command == 'sandbox-diagnostics':
@@ -113,6 +125,19 @@ def main() -> int:
             finally:
                 archive.db.close()
             return 0
+        if args.command in {'event-match', 'events', 'event-correct'}:
+            from news_futures.events import EventArchive, match_route
+            if args.command != 'event-match' and not args.database.is_file():
+                raise ValueError('Архив событий не найден')
+            with EventArchive(args.database) as events:
+                if args.command == 'event-match':
+                    event_result = match_route(events, args.directory, args.config)
+                elif args.command == 'events':
+                    event_result = events.report(args.company)
+                else:
+                    event_result = events.correct(args.revision, args.kind, args.event, args.reason)
+            print(json.dumps(event_result, ensure_ascii=False, indent=2))
+            return 1 if event_result.get('kind') == 'model_error' else 0
         if args.command == 'run':
             directory = args.directory or Path('.local/news-futures') / str(uuid4())
             trace = run(directory)
