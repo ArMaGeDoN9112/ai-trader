@@ -19,12 +19,11 @@
 HTTP-редиректы, другие адреса и прокси из окружения запрещены. Транспорт проверяет
 адрес каждого запроса. Общий таймаут подключения и диагностики — 120 секунд.
 
-В локальном PowerShell 7 введите собственный токен, не передавая его в чат:
+Заполните `token` в секции `[sandbox]` файла `.local/credentials.toml`.
+Пустой шаблон находится в `credentials.example.toml`.
 
 ```powershell
-$env:TINVEST_SANDBOX_TOKEN = Read-Host 'Токен для песочницы' -MaskInput
 .venv\Scripts\python -m news_futures sandbox-diagnostics
-Remove-Item Env:TINVEST_SANDBOX_TOKEN
 ```
 
 Рекомендуется токен только для чтения. Авторизация передаётся в HTTP-заголовке

@@ -34,8 +34,8 @@ to another model, endpoint, function calling or free text on failure.
 Model IDs must be exact reported OpenRouter IDs. Missing or different reported
 models are rejected, including an alias resolving to a different ID. Change the
 configured ID explicitly rather than treating an alias as verified identity.
-Only `OPENROUTER_API_KEY` supplies credentials. The base URL is explicit;
-OpenAI key and endpoint environment variables do not redirect the client.
+The key comes from `openrouter.api_key` in `.local/credentials.toml`. The client
+receives the key and OpenRouter base URL explicitly.
 
 LangChain's generic JSON parser can repair incomplete text. Admission instead
 validates the complete original content with Pydantic after checking the finish

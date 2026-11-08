@@ -13,6 +13,7 @@ import sys
 from typing import Any, Protocol
 from uuid import uuid4
 
+from news_futures.credentials import CredentialsError, load_credentials
 from news_futures.publications import Archive, Publication, utc_now
 
 
@@ -226,10 +227,12 @@ class TelethonTransport:
 
 async def open_client(path: Path, login: bool) -> Any:
     from telethon import TelegramClient, errors
-    api_id = int(os.environ['TELEGRAM_API_ID'])
-    api_hash = os.environ['TELEGRAM_API_HASH']
-    if api_id <= 0 or not re.fullmatch(r'[a-fA-F0-9]{32}', api_hash):
-        raise ValueError('Invalid Telegram API credentials')
+    credentials = load_credentials('telegram')
+    api_id = credentials.get('api_id')
+    api_hash = credentials.get('api_hash')
+    if (type(api_id) is not int or api_id <= 0 or not isinstance(api_hash, str)
+            or not re.fullmatch(r'[a-fA-F0-9]{32}', api_hash)):
+        raise CredentialsError('Заполните telegram.api_id и telegram.api_hash в .local/credentials.toml.')
     path.parent.mkdir(parents=True, exist_ok=True)
     logger = logging.getLogger('news_futures.telethon')
     logger.handlers = [logging.NullHandler()]

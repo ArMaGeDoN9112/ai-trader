@@ -94,6 +94,22 @@ python -m venv .venv
 окружение и кэши исключены из Git. Последующие срезы описаны ниже;
 контрольный сценарий остаётся независимым от их зависимостей.
 
+## Локальные данные доступа
+
+Заполните нужные секции в `.local/credentials.toml`. Если файла ещё нет,
+скопируйте туда `credentials.example.toml`. Команды ищут файл относительно
+текущего каталога, поэтому запускайте их из корня проекта.
+
+| Секция | Поля |
+| --- | --- |
+| `[telegram]` | `api_id` целым числом, `api_hash` строкой |
+| `[openrouter]` | `api_key` строкой |
+| `[sandbox]` | `token` строкой |
+
+Заполняйте только секции, которыми пользуетесь. Файл хранит секреты открытым
+текстом и исключён из Git вместе с `.local/`. Храните его локально.
+Модели, каналы и привязки MCP по-прежнему настраиваются отдельными JSON-файлами.
+
 ## Telegram — news-futures/02
 
 Получение реальное, последующая обработка — **имитация из 01** с фиксированными
@@ -112,11 +128,10 @@ python -m venv .venv
 [@markettwits](https://t.me/markettwits) и [@rbc_news](https://t.me/rbc_news).
 Коллектор не вступает в каналы автоматически и не читает сообщения других чатов.
 
-В локальном PowerShell 7 заполните переменные без записи значений в командную историю:
+Заполните `api_id` и `api_hash` в секции `[telegram]` файла
+`.local/credentials.toml` и запустите локальную авторизацию:
 
 ```powershell
-$env:TELEGRAM_API_ID = Read-Host 'Telegram api_id'
-$env:TELEGRAM_API_HASH = Read-Host 'Telegram api_hash' -MaskInput
 .venv\Scripts\python -m news_futures telegram-login
 ```
 
@@ -187,7 +202,7 @@ $env:TELEGRAM_API_HASH = Read-Host 'Telegram api_hash' -MaskInput
 первоначальную загрузку успешно.
 
 Ошибки выводят только источник и класс исключения, без текста RPC-запроса или
-исключения. `KeyError` при старте: проверьте переменные окружения;
+исключения. Для ошибок данных доступа проверьте секцию `[telegram]` в `.local/credentials.toml`.
 `ModuleNotFoundError`: установите зависимости; `ValueError`: проверьте JSON,
 авторизацию, подписку, путь сессии и соответствие архива аккаунту.
 Коды `FloodWaitError`, `ChannelPrivateError` и подобные видны в stderr и `notices`.

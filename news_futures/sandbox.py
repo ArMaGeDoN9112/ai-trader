@@ -4,7 +4,6 @@ import asyncio
 from datetime import datetime, timezone
 from decimal import Decimal
 import json
-import os
 from pathlib import Path
 import re
 from typing import Any, Final, Literal, Protocol
@@ -16,6 +15,7 @@ from mcp.client.streamable_http import streamable_http_client
 from pydantic import BaseModel, ConfigDict, Field
 from referencing import Registry
 
+from news_futures.credentials import load_token
 from news_futures.local import write_json
 
 
@@ -306,9 +306,7 @@ async def run_sandbox(config: Path, directory: Path) -> dict[str, Any]:
     settings = Settings.model_validate_json(config.read_text(encoding='utf-8'))
     if set(settings.bindings) - set((*READS, *CAPABILITIES)):
         raise ValueError('unknown_operation')
-    token = os.environ.get('TINVEST_SANDBOX_TOKEN', '').strip()
-    if not token:
-        raise ValueError('local_sandbox_token_required')
+    token = load_token('sandbox', 'token')
     if directory.exists():
         raise ValueError('new_directory_required')
     async def sandbox_only(request: httpx.Request) -> None:

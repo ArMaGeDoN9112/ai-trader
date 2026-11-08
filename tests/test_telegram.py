@@ -4,7 +4,6 @@ from datetime import datetime, timedelta
 import importlib.util
 from io import StringIO
 import json
-import os
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
@@ -171,17 +170,20 @@ class CollectionTest(unittest.IsolatedAsyncioTestCase):
 class TelethonAdapterTest(unittest.IsolatedAsyncioTestCase):
     async def test_login_requires_user_session_and_safe_local_terminal(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
+            credentials = Path(temporary) / 'credentials.toml'
+            credentials.write_text(f'[telegram]\napi_id = 123\napi_hash = "{"0" * 32}"\n', encoding='utf-8')
             for authorized, bot, login in [(True, True, False), (False, False, False), (False, False, True)]:
                 with self.subTest(authorized=authorized, bot=bot, login=login):
                     client = AsyncMock()
                     client.is_user_authorized.return_value = authorized
                     client.get_me.return_value = SimpleNamespace(bot=bot)
-                    with (patch('telethon.TelegramClient', return_value=client),
-                          patch.dict(os.environ, {'TELEGRAM_API_ID': '123', 'TELEGRAM_API_HASH': '0' * 32}),
+                    with (patch('telethon.TelegramClient', return_value=client) as factory,
+                          patch('news_futures.credentials.CREDENTIALS_PATH', credentials),
                           patch('sys.stdin.isatty', return_value=False),
                           patch('getpass.getpass') as prompt):
                         with self.assertRaises(ValueError):
                             await open_client(Path(temporary) / 'user.session', login)
+                        self.assertEqual(factory.call_args.args[1:], (123, '0' * 32))
                         client.disconnect.assert_awaited_once()
                         client.send_code_request.assert_not_awaited()
                         prompt.assert_not_called()

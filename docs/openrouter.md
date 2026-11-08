@@ -14,18 +14,17 @@ Python 3.11+, из корня репозитория:
 .venv\Scripts\python -m pip install -r requirements-openrouter.txt
 ```
 
-В локальном PowerShell 7 прочитайте ключ без сохранения значения в истории:
+Заполните `api_key` в секции `[openrouter]` файла `.local/credentials.toml`.
+Пустой шаблон находится в `credentials.example.toml`.
 
 ```powershell
-$env:OPENROUTER_API_KEY = Read-Host 'OpenRouter API key' -MaskInput
 .venv\Scripts\python -m news_futures analyze .local/openrouter-03
 .venv\Scripts\python -m news_futures show .local/openrouter-03
 ```
 
 Вызовы платные согласно тарифам выбранных моделей. Каталог запуска должен быть
-новым; без пути он создаётся автоматически. Ключ остаётся в окружении локального
-процесса, не включается в настройки, сообщения или журнал. Не передавайте ключ
-в чат. LangSmith-трассировка для этого сценария отключена.
+новым. Без пути он создаётся автоматически. Ключ хранится в локальном файле
+доступа вне Git. LangSmith-трассировка для этого сценария отключена.
 
 `--config <JSON>` задаёт отдельные `analyst` и `critic`. Пример по умолчанию —
 `news_futures/openrouter-models.json`. У каждой роли свои `model`, `max_tokens`,
@@ -108,8 +107,8 @@ $env:OPENROUTER_API_KEY = Read-Host 'OpenRouter API key' -MaskInput
 фиксированной совместимой интеграции описана в
 [OpenRouter integration evidence](agents/openrouter-compatibility.md).
 
-Живой пункт приёмки остаётся открытым: в окружении реализации отсутствует
-`OPENROUTER_API_KEY`. После локальной настройки выполните `analyze` в новом
+Живой пункт приёмки остаётся открытым до проверки с действующим ключом.
+После локальной настройки выполните `analyze` в новом
 каталоге. У обеих ролей должны сохраниться фактические модели, валидированные
 ответы и метаданные без транспортных/схемных ошибок. Если критик возражает,
 допустим `rejected`: технический доступ не требует одобрения сделки.

@@ -7,6 +7,7 @@ import sys
 from typing import cast
 from uuid import uuid4
 
+from news_futures.credentials import CredentialsError
 from news_futures.local import run
 
 
@@ -46,6 +47,8 @@ def main() -> int:
                 report = asyncio.run(run_sandbox(args.config, directory))
                 print(json.dumps(report, ensure_ascii=False, indent=2))
                 return 0 if report['status'] == 'data_confirmed' else 1
+            except CredentialsError:
+                raise
             except Exception:
                 print('Sandbox: подключение или настройки не подтверждены. См. docs/sandbox.md.', file=sys.stderr)
                 return 1
@@ -56,6 +59,8 @@ def main() -> int:
                 from news_futures.analysis import run_cycle
                 directory = args.directory or Path('.local/news-futures-03') / str(uuid4())
                 trace = run_cycle(args.config, directory, context_path=args.context)
+                if trace['error'] == 'CredentialsError':
+                    print('Заполните openrouter.api_key в .local/credentials.toml.', file=sys.stderr)
                 print(json.dumps({
                     'mode': trace['mode'], 'status': trace['status'],
                     'directory': str(directory.resolve()),
@@ -75,6 +80,8 @@ def main() -> int:
                 return asyncio.run(run_telegram(args.config, args.database, session, args.once))
             except KeyboardInterrupt:
                 return 130
+            except CredentialsError:
+                raise
             except Exception as error:
                 print(f'Telegram: {type(error).__name__}. См. локальную инструкцию README.', file=sys.stderr)
                 return 1

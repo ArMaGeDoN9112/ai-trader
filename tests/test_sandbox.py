@@ -5,7 +5,6 @@ import importlib.util
 from io import StringIO
 import json
 import logging
-import os
 from pathlib import Path
 import tempfile
 from typing import Any
@@ -270,7 +269,9 @@ class SandboxTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             config = Path(temporary) / 'config.json'
             config.write_text(Settings(environment='sandbox', endpoint=SANDBOX_URL).model_dump_json(), encoding='utf-8')
-            with patch.dict(os.environ, {'TINVEST_SANDBOX_TOKEN': TOKEN}), patch(
+            credentials = Path(temporary) / 'credentials.toml'
+            credentials.write_text(f'[sandbox]\ntoken = "{TOKEN}"\n', encoding='utf-8')
+            with patch('news_futures.credentials.CREDENTIALS_PATH', credentials), patch(
                 'news_futures.sandbox.httpx.AsyncClient', side_effect=client,
             ):
                 report = asyncio.run(run_sandbox(config, Path(temporary) / 'report'))

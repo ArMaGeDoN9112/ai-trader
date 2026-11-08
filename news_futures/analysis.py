@@ -3,7 +3,6 @@
 from collections.abc import Callable
 from hashlib import sha256
 import json
-import os
 from pathlib import Path
 from time import perf_counter
 from typing import Any, Literal, TypedDict
@@ -15,6 +14,7 @@ from langgraph.graph import END, START, StateGraph
 from langsmith import tracing_context
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
+from news_futures.credentials import load_token
 from news_futures.local import write_json
 from news_futures.openrouter_model import OpenRouterChat
 
@@ -116,7 +116,7 @@ Otherwise refuse with nonempty objections. Return only the required JSON schema.
 def chat_model(settings: RoleSettings) -> OpenRouterChat:
     return OpenRouterChat(
         model=settings.model, max_completion_tokens=settings.max_tokens,
-        api_key=SecretStr(os.environ['OPENROUTER_API_KEY']),
+        api_key=SecretStr(load_token('openrouter', 'api_key')),
         temperature=settings.temperature, timeout=settings.timeout_ms / 1000,
         max_retries=0, base_url='https://openrouter.ai/api/v1',
         use_responses_api=False, extra_body={'provider': {'require_parameters': True}},

@@ -237,7 +237,10 @@ class OpenRouterCycleTest(unittest.TestCase):
         self.assertNotIn('risk limit infinite', request['messages'][0]['content'])
 
     def test_production_client_uses_only_openrouter_key_and_strict_provider(self) -> None:
-        with patch.dict(os.environ, {'OPENROUTER_API_KEY': 'local-test-secret',
+        credentials = self.root / 'credentials.toml'
+        credentials.write_text('[openrouter]\napi_key = "local-test-secret"\n', encoding='utf-8')
+        with patch('news_futures.credentials.CREDENTIALS_PATH', credentials), patch.dict(os.environ, {
+                                     'OPENROUTER_API_KEY': 'wrong-openrouter-key',
                                      'OPENAI_API_KEY': 'wrong-key',
                                      'OPENAI_BASE_URL': 'https://example.invalid'}):
             model = chat_model(RoleSettings(model='test/analyst'))
@@ -271,14 +274,17 @@ class OpenRouterCycleTest(unittest.TestCase):
         process = subprocess.run(
             [sys.executable, '-m', 'news_futures', 'analyze', str(directory),
              '--config', str(self.config)],
+            cwd=self.root,
             env={key: value for key, value in os.environ.items()
-                 if key.upper() in {'SYSTEMROOT', 'PATH', 'TEMP', 'TMP'}},
+                 if key.upper() in {'SYSTEMROOT', 'PATH', 'TEMP', 'TMP'}} | {
+                     'PYTHONPATH': str(Path(__file__).resolve().parents[1]),
+                 },
             capture_output=True, text=True, encoding='utf-8', timeout=20,
         )
         self.assertEqual(process.returncode, 1, process.stderr)
         trace = json.loads((directory / 'trace.json').read_text(encoding='utf-8'))
         self.assertEqual(trace['status'], 'rejected')
-        self.assertEqual(trace['error'], 'KeyError')
+        self.assertEqual(trace['error'], 'CredentialsError')
         self.assertIn('trace_file', json.loads(process.stdout))
 
 
