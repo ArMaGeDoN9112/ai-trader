@@ -5,7 +5,7 @@ from hashlib import sha256
 import json
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal, TypedDict, TypeVar, cast
 from uuid import uuid4
 
 from langchain_core.language_models import BaseChatModel
@@ -36,16 +36,19 @@ class Settings(Contract):
     critic: RoleSettings
 
 
-class Proposal(Contract):
+class ProposalTerms(Contract):
     action: Literal['enter', 'close', 'skip', 'hold']
     publication_id: str
-    company_id: str
-    contract_id: str
     side: Literal['long', 'short'] | None
     entry_price: float | None
     stop_loss: float | None
     take_profit: float | None
     reason: str = Field(min_length=1)
+
+
+class Proposal(ProposalTerms):
+    company_id: str
+    contract_id: str
 
 
 class Review(Contract):
@@ -61,8 +64,11 @@ class Position(Contract):
     quantity: int = Field(gt=0)
 
 
-class AnalysisContext(Contract):
+class ReviewContext(Contract):
     publication: dict[str, Any]
+
+
+class AnalysisContext(ReviewContext):
     catalog: dict[str, Any]
     company_link: dict[str, Any]
     market: dict[str, Any]
@@ -140,11 +146,23 @@ def control_context() -> dict[str, Any]:
 
 
 class CycleState(TypedDict):
-    proposal: dict[str, Any] | None
-    review: dict[str, Any] | None
-    previous_review: dict[str, Any] | None
+    context: ReviewContext
+    proposal: ProposalTerms | None
+    proposal_id: str | None
+    review: Review | None
+    previous_review: Review | None
     revisions: int
     error: str | None
+
+
+ModelResult = TypeVar('ModelResult', bound=BaseModel)
+
+
+def proposal_payload(state: CycleState) -> dict[str, Any] | None:
+    proposal = state['proposal']
+    if proposal is None:
+        return None
+    return proposal.model_dump(mode='json') | {'id': state['proposal_id']}
 
 
 def validate_proposal(proposal: dict[str, Any], context: dict[str, Any]) -> None:
@@ -158,6 +176,10 @@ def validate_proposal(proposal: dict[str, Any], context: dict[str, Any]) -> None
         raise ValueError('action_incompatible_with_position')
     if position and proposal['contract_id'] != position['contract_id']:
         raise ValueError('position_rotation_forbidden')
+    validate_levels(proposal)
+
+
+def validate_levels(proposal: dict[str, Any]) -> None:
     side, entry, stop, take = (proposal[key] for key in (
         'side', 'entry_price', 'stop_loss', 'take_profit'))
     if proposal['action'] == 'enter':
@@ -173,22 +195,34 @@ def run_cycle(
     config_path: Path, directory: Path, *, context_path: Path | None = None,
     model_factory: Callable[[RoleSettings], BaseChatModel] = chat_model,
 ) -> dict[str, Any]:
-    """Read settings once; persist each result; return only reviewed proposals."""
-    settings = Settings.model_validate_json(config_path.read_text(encoding='utf-8'))
-    snapshot = settings.model_dump(mode='json')
-    version = sha256(json.dumps(snapshot, sort_keys=True).encode()).hexdigest()
     context = (json.loads(context_path.read_text(encoding='utf-8'))
                if context_path else control_context())
-    context = AnalysisContext.model_validate(context).model_dump(mode='json')
+    validated = AnalysisContext.model_validate(context)
+    trace = review_cycle(config_path, directory, validated, model_factory=model_factory)
+    write_json(directory / 'trace.json', trace)
+    return trace
+
+
+def review_cycle(
+    config_path: Path, directory: Path, context: ReviewContext, *,
+    model_factory: Callable[[RoleSettings], BaseChatModel],
+    mode: str = 'openrouter-control', system: str = SYSTEM,
+    proposal_schema: type[ProposalTerms] = Proposal,
+    validate: Callable[[dict[str, Any], dict[str, Any]], None] = validate_proposal,
+) -> dict[str, Any]:
+    """Read settings once; persist each result; return only reviewed proposals."""
+    settings = Settings.model_validate_json(config_path.read_bytes())
+    snapshot = settings.model_dump(mode='json')
+    version = sha256(json.dumps(snapshot, sort_keys=True).encode()).hexdigest()
     cycle_id = str(uuid4())
     directory.mkdir(parents=True, exist_ok=False)
-    write_json(directory / 'publication.json', context['publication'])
-    write_json(directory / 'context.json', context)
+    write_json(directory / 'publication.json', context.publication)
+    write_json(directory / 'context.json', context.model_dump(mode='json'))
     write_json(directory / 'settings.json', {'version': version, **snapshot})
     calls: list[dict[str, Any]] = []
 
-    def invoke(role: Literal['analyst', 'critic'], schema: type[BaseModel],
-               data: dict[str, Any]) -> dict[str, Any]:
+    def invoke(role: Literal['analyst', 'critic'], schema: type[ModelResult],
+               data: dict[str, Any], *, proposal_id: str | None = None) -> ModelResult:
         role_settings = getattr(settings, role)
         record: dict[str, Any] = {
             'role': role, 'requested_model': role_settings.model,
@@ -200,7 +234,7 @@ def run_cycle(
             model = model_factory(role_settings)
             response = model.with_structured_output(
                 schema.model_json_schema(), method='json_schema', strict=True, include_raw=True,
-            ).invoke([SystemMessage(SYSTEM.format(role=role)),
+            ).invoke([SystemMessage(system.format(role=role)),
                       HumanMessage(json.dumps(data, ensure_ascii=False))])
             if not isinstance(response, dict):
                 raise ValueError('missing_raw_response')
@@ -223,13 +257,14 @@ def run_cycle(
             if metadata.get('model_name') != role_settings.model:
                 raise ValueError('unexpected_model')
             # LangChain's parser can repair incomplete JSON; admission must not.
-            output = schema.model_validate_json(raw.content).model_dump(mode='json')
+            result = schema.model_validate_json(raw.content)
+            output = result.model_dump(mode='json')
             if role == 'analyst':
-                validate_proposal(output, context)
+                validate(output, data['context'])
                 previous = data['proposal']
                 if previous and output == {key: value for key, value in previous.items() if key != 'id'}:
                     raise ValueError('unchanged_revision')
-                output['id'] = f'{cycle_id}:{len(calls) + 1}'
+                output['id'] = proposal_id
             else:
                 if output['proposal_id'] != data['proposal']['id']:
                     raise ValueError('review_for_another_proposal')
@@ -237,7 +272,7 @@ def run_cycle(
                         or any(not objection.strip() for objection in output['objections'])):
                     raise ValueError('inconsistent_review')
             record['output'] = output
-            return output
+            return result
         except Exception as error:
             # Exception text can contain request headers, keys or model content.
             record['error'] = type(error).__name__
@@ -249,18 +284,24 @@ def run_cycle(
 
     def analyst(state: CycleState) -> dict[str, Any]:
         try:
-            proposal = invoke('analyst', Proposal, {'context': context,
-                              'proposal': state['proposal'], 'review': state['review']})
-            return {'proposal': proposal, 'review': None,
-                    'previous_review': state['review'],
-                    'revisions': state['revisions'] + int(state['review'] is not None)}
+            review = state['review']
+            proposal_id = f'{cycle_id}:{len(calls) + 1}'
+            proposal = invoke('analyst', proposal_schema, {
+                'context': state['context'].model_dump(mode='json'),
+                'proposal': proposal_payload(state), 'review': review.model_dump(mode='json') if review else None,
+            }, proposal_id=proposal_id)
+            return {'proposal': proposal, 'proposal_id': proposal_id, 'review': None,
+                    'previous_review': review, 'revisions': state['revisions'] + int(review is not None)}
         except Exception as error:
             return {'error': type(error).__name__, 'proposal': None, 'review': None}
 
     def critic(state: CycleState) -> dict[str, Any]:
         try:
-            review = invoke('critic', Review, {'context': context, 'proposal': state['proposal'],
-                                             'previous_review': state['previous_review']})
+            previous = state['previous_review']
+            review = invoke('critic', Review, {
+                'context': state['context'].model_dump(mode='json'), 'proposal': proposal_payload(state),
+                'previous_review': previous.model_dump(mode='json') if previous else None,
+            })
             return {'review': review}
         except Exception as error:
             return {'error': type(error).__name__, 'review': None}
@@ -272,24 +313,24 @@ def run_cycle(
     graph.add_conditional_edges('analyst', lambda state: END if state['error'] else 'critic')
 
     def after_review(state: CycleState) -> str:
-        if (not state['error'] and state['review'] and not state['review']['approved']
-                and state['revisions'] == 0):
+        review = state['review']
+        if not state['error'] and review and not review.approved and state['revisions'] == 0:
             return 'analyst'
         return END
 
     graph.add_conditional_edges('critic', after_review)
     with tracing_context(enabled=False):
-        initial: CycleState = {'proposal': None, 'review': None, 'previous_review': None,
-                               'revisions': 0, 'error': None}
-        state = graph.compile().invoke(initial)
-    approved = (not state['error'] and state['review'] and state['review']['approved'])
-    no_action = approved and state['proposal'] and state['proposal']['action'] in {'skip', 'hold'}
-    trace = {
-        'cycle_id': cycle_id, 'mode': 'openrouter-control', 'settings_version': version,
+        initial: CycleState = {'context': context, 'proposal': None, 'proposal_id': None, 'review': None,
+                               'previous_review': None, 'revisions': 0, 'error': None}
+        state = cast(CycleState, graph.compile().invoke(initial))
+    review = state['review']
+    proposal = state['proposal']
+    approved = not state['error'] and review is not None and review.approved
+    no_action = approved and proposal is not None and proposal.action in {'skip', 'hold'}
+    return {
+        'cycle_id': cycle_id, 'mode': mode, 'settings_version': version,
         'status': 'no_action' if no_action else 'approved_for_checks' if approved else 'rejected',
-        'approved_proposal': state['proposal'] if approved and not no_action else None,
+        'approved_proposal': proposal_payload(state) if approved and not no_action else None,
         'error': state['error'], 'calls': calls,
         'execution': {'status': 'not_requested', 'notice': 'No broker; risk checks belong to ticket 08.'},
     }
-    write_json(directory / 'trace.json', trace)
-    return trace

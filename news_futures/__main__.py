@@ -3,6 +3,7 @@ from io import TextIOWrapper
 import json
 import logging
 from pathlib import Path
+import sqlite3
 import sys
 from typing import cast
 from uuid import uuid4
@@ -49,7 +50,14 @@ def main() -> int:
     correct_command.add_argument('--kind', choices=('separate', 'repeat', 'update'), required=True)
     correct_command.add_argument('--event')
     correct_command.add_argument('--reason', required=True)
-    for command in (match_command, events_command, correct_command):
+    decision_command = commands.add_parser('analyze-event', help='Проанализировать запрос из архива событий')
+    decision_command.add_argument('decision_id', type=int)
+    decision_command.add_argument('--snapshot', type=Path, required=True)
+    decision_command.add_argument('--directory', type=Path)
+    decision_command.add_argument('--config', type=Path, default=Path(__file__).with_name('openrouter-models.json'))
+    reason_command = commands.add_parser('entry-reason', help='Сохранить исходную причину входа в позицию')
+    reason_command.add_argument('record', type=Path)
+    for command in (match_command, events_command, correct_command, decision_command, reason_command):
         command.add_argument('--database', type=Path, default=Path('.local/events.sqlite3'))
     args = parser.parse_args()
     try:
@@ -84,11 +92,20 @@ def main() -> int:
             except Exception as error:
                 print(f'Jev: {type(error).__name__}. См. docs/jev.md.', file=sys.stderr)
                 return 1
-        if args.command == 'analyze':
+        if args.command in {'analyze', 'analyze-event'}:
             try:
-                from news_futures.analysis import run_cycle
-                directory = args.directory or Path('.local/news-futures-03') / str(uuid4())
-                trace = run_cycle(args.config, directory, context_path=args.context)
+                if args.command == 'analyze-event':
+                    from news_futures.decisions import analyze_event
+                    from news_futures.events import EventArchive
+                    if not args.database.is_file():
+                        raise ValueError('Архив событий не найден')
+                    directory = args.directory or Path('.local/news-futures-07') / str(uuid4())
+                    with EventArchive(args.database) as events:
+                        trace = analyze_event(events, args.decision_id, args.snapshot, args.config, directory)
+                else:
+                    from news_futures.analysis import run_cycle
+                    directory = args.directory or Path('.local/news-futures-03') / str(uuid4())
+                    trace = run_cycle(args.config, directory, context_path=args.context)
                 if trace['error'] == 'CredentialsError':
                     print('Заполните openrouter.api_key в .local/credentials.toml.', file=sys.stderr)
                 print(json.dumps({
@@ -98,8 +115,26 @@ def main() -> int:
                 }, ensure_ascii=False, indent=2))
                 return 1 if trace['status'] == 'rejected' else 0
             except Exception as error:
+                if args.command == 'analyze-event':
+                    detail = str(error) if type(error) is ValueError else type(error).__name__
+                    print(f'Анализ события: {detail}. См. docs/company-decisions.md.', file=sys.stderr)
+                    return 1
                 print(f'OpenRouter: {type(error).__name__}. См. локальную инструкцию README.', file=sys.stderr)
                 return 1
+        if args.command == 'entry-reason':
+            from news_futures.decisions import EntryReason, record_entry_reason
+            from news_futures.events import EventArchive
+            try:
+                entry = EntryReason.model_validate_json(args.record.read_bytes())
+            except ValueError as error:
+                raise ValueError('Проверьте формат причины входа в docs/company-decisions.md') from error
+            try:
+                with EventArchive(args.database) as events:
+                    record_entry_reason(events, entry)
+            except sqlite3.DatabaseError as error:
+                raise ValueError('Не удалось сохранить причину входа в базе событий') from error
+            print('Причина входа сохранена.')
+            return 0
         if args.command in {'telegram', 'telegram-login'}:
             import asyncio
             from news_futures.telegram import default_session, login_telegram, run_telegram

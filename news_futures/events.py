@@ -189,18 +189,22 @@ class EventArchive:
         path.parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(path)
         self.db.row_factory = sqlite3.Row
-        self.db.executescript('''
-            PRAGMA journal_mode=WAL;
-            PRAGMA foreign_keys=ON;
-            CREATE TABLE IF NOT EXISTS event_revisions (
-                revision TEXT PRIMARY KEY NOT NULL, publication TEXT NOT NULL, links TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS event_decisions (
-                id INTEGER PRIMARY KEY, revision TEXT NOT NULL REFERENCES event_revisions(revision),
-                details TEXT NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS event_revision_history ON event_decisions(revision, id);
-        ''')
+        try:
+            self.db.executescript('''
+                PRAGMA journal_mode=WAL;
+                PRAGMA foreign_keys=ON;
+                CREATE TABLE IF NOT EXISTS event_revisions (
+                    revision TEXT PRIMARY KEY NOT NULL, publication TEXT NOT NULL, links TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS event_decisions (
+                    id INTEGER PRIMARY KEY, revision TEXT NOT NULL REFERENCES event_revisions(revision),
+                    details TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS event_revision_history ON event_decisions(revision, id);
+            ''')
+        except BaseException:
+            self.db.close()
+            raise
 
     def __enter__(self) -> 'EventArchive':
         return self
