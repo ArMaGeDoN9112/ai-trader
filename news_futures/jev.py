@@ -2,6 +2,7 @@
 
 from contextlib import nullcontext
 from dataclasses import dataclass, field
+from functools import partial
 from hashlib import sha256
 import json
 from math import isclose
@@ -13,7 +14,8 @@ from typing import Annotated, Any, Literal, TypedDict
 import httpx
 from langgraph.graph import END, START, StateGraph
 from langsmith import tracing_context
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, ValidatorFunctionWrapHandler
+from pydantic import field_validator, model_validator
 
 from news_futures.credentials import CredentialsError, load_token
 from news_futures.local import publication_digest, write_json
@@ -31,6 +33,13 @@ CRITERIA = {
 }
 Nonempty = Annotated[str, Field(min_length=1)]
 Probability = Annotated[float, Field(ge=0, le=1)]
+
+
+def optional_metadata(value: object, validate: ValidatorFunctionWrapHandler) -> Any:
+    try:
+        return validate(value)
+    except ValidationError:
+        return None
 
 
 class Input(BaseModel):
@@ -75,13 +84,15 @@ class Usage(Input):
     input_tokens: int | None = Field(default=None, ge=0)
     output_tokens: int | None = Field(default=None, ge=0)
     cost: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    _optional = field_validator('input_tokens', 'output_tokens', 'cost', mode='wrap')(optional_metadata)
 
 
 class DecisionMetadata(Input):
-    model: Nonempty
-    id: Nonempty
+    model: Nonempty | None = None
+    id: Nonempty | None = None
     provider: Nonempty | None = None
     usage: Usage | None = None
+    _optional = field_validator('model', 'id', 'provider', 'usage', mode='wrap')(optional_metadata)
 
 
 @dataclass(frozen=True)
@@ -160,9 +171,14 @@ def assess_batch(
         response.raise_for_status()
         payload = response.json()
         metadata = DecisionMetadata.model_validate(payload)
+        metadata = metadata.model_copy(update={
+            key: value.replace(token, '[redacted]') if value else None
+            for key, value in (('model', metadata.model), ('id', metadata.id), ('provider', metadata.provider))
+        })
         answers = TypeAdapter(dict[str, Choice]).validate_python(payload.get('answers'), strict=True)
-        if answers.keys() != keys.keys() or payload.get('error') is not None:
-            raise ValueError('invalid_answer_keys')
+        if (answers.keys() != keys.keys() or payload.get('error') is not None
+                or not metadata.id or not metadata.model):
+            raise ValueError('invalid_decisions_response')
         return BatchDecision(metadata, {company_id: answers[key] for key, company_id in keys.items()})
     except httpx.HTTPStatusError as exc:
         return BatchDecision(error=f'http_{exc.response.status_code}')
@@ -187,7 +203,8 @@ def route_publication(
     companies = load_catalog(catalog_content)
     source = {
         'publication_id': publication.id, 'publication_url': publication.url,
-        'publication_sha256': publication_digest(publication_record),
+        'publication_sha256': sha256(original).hexdigest(),
+        'publication_revision_sha256': publication_digest(publication_record),
         'catalog_sha256': sha256(catalog_content).hexdigest(),
     }
     directory.mkdir(parents=True, exist_ok=False)
@@ -198,74 +215,76 @@ def route_publication(
     def route(state: RoutingState) -> dict[str, Any]:
         links: list[dict[str, Any]] = []
         batches: list[dict[str, Any]] = []
-        try:
-            api_key = token if token is not None else load_token('openrouter', 'api_key')
-        except CredentialsError:
-            return {'links': None, 'batches': batches, 'error': 'CredentialsError'}
         entries = list(state['companies'].items())
         actual_model = None
         model = state['requested_model']
         model_pattern = re.escape(model)
         if not model.rsplit('-', 1)[-1].isdigit():
             model_pattern += r'(?:-\d{8})?'
-        with httpx.Client() if client is None else nullcontext(client) as transport:
-            for offset in range(0, len(entries), BATCH_SIZE):
-                batch = dict(entries[offset:offset + BATCH_SIZE])
-                started = perf_counter()
-                record: dict[str, Any] = {'company_ids': list(batch)}
-                result = assess_batch(transport, api_key, model, state['publication_text'], batch)
-                error = result.error
-                if result.metadata:
-                    metadata = result.metadata
-                    record.update({
-                        'request_id': metadata.id.replace(api_key, '[redacted]'),
-                        'actual_model': metadata.model.replace(api_key, '[redacted]'),
-                        'provider': metadata.provider.replace(api_key, '[redacted]') if metadata.provider else None,
-                        'usage': metadata.usage.model_dump(mode='json') if metadata.usage else None,
+        for offset in range(0, len(entries), BATCH_SIZE):
+            batch = dict(entries[offset:offset + BATCH_SIZE])
+            started = perf_counter()
+            record: dict[str, Any] = {'company_ids': list(batch)}
+            result = decide(model, state['publication_text'], batch)
+            error = result.error
+            if result.metadata:
+                metadata = result.metadata
+                record.update({
+                    'request_id': metadata.id,
+                    'actual_model': metadata.model,
+                    'provider': metadata.provider,
+                    'usage': metadata.usage.model_dump(mode='json') if metadata.usage else None,
+                })
+                if metadata.model and (not re.fullmatch(model_pattern, metadata.model)
+                        or (actual_model is not None and metadata.model != actual_model)):
+                    error = 'model_mismatch'
+                actual_model = metadata.model
+            if error is None:
+                record['answers'] = {
+                    company_id: answer.model_dump(mode='json') for company_id, answer in result.answers.items()
+                }
+                for company_id, answer in result.answers.items():
+                    relevance = 1 - answer.probabilities['none']
+                    if answer.choice == 'none' and relevance <= 0.5:
+                        continue
+                    basis = answer.choice
+                    # shortcut: provisional cutoff, calibrate on a larger labeled news sample.
+                    if basis in {'none', 'uncertain'} or answer.probabilities[basis] < 0.60:
+                        kind = 'uncertain'
+                    else:
+                        kind = 'direct' if basis == 'direct' else 'inferred'
+                    links.append({
+                        **state['source'], 'company_id': company_id, 'kind': kind, 'basis': basis,
+                        'score': relevance, 'confidence': answer.confidence,
+                        'requires_analyst_review': kind != 'direct',
                     })
-                    if (not re.fullmatch(model_pattern, metadata.model)
-                            or (actual_model is not None and metadata.model != actual_model)):
-                        error = 'model_mismatch'
-                    actual_model = metadata.model
-                if error is None:
-                    record['answers'] = {
-                        company_id: answer.model_dump(mode='json') for company_id, answer in result.answers.items()
-                    }
-                    for company_id, answer in result.answers.items():
-                        relevance = 1 - answer.probabilities['none']
-                        if answer.choice == 'none' and relevance <= 0.5:
-                            continue
-                        basis = answer.choice
-                        # shortcut: provisional cutoff, calibrate on a larger labeled news sample.
-                        if basis in {'none', 'uncertain'} or answer.probabilities[basis] < 0.60:
-                            kind = 'uncertain'
-                        else:
-                            kind = 'direct' if basis == 'direct' else 'inferred'
-                        links.append({
-                            **state['source'], 'company_id': company_id, 'kind': kind, 'basis': basis,
-                            'score': relevance, 'confidence': answer.confidence,
-                            'requires_analyst_review': kind != 'direct',
-                        })
-                record.update({'error': error, 'elapsed_ms': round((perf_counter() - started) * 1000)})
-                write_json(directory / f'batch-{len(batches) + 1:03d}.json', record)
-                batches.append({key: value for key, value in record.items() if key != 'answers'})
-                if error:
-                    return {'links': None, 'batches': batches, 'error': error}
+            record.update({'error': error, 'elapsed_ms': round((perf_counter() - started) * 1000)})
+            write_json(directory / f'batch-{len(batches) + 1:03d}.json', record)
+            batches.append({key: value for key, value in record.items() if key != 'answers'})
+            if error:
+                return {'links': None, 'batches': batches, 'error': error}
         return {'links': links, 'batches': batches, 'error': None}
 
-    graph: StateGraph[RoutingState, None, RoutingState, RoutingState] = StateGraph(RoutingState)
-    graph.add_node('jev', route)
-    graph.add_edge(START, 'jev')
-    graph.add_edge('jev', END)
-    with tracing_context(enabled=False):
-        initial: RoutingState = {
-            'publication_text': publication.text, 'source': source, 'companies': companies,
-            'requested_model': settings.model, 'links': None, 'batches': [], 'error': None,
-        }
-        state = graph.compile().invoke(initial)
+    initial: RoutingState = {
+        'publication_text': publication.text, 'source': source, 'companies': companies,
+        'requested_model': settings.model, 'links': None, 'batches': [], 'error': None,
+    }
+    try:
+        api_key = token if token is not None else load_token('openrouter', 'api_key')
+    except CredentialsError:
+        state: dict[str, Any] = dict(initial, error='CredentialsError')
+    else:
+        graph: StateGraph[RoutingState, None, RoutingState, RoutingState] = StateGraph(RoutingState)
+        graph.add_node('jev', route)
+        graph.add_edge(START, 'jev')
+        graph.add_edge('jev', END)
+        with httpx.Client() if client is None else nullcontext(client) as transport:
+            decide = partial(assess_batch, transport, api_key)
+            with tracing_context(enabled=False):
+                state = graph.compile().invoke(initial)
     costs = [batch['usage']['cost'] for batch in state['batches']
              if batch.get('usage') and batch['usage']['cost'] is not None]
-    models = list(dict.fromkeys(batch['actual_model'] for batch in state['batches'] if 'actual_model' in batch))
+    models = list(dict.fromkeys(batch['actual_model'] for batch in state['batches'] if batch.get('actual_model')))
     trace = {
         **source, 'links': state['links'], 'batches': state['batches'], 'error': state['error'],
         'mode': 'openrouter_decisions',

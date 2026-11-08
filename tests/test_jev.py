@@ -65,6 +65,7 @@ class JevTests(unittest.TestCase):
                 ('unknown', {'unknown-asset': answer('direct')}, 'invalid_decision'),
                 ('malformed', {'company_0': answer('direct', 0.1)}, 'invalid_decision'),
                 ('malformed-envelope', None, 'invalid_decision'),
+                ('missing-request-id', {'company_0': answer('none')}, 'invalid_decision'),
                 ('unavailable', None, 'service_unavailable'),
             ]
             for name, answers, expected_error in cases:
@@ -73,8 +74,9 @@ class JevTests(unittest.TestCase):
                         if name == 'unavailable':
                             raise httpx.ConnectError('fake secret', request=request)
                         return httpx.Response(200, json={
-                            'model': 'typesafe/jev-1.14', 'id': 'fake secret',
-                            'usage': {'cost': 0.01}, 'answers': answers,
+                            'model': 'typesafe/jev-1.14',
+                            'id': None if name == 'missing-request-id' else 'fake secret',
+                            'usage': {'cost': 0.01, 'input_tokens': 'invalid'}, 'answers': answers,
                         })
 
                     with httpx.Client(transport=httpx.MockTransport(respond)) as client:
@@ -92,7 +94,9 @@ class JevTests(unittest.TestCase):
 
     def test_analyst_accepts_the_routed_publication_and_rejects_a_different_revision(self) -> None:
         context = control_context()
-        context['company_link']['publication_sha256'] = publication_digest(context['publication'])
+        context['company_link']['publication_sha256'] = 'old-byte-hash'
+        AnalysisContext.model_validate(context)
+        context['company_link']['publication_revision_sha256'] = publication_digest(context['publication'])
         AnalysisContext.model_validate(context)
         context['publication']['text'] += ' Исправление.'
         with self.assertRaisesRegex(ValidationError, 'company_link_publication_revision_mismatch'):

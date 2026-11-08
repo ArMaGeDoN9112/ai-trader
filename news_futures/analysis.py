@@ -85,8 +85,8 @@ class AnalysisContext(Contract):
                     or self.company_link['company_id'] != company['id']
                     or self.company_link['publication_id'] != self.publication['id']):
                 raise ValueError('inconsistent_context_references')
-            if ('publication_sha256' in self.company_link
-                    and self.company_link['publication_sha256'] != publication_digest(self.publication)):
+            if ('publication_revision_sha256' in self.company_link
+                    and self.company_link['publication_revision_sha256'] != publication_digest(self.publication)):
                 raise ValueError('company_link_publication_revision_mismatch')
             if self.position and (self.position.contract_id != future['id']
                                   or not self.entry_reason or not self.entry_reason.strip()):
