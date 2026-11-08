@@ -25,6 +25,11 @@ def main() -> int:
     analyze_command.add_argument('directory', nargs='?', type=Path)
     analyze_command.add_argument('--config', type=Path, default=Path(__file__).with_name('openrouter-models.json'))
     analyze_command.add_argument('--context', type=Path)
+    route_command = commands.add_parser('route', help='Привязки публикации к компаниям через Jev')
+    route_command.add_argument('directory', nargs='?', type=Path)
+    route_command.add_argument('--publication', type=Path, required=True)
+    route_command.add_argument('--catalog', type=Path, required=True)
+    route_command.add_argument('--config', type=Path, default=Path(__file__).with_name('jev-model.json'))
     login_command = commands.add_parser('telegram-login', help='Локальная пользовательская авторизация')
     login_command.add_argument('--session', type=Path)
     telegram_command = commands.add_parser('telegram', help='Непрерывный приём Telegram, обработка — имитация')
@@ -54,6 +59,19 @@ def main() -> int:
                 return 1
             finally:
                 logging.disable(previous_logging)
+        if args.command == 'route':
+            try:
+                from news_futures.jev import route_publication
+                directory = args.directory or Path('.local/news-futures-05') / str(uuid4())
+                trace = route_publication(args.config, args.publication, args.catalog, directory)
+                print(json.dumps({
+                    'status': trace['status'], 'error': trace['error'],
+                    'trace_file': str((directory / 'trace.json').resolve()),
+                }, ensure_ascii=False, indent=2))
+                return 0 if trace['status'] == 'completed' else 1
+            except Exception as error:
+                print(f'Jev: {type(error).__name__}. См. docs/jev.md.', file=sys.stderr)
+                return 1
         if args.command == 'analyze':
             try:
                 from news_futures.analysis import run_cycle

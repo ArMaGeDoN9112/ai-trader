@@ -105,8 +105,10 @@ Without a position choose enter or skip; with one choose hold or full close of
 that position, never rotate, increase, partially close or reverse. For enter set
 side and positive entry/SL/TP with SL < entry < TP for long and TP < entry < SL
 for short. For other actions side and all price fields must be null.
-Analyst: propose at most one action with evidence and uncertainty; on revision
-address every objection, or skip/hold. Critic: independently verify the evidence,
+Analyst: verify inferred and uncertain links against the original news. Explain
+the mechanism and missing evidence before relying on a link. Propose at most
+one action with evidence and uncertainty; on revision address every objection,
+or skip/hold. Critic: independently verify the evidence,
 contradictions, company link, instrument choice, and any unresolved objections.
 Approve only the exact proposal ID provided and only without material objections.
 Otherwise refuse with nonempty objections. Return only the required JSON schema.
