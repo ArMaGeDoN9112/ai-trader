@@ -1,7 +1,18 @@
 # Agent stack
 
-This is the implementation policy for model-backed workflows. Business behaviour,
-limits and ticket boundaries remain defined by the approved news-futures spec.
+This is the implementation policy for the news-futures application. See the
+[specification](../../.scratch/news-futures/spec.md) for the operator workflow,
+application boundaries and trading rules.
+
+## Application assembly
+
+Keep one installable Python package and one runtime that the CLI configures.
+Compose sources, persistence, models, market and broker access at startup.
+Keep source-specific payloads, SDK types and CLI rendering at their boundaries.
+Pass typed application data into the graph and keep execution behind a separate
+interface. Reuse the same pipeline for observation and sandbox, with broker
+write access available only to the sandbox executor in the supported deployment.
+Preserve the existing diagnostics as independent ways to inspect integrations.
 
 ## Orchestration and contracts
 
@@ -10,7 +21,7 @@ limits and ticket boundaries remain defined by the approved news-futures spec.
 | LangGraph StateGraph | Typed cycle state, routing, analyst/critic transitions and bounded revision. |
 | LangChain Core | Messages, prompts, chat-model interfaces and structured model invocation. |
 | Pydantic | Validation of model-facing proposals, reviews and external structured results. |
-| langgraph-checkpoint-sqlite | Persistent graph checkpoints when implementing durable recovery in the local prototype. |
+| langgraph-checkpoint-sqlite | Persistent graph checkpoints for durable recovery. |
 
 Express the approved workflow as explicit nodes and conditional edges. Use the
 approved three roles; a new node or model call does not require a new agent role.
@@ -23,7 +34,9 @@ or permission to trade.
 - For OpenRouter chat roles, use ChatOpenRouter from `langchain-openrouter`.
   Model IDs and supported options belong in per-role configuration. If the
   integration lacks a required capability, document the gap and test a compatible
-  LangChain integration instead of building a new chat-model framework.
+  LangChain integration. The current application uses the tested
+  [ticket 03 compatibility path](openrouter-compatibility.md) to retain
+  OpenRouter provider metadata.
 - Request the required structured schema explicitly, including the appropriate
   `json_schema` method and provider parameter support. Validate the result locally;
   errors or incompatible models produce no executable proposal. A free-text
@@ -67,8 +80,8 @@ framework-backed path in the relevant later ticket, with fake models and broker
 responses for repeatable tests. Test conditional transitions, bounded revision,
 invalid output and resumed execution without duplicate broker effects.
 
-Keep the required audit trail locally. LangSmith is optional, explicitly enabled
-observability; it is not a prerequisite for running or testing the prototype.
+Keep the required audit trail locally and make it inspectable from the CLI.
+LangSmith is optional, explicitly enabled observability.
 External traces must exclude secrets and sessions. Add vector databases, managed
 agent hosting or additional agent runtimes only for a concrete requirement.
 

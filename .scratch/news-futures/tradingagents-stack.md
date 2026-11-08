@@ -25,13 +25,25 @@ Python ≥3.11, setuptools, entry point cli.main:app; requirements.txt соде�
 
 **Jev используется:** Sentiment Analyst → StockTwits/Reddit screen → requests POST /v1/systemone, без TypeSafe SDK. Проверяется отношение поста к **заданному тикеру** и stance автора; это не готовая маршрутизация публикации по компаниям и не проверка истинности. Без ключа/при сбое посты остаются непроверенными. [Вызов][sentiment], [HTTP/fallback][jev].
 
+## Как устроено приложение
+
+2026-11-08 GitHub Compare подтвердил, что `main` совпадает с ревизией `9fa1196fffbcfd9de5146d2dd2869df84ab99838`. Выводы ниже относятся к исходникам TradingAgents 0.7.1. [Сравнение][compare], [версия][version].
+
+- **Запуск.** После установки пакета команда `tradingagents` запускает анализ тикера на заданную дату. В терминале недостающие параметры запрашиваются, для запуска без терминала они задаются флагами и переменными окружения. Из Python тот же граф вызывается через `TradingAgentsGraph.propagate(...)`, который возвращает состояние и итоговую оценку. CLI использует потоковые обновления графа для отображения прогресса. Оба пути используют общий код записи решения и экспорта отчёта. Docker запускает ту же команду и сохраняет данные на подключённом томе. [Манифест][manifest], [CLI][cli], [подготовка запуска][cli-run], [вызов из Python][python-usage], [Docker][docker], [том][compose].
+- **Настройки и адаптеры.** Переменные `TRADINGAGENTS_*` дополняют значения по умолчанию. Python может передать конфигурацию явно, а CLI собирает её из ввода и окружения. Адаптеры данных читают настройки текущего запуска. Роутер выбирает поставщика по типу данных с переопределением для отдельной функции получения данных. Явно заданный список определяет порядок запасных поставщиков. Ответы различают недоступность поставщика и отсутствие данных по инструменту. [Настройки][defaults], [настройки запуска][cli-run], [контекст конфигурации][run-config], [выбор поставщика][routing].
+- **Граф.** Граф связывает выбранные read-only аналитические ветки с общей стадией разбора аргументов и решения. Каждый аналитик возвращает свой отчёт, а отведённое ему число вызовов инструментов ограничено. Обсуждение начинается после сбора отчётов. Итоговый узел Portfolio Manager формирует оценку, затем граф завершается. [Сборка][setup], [инструменты][tools].
+- **Результаты и восстановление.** Запись завершённого решения сохраняет JSON состояния и запись в Markdown-журнале решений. Отдельный экспорт собирает Markdown по этапам, сводный Markdown и, по умолчанию, автономный HTML. Настройки отчёта перечисляют версию, выбранные модели, аналитиков и поставщиков. Ключи, URL и локальные пути исключены из этого списка. Опциональная SQLite-точка восстановления имеет свой жизненный цикл и очищается после успешного завершения. JSON привязан к тикеру и дате, поэтому повторный запуск той же пары заменяет этот файл. [Запись решения и настройки][graph-output], [JSON][state-output], [генератор отчёта][reporting], [контрольные точки][checkpoint].
+- **Граница исследования.** В README описана отправка заявки на симулированную биржу, но в закреплённой реализации анализ заканчивается решением. Backtest запускает тот же граф по сетке тикеров и дат, сохраняет отдельный журнал, пропускает обработанные пары при повторном запуске с тем же `run_id` и оценивает доходность относительно ориентира по ценам закрытия после даты анализа. Ячейки независимы, а переданный портфель остаётся одним снимком. Оценка качества решений не моделирует заявки, исполнения и движение денег. Текстовые ленты не архивируются, поэтому исторический результат имеет ограниченную воспроизводимость. [Описание][research-readme], [завершение графа][setup], [границы и реализация backtest][backtest], [оценка по закрытиям][settlement].
+
+Для нашего приложения из этого следует единая устанавливаемая точка запуска, которая собирает одни и те же настройки, хранилище и адаптеры для ручной диагностики и длительной работы. Отдельные контракты публикаций, рыночных данных и моделей позволяют менять поставщиков и воспроизводить сценарии. Из журнала цикла можно получить читаемый отчёт с публикациями, привязками, торговым предложением, проверками лимитов, статусом заявки и подтверждением защиты. Историческое воспроизведение использует доступные на тот момент входы и отдельное состояние. Отправка и сверка заявок в песочнице остаются обязанностью программного исполнителя. [Спецификация](spec.md), [ADR 0001](../../docs/adr/0001-separate-proposals-from-execution.md), [ADR 0002](../../docs/adr/0002-langgraph-langchain-agent-workflows.md).
+
 ## Применение у нас
 
-Рекомендация: LangGraph StateGraph + LangChain Core + Pydantic для трёх ролей; для аналитика/критика через OpenRouter — актуальный официальный **langchain-openrouter / ChatOpenRouter**. Наш выбор отличается от upstream. Structured output зависит от модели: function_calling по умолчанию либо json_schema. Jev System One — отдельный HTTP-контракт узла. [Официальная интеграция](https://docs.langchain.com/oss/python/integrations/chat/openrouter).
+Стек для трёх ролей — LangGraph StateGraph, LangChain Core и Pydantic. Политика стека предусматривает `ChatOpenRouter`, а текущая реализация аналитика и критика использует совместимый `ChatOpenAI`, чтобы сохранить сведения о провайдере. Для торговых предложений требуется строгая JSON Schema. Jev System One — отдельный HTTP-контракт узла. [Политика стека](../../docs/agents/agent-stack.md), [проверка совместимости](../../docs/agents/openrouter-compatibility.md).
 
 Telegram MTProto — адаптер публикаций; Т-Банк MCP sandbox — адаптер отдельного программного исполнителя. Доменные публикации/привязки, причина входа и позиция хранятся отдельно; checkpoint нужен при durable recovery, не заменяет идемпотентность заявки/сверку брокера. Лимиты риска обязательны согласно [ADR 0001](../../docs/adr/0001-separate-proposals-from-execution.md).
 
-Не копировать 12 ролей/CLI. Free-text без схемы не допускается к исполнению. LangSmith — opt-in. [Fallback][structured].
+Сохранить три согласованные роли и спроектировать команды вокруг сценариев нашего приложения. К проверкам исполнения допускаются предложения с валидированной схемой. LangSmith включается по выбору пользователя. [Fallback][structured].
 
 Тесты offline: scripted full graph, параллельность, crash/resume; fixture запрещает сеть вне integration. [Тесты][tests], [fixtures][fixtures]. Не запускались upstream/платные API; не измерены качество Jev на косвенных связях, задержки, стоимость и наши Telegram/MCP-интеграции. Прибыльность не проверялась.
 
@@ -59,4 +71,19 @@ Telegram MTProto — адаптер публикаций; Т-Банк MCP sandbo
 [jev]: https://github.com/TauricResearch/TradingAgents/blob/9fa1196fffbcfd9de5146d2dd2869df84ab99838/tradingagents/agents/post_screen.py
 [tests]: https://github.com/TauricResearch/TradingAgents/blob/9fa1196fffbcfd9de5146d2dd2869df84ab99838/tests/test_graph_end_to_end.py
 [fixtures]: https://github.com/TauricResearch/TradingAgents/blob/9fa1196fffbcfd9de5146d2dd2869df84ab99838/tests/conftest.py#L59-L75
+[compare]: https://github.com/TauricResearch/TradingAgents/compare/9fa1196fffbcfd9de5146d2dd2869df84ab99838...main
+[version]: https://github.com/TauricResearch/TradingAgents/blob/9fa1196fffbcfd9de5146d2dd2869df84ab99838/tradingagents/__init__.py#L1-L14
+[cli-run]: https://github.com/TauricResearch/TradingAgents/blob/9fa1196fffbcfd9de5146d2dd2869df84ab99838/cli/run.py
+[python-usage]: https://github.com/TauricResearch/TradingAgents/blob/9fa1196fffbcfd9de5146d2dd2869df84ab99838/README.md#L244-L266
+[docker]: https://github.com/TauricResearch/TradingAgents/blob/9fa1196fffbcfd9de5146d2dd2869df84ab99838/Dockerfile#L26-L30
+[compose]: https://github.com/TauricResearch/TradingAgents/blob/9fa1196fffbcfd9de5146d2dd2869df84ab99838/docker-compose.yml#L1-L9
+[defaults]: https://github.com/TauricResearch/TradingAgents/blob/9fa1196fffbcfd9de5146d2dd2869df84ab99838/tradingagents/default_config.py
+[run-config]: https://github.com/TauricResearch/TradingAgents/blob/9fa1196fffbcfd9de5146d2dd2869df84ab99838/tradingagents/dataflows/config.py#L44-L72
+[routing]: https://github.com/TauricResearch/TradingAgents/blob/9fa1196fffbcfd9de5146d2dd2869df84ab99838/tradingagents/dataflows/router.py#L160-L285
+[graph-output]: https://github.com/TauricResearch/TradingAgents/blob/9fa1196fffbcfd9de5146d2dd2869df84ab99838/tradingagents/graph/trading_graph.py#L247-L405
+[state-output]: https://github.com/TauricResearch/TradingAgents/blob/9fa1196fffbcfd9de5146d2dd2869df84ab99838/tradingagents/graph/trading_graph.py#L438-L476
+[reporting]: https://github.com/TauricResearch/TradingAgents/blob/9fa1196fffbcfd9de5146d2dd2869df84ab99838/tradingagents/reporting.py#L20-L136
+[research-readme]: https://github.com/TauricResearch/TradingAgents/blob/9fa1196fffbcfd9de5146d2dd2869df84ab99838/README.md#L66-L106
+[backtest]: https://github.com/TauricResearch/TradingAgents/blob/9fa1196fffbcfd9de5146d2dd2869df84ab99838/tradingagents/backtest.py
+[settlement]: https://github.com/TauricResearch/TradingAgents/blob/9fa1196fffbcfd9de5146d2dd2869df84ab99838/tradingagents/memory/settlement.py#L44-L110
 
