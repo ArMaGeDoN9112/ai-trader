@@ -1,5 +1,30 @@
 # Непрерывная обработка новостей
 
+## Где менять бизнес-логику
+
+| Участок | Модуль |
+| --- | --- |
+| Запуск, обработка очереди и передача одобренного предложения исполнителю | [runtime.py](../news_futures/application/runtime.py) |
+| Профиль запуска и фиксация настроек моделей и каталога для редакции | [application/config.py](../news_futures/application/config.py) |
+| Маршрутизация, сопоставление события, снимок и разбор с критиком | [application/workflow.py](../news_futures/application/workflow.py) |
+| Результаты обработки, статус счёта и отчёт CLI | [application/records.py](../news_futures/application/records.py) |
+| Чтение состояния счёта и контракты брокера | [trading/account.py](../news_futures/trading/account.py), [trading/broker.py](../news_futures/trading/broker.py) |
+| Допуск по риску и исполнение в песочнице | [trading/risk.py](../news_futures/trading/risk.py), [trading/executor.py](../news_futures/trading/executor.py) |
+| Намерения, ответы брокера и подтверждённые исполнения | [trading/journal.py](../news_futures/trading/journal.py) |
+
+Граф владеет состоянием анализа редакции. Его идентификатор и снимок данных
+для разбора позволяют возобновить работу с той же контрольной точки. После
+одобрения критика приложение заново проверяет предложение и состояние счёта.
+Исполнитель записывает намерение до отправки заявки. Если ответ потерян,
+сверка читает журнал и состояние брокера. Конфликт активных циклов на одном
+счёте блокирует исполнение. Панель читает эти же записи для трассы решения.
+
+После перехода на структуру с подпакетами используйте прежний `data_dir`.
+Приложение читает существующий архив и контрольные точки. Ссылки профиля на
+прежние пути встроенных настроек моделей и источников разрешаются автоматически.
+
+## Запуск
+
 Выполняйте команды PowerShell из корня репозитория с Python 3.11.
 Приложение запускается командой `python -m news_futures` из этого каталога.
 Для нового окружения выполните:
@@ -48,14 +73,14 @@ UID фьючерсов, значения — ID компаний из катал
 
 По умолчанию используются MarketTwits и РБК, внешняя сессия
 `telegram-login` и настройки моделей из пакета. Чтобы изменить их, скопируйте
-`news_futures/telegram-sources.json` и `news_futures/openrouter-models.json`
+`news_futures/adapters/telegram-sources.json` и `news_futures/agents/openrouter-models.json`
 в `.local/` и добавьте в `runtime.json` поля `"sources": "telegram-sources.json"`
 и `"review": "openrouter-models.json"`. В первом файле добавьте имя
 разрешённого канала без `@` в `channels`. Аккаунт должен быть подписан на канал.
 Во втором замените, например, `critic.model` на точный ID модели OpenRouter
 с поддержкой JSON Schema. Аналитик и критик настраиваются независимо.
 Для Jev и сопоставления событий используются поля `jev` и `matcher` и шаблоны
-`news_futures/jev-model.json` и `news_futures/event-model.json` соответственно.
+`news_futures/agents/jev-model.json` и `news_futures/agents/event-model.json` соответственно.
 При необходимости укажите `session` и `ca_file`. На каждую редакцию создаётся
 снимок моделей и каталога. Изменение модельных файлов применяется со следующей
 редакции. Изменения общей конфигурации и списка каналов требуют перезапуска.
@@ -160,12 +185,12 @@ Telegram продолжает чтение с сохранённого курс�
 
 ```powershell
 $env:OPERATOR_TEST_CHROME = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
-.venv\Scripts\python -m unittest discover -s tests -p test_operator_ui.py -v
+.venv\Scripts\python -m unittest discover -s tests/operator_panel -p test_operator_ui.py -v
 ```
 
 Для нового типа источника реализуйте получение и восстановление курсора в
 адаптере. Преобразуйте входные данные в `Publication` из
-`news_futures.publications`: задайте устойчивые `source` и `external_id`,
+`news_futures.news.publications`: задайте устойчивые `source` и `external_id`,
 ссылку, текст, время публикации и получения с часовым поясом. Для редакции
 передайте `edited_at` и `change="edit"`, для удаления `change="delete"`.
 Сохраняйте пакет через `Archive.save_batch` с положительным монотонным

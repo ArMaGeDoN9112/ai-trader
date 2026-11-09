@@ -27,7 +27,7 @@ Python 3.11+, из корня репозитория:
 доступа вне Git. LangSmith-трассировка для этого сценария отключена.
 
 `--config <JSON>` задаёт отдельные `analyst` и `critic`. Пример по умолчанию —
-`news_futures/openrouter-models.json`. У каждой роли свои `model`, `max_tokens`,
+`news_futures/agents/openrouter-models.json`. У каждой роли свои `model`, `max_tokens`,
 `timeout_ms` и необязательная `temperature` (0–2). Ненужные параметры и ключи
 отклоняются. Начальный ID `openai/gpt-4.1-mini` — пример конфигурации, живое
 подключение в окружении разработки не подтверждено. Используйте точный ID,
@@ -44,7 +44,7 @@ Python 3.11+, из корня репозитория:
 Сохраните контрольный контекст и при необходимости измените его локально:
 
 ```console
-.venv\Scripts\python -c "import json; from pathlib import Path; from news_futures.analysis import control_context; Path('.local/context-03.json').write_text(json.dumps(control_context(), ensure_ascii=False, indent=2), encoding='utf-8')"
+.venv\Scripts\python -c "import json; from pathlib import Path; from news_futures.agents.review import control_context; Path('.local/context-03.json').write_text(json.dumps(control_context(), ensure_ascii=False, indent=2), encoding='utf-8')"
 .venv\Scripts\python -m news_futures analyze --context .local/context-03.json
 ```
 
@@ -107,8 +107,8 @@ Python 3.11+, из корня репозитория:
 фиксированной совместимой интеграции описана в
 [OpenRouter integration evidence](agents/openrouter-compatibility.md).
 
-Живой пункт приёмки остаётся открытым до проверки с действующим ключом.
-После локальной настройки выполните `analyze` в новом
+Живая проверка 2026-11-08 подтвердила ответы обеих ролей на `openai/gpt-4.1-mini`.
+Для повторной проверки выполните `analyze` в новом
 каталоге. У обеих ролей должны сохраниться фактические модели, валидированные
 ответы и метаданные без транспортных/схемных ошибок. Если критик возражает,
 допустим `rejected`: технический доступ не требует одобрения сделки.

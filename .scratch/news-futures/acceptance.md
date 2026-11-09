@@ -84,7 +84,7 @@ New-Item -ItemType Directory $out | Out-Null
 & $p -m news_futures sandbox-diagnostics "$out/mcp-live" --config .local/sandbox-settings.json
 & $p -m news_futures analyze "$out/openrouter-live"
 $env:PYTHONPATH = '.'
-& $p tests/jev_quality.py "$out/jev-quality"
+& $p -m tests.agents.jev_quality "$out/jev-quality"
 ```
 
 Локальные файлы текущего прогона находятся в `.local/acceptance-13/`.

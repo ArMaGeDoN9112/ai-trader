@@ -49,4 +49,5 @@ reason and refusal flag. Invalid outputs are journalled and rejected.
 - [LangGraph StateGraph](https://docs.langchain.com/oss/python/langgraph/graph-api)
 
 The HTTP tests are offline integration evidence, not live provider verification.
-The real-model acceptance check remains pending until local access is configured.
+On 2026-11-08 a separate live run verified structured analyst and critic responses
+from `openai/gpt-4.1-mini`, with the reported provider recorded for both calls.
