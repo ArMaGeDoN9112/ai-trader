@@ -95,7 +95,7 @@ def _fresh(at: datetime, now: datetime, limit: timedelta) -> bool:
     return at.utcoffset() is not None and timedelta(0) <= now - at <= limit
 
 
-def _approval(directory: Path) -> tuple[CompanyProposal, str, datetime, dict[str, Any]]:
+def read_approval(directory: Path) -> tuple[CompanyProposal, str, datetime, dict[str, Any]]:
     try:
         trace = json.loads((directory / 'trace.json').read_bytes())
         if trace['mode'] != 'sandbox' or trace['status'] != 'approved_for_checks' or trace['error'] is not None:
@@ -124,12 +124,10 @@ def _approval(directory: Path) -> tuple[CompanyProposal, str, datetime, dict[str
         raise
     except (OSError, ValueError, KeyError, TypeError, IndexError, OverflowError) as error:
         raise Rejected('invalid_approval_record') from error
-    if proposal.action != 'enter':
-        raise Rejected('entry_proposal_required')
     return proposal, proposal_id, formed_at, critic['input']['context']
 
 
-def _check_publication(
+def check_publication(
     events: EventArchive, publications: Archive, context: dict[str, Any],
     proposal: CompanyProposal, formed_at: datetime,
 ) -> datetime:
@@ -158,7 +156,7 @@ def _check_publication(
     now = utc_now()
     if not _fresh(formed_at, now, MAX_PROPOSAL_AGE):
         raise Rejected('stale_or_future_proposal')
-    if (not _fresh(published, now, MAX_NEWS_AGE)
+    if ((proposal.action == 'enter' and not _fresh(published, now, MAX_NEWS_AGE))
             or any(at.utcoffset() is None for at in (received, edited))
             or not published <= edited <= received <= formed_at):
         raise Rejected('stale_or_unverified_publication_time')
@@ -234,11 +232,13 @@ def _size(
 def reserve_entry(
     events: EventArchive, publications: Archive, directory: Path, *, account_id: str,
     allowed_contracts: Set[str], read_snapshot: Callable[[str, str], object],
-    on_reserve: Callable[[EntryReservation], None] | None = None,
+    on_reserve: Callable[[EntryReservation, str], None] | None = None,
 ) -> Admission:
     """Re-read risk data and reserve an entry. The callback records intent in the same transaction."""
     try:
-        proposal, proposal_id, formed_at, context = _approval(directory)
+        proposal, proposal_id, formed_at, context = read_approval(directory)
+        if proposal.action != 'enter':
+            raise Rejected('entry_proposal_required')
         contract_id = proposal.contract_id
         if contract_id is None or contract_id not in allowed_contracts:
             raise Rejected('contract_not_allowed')
@@ -263,13 +263,13 @@ def reserve_entry(
                 raise Rejected('entry_already_reserved')
             # Keep an edit or deletion from landing between the source check and reservation commit.
             publications.db.execute('BEGIN IMMEDIATE')
-            now = _check_publication(events, publications, context, proposal, formed_at)
+            now = check_publication(events, publications, context, proposal, formed_at)
             reservation = _size(snapshot, context, proposal, proposal_id, now)
             events.db.execute('INSERT INTO entry_reservations VALUES (?, ?, ?)', (
                 account_id, reservation.id, reservation.model_dump_json(),
             ))
             if on_reserve is not None:
-                on_reserve(reservation)
+                on_reserve(reservation, proposal.reason)
         return Admission(reservation=reservation)
     except Rejected as error:
         return Admission(reason=str(error))

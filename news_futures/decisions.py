@@ -137,20 +137,24 @@ def record_entry_reason(archive: EventArchive, record: EntryReason) -> None:
     """Register the original reason once per account and position lifecycle."""
     with archive.db:
         archive.db.execute('BEGIN IMMEDIATE')
-        archive.db.execute('''
-            CREATE TABLE IF NOT EXISTS position_entry_reasons (
-                account_id TEXT NOT NULL, position_id TEXT NOT NULL,
-                contract_id TEXT NOT NULL, reason TEXT NOT NULL,
-                PRIMARY KEY (account_id, position_id)
-            )
-        ''')
-        existing = entry_reason(archive, record.account_id, record.position_id)
-        if existing is None:
-            archive.db.execute('INSERT INTO position_entry_reasons VALUES (?, ?, ?, ?)', (
-                record.account_id, record.position_id, record.contract_id, record.reason,
-            ))
-        elif existing != record:
-            raise ValueError('Причина входа уже зафиксирована для этой позиции')
+        save_entry_reason(archive, record)
+
+
+def save_entry_reason(archive: EventArchive, record: EntryReason) -> None:
+    archive.db.execute('''
+        CREATE TABLE IF NOT EXISTS position_entry_reasons (
+            account_id TEXT NOT NULL, position_id TEXT NOT NULL,
+            contract_id TEXT NOT NULL, reason TEXT NOT NULL,
+            PRIMARY KEY (account_id, position_id)
+        )
+    ''')
+    existing = entry_reason(archive, record.account_id, record.position_id)
+    if existing is None:
+        archive.db.execute('INSERT INTO position_entry_reasons VALUES (?, ?, ?, ?)', (
+            record.account_id, record.position_id, record.contract_id, record.reason,
+        ))
+    elif existing != record:
+        raise ValueError('Причина входа уже зафиксирована для этой позиции')
 
 
 def entry_reason(archive: EventArchive, account_id: str, position_id: str) -> EntryReason | None:

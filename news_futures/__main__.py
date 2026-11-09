@@ -58,6 +58,12 @@ def main() -> int:
     reason_command = commands.add_parser('entry-reason', help='Сохранить исходную причину входа в позицию')
     reason_command.add_argument('record', type=Path)
     trades_command = commands.add_parser('sandbox-trades', help='Показать журнал сделок в песочнице')
+    serve_command = commands.add_parser('serve', help='Непрерывный цикл от новости до решения')
+    serve_command.add_argument('config', type=Path)
+    serve_command.add_argument('--once', action='store_true', help='Получить доступные новости и обработать очередь')
+    status_command = commands.add_parser('runtime-status', help='Состояние рабочего запуска и решения')
+    status_command.add_argument('config', type=Path)
+    status_command.add_argument('--decision')
     trade_command = commands.add_parser('sandbox-trade', help='Вход и сверка выбранного счёта Т-Инвестиций в песочнице')
     trade_command.add_argument('action', choices=('start', 'reconcile', 'close'))
     trade_command.add_argument('--account', required=True)
@@ -72,6 +78,27 @@ def main() -> int:
         command.add_argument('--database', type=Path, default=Path('.local/events.sqlite3'))
     args = parser.parse_args()
     try:
+        if args.command in {'serve', 'runtime-status'}:
+            try:
+                from news_futures.runtime import RuntimeErrorInfo, run_runtime, runtime_report
+            except ImportError:
+                print('Установите зависимости по docs/runtime.md.', file=sys.stderr)
+                return 1
+            try:
+                if args.command == 'runtime-status':
+                    print(json.dumps(runtime_report(args.config, args.decision), ensure_ascii=False, indent=2))
+                    return 0
+                import asyncio
+                return asyncio.run(run_runtime(args.config, args.once))
+            except KeyboardInterrupt:
+                return 130
+            except (RuntimeErrorInfo, CredentialsError) as error:
+                print(f'{error} См. docs/runtime.md.', file=sys.stderr)
+                return 1
+            except Exception as error:
+                print(f'Рабочий цикл: {type(error).__name__}. Проверьте подключение и docs/runtime.md.',
+                      file=sys.stderr)
+                return 1
         if args.command == 'sandbox-diagnostics':
             previous_logging = logging.root.manager.disable
             # MCP may log raw server payloads, including echoed credentials.

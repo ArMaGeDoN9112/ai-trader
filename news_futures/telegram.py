@@ -1,6 +1,7 @@
 """Pull channel differences from application-owned pts, not SDK event acknowledgements."""
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import getpass
@@ -121,12 +122,12 @@ async def watch_channel(transport: Transport, archive: Archive, username: str, o
         await asyncio.sleep(delay)
 
 
-async def process_queue(archive: Archive) -> None:
+async def process_queue(process: Callable[[], Awaitable[None]]) -> None:
     while True:
         try:
-            archive.process_pending()
+            await process()
         except Exception as error:
-            print(json.dumps({'worker': 'control_simulation', 'error': type(error).__name__}),
+            print(json.dumps({'worker': 'publications', 'error': type(error).__name__}),
                   file=sys.stderr, flush=True)
         await asyncio.sleep(1)
 
@@ -262,7 +263,10 @@ async def open_client(path: Path, login: bool) -> Any:
         raise
 
 
-async def run_telegram(config: Path, database: Path, path: Path, once: bool) -> int:
+async def run_telegram(
+    config: Path, database: Path, path: Path, once: bool, *,
+    process: Callable[[], Awaitable[None]] | None = None,
+) -> int:
     channels = configured_channels(config)
     path = session_path(path)
     client = await open_client(path, login=False)
@@ -280,10 +284,15 @@ async def run_telegram(config: Path, database: Path, path: Path, once: bool) -> 
             'pts': state.pts, 'qts': state.qts, 'seq': state.seq, 'date': state.date.isoformat(),
         })
         transport = TelethonTransport(client)
+        async def simulate() -> None:
+            assert archive is not None
+            archive.process_pending()
+
+        consume = process if process is not None else simulate
         if not once:
-            worker = asyncio.create_task(process_queue(archive))
+            worker = asyncio.create_task(process_queue(consume))
         results = await asyncio.gather(*(watch_channel(transport, archive, name, once) for name in channels))
-        archive.process_pending()
+        await consume()
         return 0 if all(results) else 1
     finally:
         if worker:

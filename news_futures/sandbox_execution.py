@@ -13,9 +13,13 @@ from uuid import UUID, uuid5
 from pydantic import ConfigDict, Field, TypeAdapter, ValidationError
 from pydantic.dataclasses import dataclass
 
+from news_futures.decisions import EntryReason, save_entry_reason
 from news_futures.events import EventArchive
 from news_futures.publications import Archive, utc_now
-from news_futures.risk import EntryReservation, Rejected, reserve_entry
+from news_futures.risk import (
+    MAX_RISK_DATA_AGE, EntryReservation, Rejected, RiskSnapshot, _fresh, check_publication,
+    read_approval, reserve_entry,
+)
 
 
 BROKER_DATA = ConfigDict(strict=True, revalidate_instances='always', extra='forbid')
@@ -66,6 +70,23 @@ class TradeState:
 TRADE_STATE = TypeAdapter(TradeState)
 
 
+def reconciled_fills(entry: EntryReservation, state: TradeState) -> tuple[int, dict[str, list[int | str]]] | None:
+    entry_lots = state.entry.lots if state.entry else 0
+    remaining = entry_lots - sum(fill.lots for fill in state.exits)
+    fills = ((state.entry,) if state.entry else ()) + state.exits
+    sign = 1 if entry.side == 'long' else -1
+    if (not 0 <= remaining <= entry_lots <= entry.lots or state.position_lots != sign * remaining
+            or len({fill.order_id for fill in fills}) != len(fills)):
+        return None
+    return remaining, {fill.order_id: [fill.lots, str(fill.price_points.normalize())] for fill in fills}
+
+
+def verified_protection(entry: EntryReservation, lots: int, active: tuple[Protection, ...]) -> set[tuple[str, Decimal]]:
+    expected_side = 'sell' if entry.side == 'long' else 'buy'
+    return {(stop.kind, stop.trigger_points) for stop in active
+            if stop.lots == lots and stop.side == expected_side and stop.terms_confirmed}
+
+
 class SubmissionRejected(ValueError):
     """The broker definitively refused a submission before creating an order."""
 
@@ -97,7 +118,9 @@ class SandboxBroker(Protocol):
     def close(self, entry: EntryReservation, operation_id: str, lots: int) -> str | None: ...
 
 
-def trade_journal(events: EventArchive) -> list[dict[str, Any]]:
+def trade_journal(
+    events: EventArchive, *, cycle_id: str | None = None, active_account: str | None = None,
+) -> list[dict[str, Any]]:
     with events.db:
         if events.db.execute("SELECT 1 FROM sqlite_master WHERE name = 'sandbox_cycles'").fetchone() is None:
             return []
@@ -111,7 +134,12 @@ def trade_journal(events: EventArchive) -> list[dict[str, Any]]:
                      (row['id'],),
                  )
              ]}
-            for row in events.db.execute('SELECT * FROM sandbox_cycles ORDER BY rowid')
+            for row in events.db.execute("""
+                SELECT * FROM sandbox_cycles
+                WHERE (? IS NULL OR id = ?)
+                  AND (? IS NULL OR (account_id = ? AND status NOT IN ('closed', 'no_fill')))
+                ORDER BY rowid
+            """, (cycle_id, cycle_id, active_account, active_account))
         ]
 
 
@@ -160,7 +188,7 @@ class SandboxExecutor:
         if self.broker.source == 'sandbox' and allow_independent_stops is not True:
             return {'status': 'rejected', 'reason': 'independent_stops_require_opt_in'}
 
-        def record(entry: EntryReservation) -> None:
+        def record(entry: EntryReservation, reason: str) -> None:
             if self.db.execute(
                 'SELECT 1 FROM sandbox_cycles WHERE account_id = ? AND proposal_id = ?',
                 (entry.account_id, entry.proposal_id),
@@ -171,6 +199,9 @@ class SandboxExecutor:
                 VALUES (?, ?, ?, ?, ?, ?, 'reserved')
             """, (entry.id, entry.account_id, entry.proposal_id, entry.model_dump_json(),
                   str(approval.resolve()), self.broker.source))
+            save_entry_reason(self.events, EntryReason(
+                account_id=entry.account_id, position_id=entry.id, contract_id=entry.contract_id, reason=reason,
+            ))
 
         with self._exclusive() as acquired:
             if not acquired:
@@ -187,7 +218,8 @@ class SandboxExecutor:
             return self._advance(entry, operations, close=False)
 
     def reconcile(self, *, close: bool = False, contract_id: str | None = None,
-                  cycle_id: str | None = None) -> dict[str, str]:
+                  cycle_id: str | None = None,
+                  review: tuple[Archive, Path] | None = None) -> dict[str, str]:
         with self._exclusive() as acquired:
             if not acquired:
                 return {'status': 'blocked', 'reason': 'executor_busy'}
@@ -213,10 +245,46 @@ class SandboxExecutor:
             }
             if 'enter' not in operations:
                 return self._finish(entry, 'no_fill', 'entry_never_submitted')
-            if close:
+            if review is not None:
+                try:
+                    self._record_reviewed_close(entry, *review)
+                except Rejected as error:
+                    return {'status': 'rejected', 'reason': str(error), 'cycle_id': entry.id}
+                close = True
+            elif close:
                 with self.db:
                     self.db.execute('UPDATE sandbox_cycles SET close_requested = 1 WHERE id = ?', (entry.id,))
             return self._advance(entry, operations, close=close or bool(row['close_requested']))
+
+    def _record_reviewed_close(self, entry: EntryReservation, publications: Archive, approval: Path) -> None:
+        proposal, proposal_id, formed_at, context = read_approval(approval)
+        position = context.get('position')
+        if (proposal.action != 'close' or proposal.contract_id != entry.contract_id or not position
+                or position['id'] != entry.id or position['side'] != entry.side
+                or position['contract_id'] != entry.contract_id
+                or context['account']['id'] != entry.account_id):
+            raise Rejected('close_position_mismatch')
+        try:
+            snapshot = RiskSnapshot.model_validate(self.broker.read_risk(entry.account_id, entry.contract_id))
+        except Exception as error:
+            raise Rejected('risk_data_unavailable_or_invalid') from error
+        contract = snapshot.contract
+        with publications.db, self.db:
+            self.db.execute('BEGIN IMMEDIATE')
+            publications.db.execute('BEGIN IMMEDIATE')
+            now = check_publication(self.events, publications, context, proposal, formed_at)
+            if (snapshot.account_id != entry.account_id or contract.contract_id != entry.contract_id
+                    or contract.company_id != proposal.company_id or snapshot.execution_uncertain
+                    or not snapshot.has_position
+                    or not any(row['contract_id'] == entry.contract_id and row['share_id'] == contract.share_id
+                               for row in context['candidates'])
+                    or not (contract.limit_sell_available if entry.side == 'long' else contract.limit_buy_available)
+                    or contract.last_trade_at <= now
+                    or not all(_fresh(at, now, MAX_RISK_DATA_AGE)
+                               for at in (snapshot.account_observed_at, contract.observed_at, contract.quote_at))):
+                raise Rejected('close_market_or_position_unconfirmed')
+            self.db.execute('UPDATE sandbox_cycles SET close_requested = 1 WHERE id = ?', (entry.id,))
+            self._log(entry, 'reviewed_close', proposal_id=proposal_id, approval=str(approval.resolve()))
 
     def _log(self, entry: EntryReservation, kind: str, **details: Any) -> None:
         with self.db:
@@ -296,6 +364,12 @@ class SandboxExecutor:
             native_exit = any(stop.status == 'executed' for stop in state.protection)
             if not state.settled and not native_exit and (operations.keys() & {'sl', 'tp'}) - receipts.keys():
                 return self._finish(entry, 'blocked', 'protection_submission_unconfirmed')
+            fills = reconciled_fills(entry, state)
+            if close and active and not native_exit and (
+                not state.settled or state.other_exposure or state.active_orders
+                or fills is None or any(fills[1].get(order_id) != fill for order_id, fill in confirmed.items())
+            ):
+                return self._finish(entry, 'blocked', 'unresolved_broker_state')
             if active and (native_exit or close) and not cancel_attempted:
                 ids = tuple(stop.id for stop in active)
                 cancel_attempted = True
@@ -310,30 +384,24 @@ class SandboxExecutor:
                 continue
             if not state.settled or state.active_orders or state.other_exposure:
                 return self._finish(entry, 'blocked', 'unresolved_broker_state')
-            sign = 1 if entry.side == 'long' else -1
-            entry_lots = state.entry.lots if state.entry else 0
-            remaining = entry_lots - sum(fill.lots for fill in state.exits)
-            fills = ((state.entry,) if state.entry else ()) + state.exits
-            if (not 0 <= remaining <= entry_lots <= entry.lots or state.position_lots != sign * remaining
-                    or len({fill.order_id for fill in fills}) != len(fills)):
+            if fills is None:
                 return self._finish(entry, 'blocked', 'fills_and_position_disagree')
-            current = {fill.order_id: [fill.lots, str(fill.price_points.normalize())] for fill in fills}
+            remaining, current = fills
             if any(current.get(order_id) != fill for order_id, fill in confirmed.items()):
                 return self._finish(entry, 'blocked', 'confirmed_fills_changed')
             if current != confirmed:
                 self._log(entry, 'confirmed_fills', fills=current)
                 confirmed = current
-            expected_side = 'sell' if sign == 1 else 'buy'
             expected = {('sl', entry.stop_loss), ('tp', entry.take_profit)}
             if not remaining and not active:
-                return self._finish(entry, 'closed' if entry_lots else 'no_fill')
+                return self._finish(entry, 'closed' if state.entry else 'no_fill')
+            sign = 1 if entry.side == 'long' else -1
             safe_fill = (state.entry is not None
                          and sign * state.entry.price_points <= sign * entry.entry_price
                          and min(entry.stop_loss, entry.take_profit) < state.entry.price_points
                          < max(entry.stop_loss, entry.take_profit))
             if remaining and not close and safe_fill and 'cancel_protection' not in operations:
-                verified = {(stop.kind, stop.trigger_points) for stop in active
-                            if stop.lots == remaining and stop.side == expected_side and stop.terms_confirmed}
+                verified = verified_protection(entry, remaining, active)
                 if len(active) == 2 and verified == expected:
                     return self._finish(entry, 'protected')
                 if not state.exits and not operations.keys() & {'sl', 'tp', 'protect'}:

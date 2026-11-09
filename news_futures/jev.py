@@ -61,6 +61,7 @@ class CatalogRow(Input):
     company_id: Nonempty
     company_name: Nonempty
     ticker: Nonempty
+    share_id: Nonempty | None = None
 
 
 class Choice(Input):
@@ -117,17 +118,20 @@ class RoutingState(TypedDict):
     error: str | None
 
 
-def load_catalog(content: bytes) -> dict[str, Company]:
+def catalog_rows(content: bytes) -> list[CatalogRow]:
     report = json.loads(content)
     try:
         catalog = report['operations']['catalog']
         if catalog['availability'] != 'available':
             raise ValueError('catalog_unavailable')
-        rows = TypeAdapter(list[CatalogRow]).validate_python(catalog['data'])
+        return TypeAdapter(list[CatalogRow]).validate_python(catalog['data'])
     except (KeyError, TypeError) as error:
         raise ValueError('invalid_catalog_report') from error
+
+
+def load_catalog(content: bytes) -> dict[str, Company]:
     companies: dict[str, dict[str, Any]] = {}
-    for row in rows:
+    for row in catalog_rows(content):
         company = companies.setdefault(row.company_id, {'names': set(), 'tickers': set()})
         company['names'].add(row.company_name)
         company['tickers'].add(row.ticker)

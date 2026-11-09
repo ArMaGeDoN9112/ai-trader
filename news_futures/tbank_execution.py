@@ -26,6 +26,14 @@ ORDER_STATUS = 'EXECUTION_REPORT_STATUS_'
 STOP_STATUS = 'STOP_ORDER_STATUS_'
 STOP_TYPES = {'sl': 'STOP_ORDER_TYPE_STOP_LOSS', 'tp': 'STOP_ORDER_TYPE_TAKE_PROFIT'}
 STOP_VALIDATION_ERRORS = {'30035', '30036', '30037', '30038', '30104', '30105'}
+READ_METHODS = {
+    ('SandboxService', 'GetSandboxAccounts'), ('SandboxService', 'GetSandboxPositions'),
+    ('SandboxService', 'GetSandboxPortfolio'), ('SandboxService', 'GetSandboxWithdrawLimits'),
+    ('SandboxService', 'GetSandboxOrders'), ('SandboxService', 'GetSandboxOrderState'),
+    ('SandboxService', 'GetSandboxStopOrders'), ('InstrumentsService', 'FutureBy'),
+    ('MarketDataService', 'GetLastPrices'), ('MarketDataService', 'GetTradingStatus'),
+}
+READ_URLS = {f'{SANDBOX_REST}{service}/{method}' for service, method in READ_METHODS}
 
 
 class Amount(BaseModel):
@@ -65,7 +73,7 @@ def rows(payload: dict[str, Any], field: str) -> list[dict[str, Any]]:
     return value
 
 
-class TBankSandbox:
+class TBankReader:
     source: Literal['sandbox'] = 'sandbox'
 
     def __init__(self, client: httpx.Client, account_id: str, contract_id: str, company_id: str | None):
@@ -76,6 +84,12 @@ class TBankSandbox:
 
     def call(self, method: str, *, service: str = 'SandboxService', account: bool = True,
              **args: Any) -> dict[str, Any]:
+        if (service, method) not in READ_METHODS:
+            raise ValueError('sandbox_read_method_required')
+        return self._request(method, service=service, account=account, **args)
+
+    def _request(self, method: str, *, service: str = 'SandboxService', account: bool = True,
+                 **args: Any) -> dict[str, Any]:
         if account:
             args['accountId'] = self.account_id
         response = self.client.post(f'{SANDBOX_REST}{service}/{method}', json=args)
@@ -252,9 +266,10 @@ class TBankSandbox:
                           other_exposure=foreign or foreign_position,
                           cancellable_orders=tuple(sorted(pending & active_ids)))
 
+class TBankSandbox(TBankReader):
     def enter(self, entry: EntryReservation, operation_id: str) -> str:
         side = 'BUY' if entry.side == 'long' else 'SELL'
-        response = self.call('PostSandboxOrder', orderId=str(UUID(operation_id)), instrumentId=entry.contract_id,
+        response = self._request('PostSandboxOrder', orderId=str(UUID(operation_id)), instrumentId=entry.contract_id,
                              quantity=str(entry.lots), direction='ORDER_DIRECTION_' + side,
                              orderType='ORDER_TYPE_LIMIT', priceType=POINTS, price=quotation(entry.entry_price),
                              timeInForce='TIME_IN_FORCE_FILL_AND_KILL', confirmMarginTrade=True)
@@ -266,7 +281,7 @@ class TBankSandbox:
         price = entry.stop_loss if kind == 'sl' else entry.take_profit
         options: dict[str, Any] = {'takeProfitType': 'TAKE_PROFIT_TYPE_REGULAR'} if kind == 'tp' else {}
         try:
-            response = self.call('PostSandboxStopOrder', orderId=str(UUID(operation_id)), instrumentId=entry.contract_id,
+            response = self._request('PostSandboxStopOrder', orderId=str(UUID(operation_id)), instrumentId=entry.contract_id,
                                  quantity=str(lots), direction='STOP_ORDER_DIRECTION_' + side,
                                  stopOrderType=STOP_TYPES[kind], stopPrice=quotation(price), priceType=POINTS,
                                  expirationType='STOP_ORDER_EXPIRATION_TYPE_GOOD_TILL_CANCEL',
@@ -290,7 +305,7 @@ class TBankSandbox:
         for broker_id in ids:
             args: dict[str, Any] = {id_field: broker_id, **options}
             try:
-                self.call(method, **args)
+                self._request(method, **args)
             except (httpx.HTTPError, ValueError):
                 uncertain = True
         if uncertain:
@@ -298,10 +313,22 @@ class TBankSandbox:
 
     def close(self, entry: EntryReservation, operation_id: str, lots: int) -> str:
         side = 'SELL' if entry.side == 'long' else 'BUY'
-        response = self.call('PostSandboxOrder', orderId=str(UUID(operation_id)), instrumentId=entry.contract_id,
+        response = self._request('PostSandboxOrder', orderId=str(UUID(operation_id)), instrumentId=entry.contract_id,
                              quantity=str(lots), direction='ORDER_DIRECTION_' + side,
                              orderType='ORDER_TYPE_MARKET', priceType=POINTS, confirmMarginTrade=True)
         return identifier(response['orderId'])
+
+
+def restrict_to_reads(request: httpx.Request) -> None:
+    if request.method != 'POST' or str(request.url) not in READ_URLS:
+        raise ValueError('sandbox_read_method_required')
+
+
+def sandbox_client(ca_file: Path | None, *, read_only: bool = False) -> httpx.Client:
+    tls = ssl.create_default_context(cafile=str(ca_file)) if ca_file else True
+    headers = {'Authorization': f"Bearer {load_token('sandbox', 'token')}"}
+    return httpx.Client(verify=tls, headers=headers, timeout=8, trust_env=False, follow_redirects=False,
+                        event_hooks={'request': [restrict_to_reads]} if read_only else None)
 
 
 def run_sandbox_trade(
@@ -309,9 +336,7 @@ def run_sandbox_trade(
     ca_file: Path | None, approval: Path | None, publications: Path, close: bool,
     allow_independent_stops: bool,
 ) -> dict[str, str]:
-    tls = ssl.create_default_context(cafile=str(ca_file)) if ca_file else True
-    headers = {'Authorization': f"Bearer {load_token('sandbox', 'token')}"}
-    with httpx.Client(verify=tls, headers=headers, timeout=8, trust_env=False, follow_redirects=False) as client:
+    with sandbox_client(ca_file) as client:
         broker = TBankSandbox(client, account_id, contract_id, company_id)
         with EventArchive(database) as events:
             executor = SandboxExecutor(events, broker)
