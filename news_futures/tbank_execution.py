@@ -15,7 +15,9 @@ from news_futures.credentials import load_token
 from news_futures.events import EventArchive
 from news_futures.publications import Archive, utc_now
 from news_futures.risk import EntryReservation, RiskSnapshot
-from news_futures.sandbox_execution import Fill, Protection, SandboxExecutor, SubmissionRejected, TradeState
+from news_futures.sandbox_execution import (
+    Fill, Protection, SandboxExecutor, SubmissionRejected, TradeState, close_requests,
+)
 
 
 SANDBOX_REST = 'https://sandbox-invest-public-api.tbank.ru/rest/tinkoff.public.invest.api.contract.v1.'
@@ -71,9 +73,6 @@ class TBankSandbox:
         self.account_id = account_id
         self.contract_id = contract_id
         self.company_id = company_id
-        accounts = rows(self.call('GetSandboxAccounts', service='SandboxService', account=False), 'accounts')
-        if not any(item['id'] == account_id and item['status'] == 'ACCOUNT_STATUS_OPEN' for item in accounts):
-            raise ValueError('open_sandbox_account_required')
 
     def call(self, method: str, *, service: str = 'SandboxService', account: bool = True,
              **args: Any) -> dict[str, Any]:
@@ -103,9 +102,15 @@ class TBankSandbox:
                 foreign |= integer(position['blocked']) != 0
         return lots, foreign
 
+    def require_open_account(self) -> None:
+        accounts = rows(self.call('GetSandboxAccounts', account=False), 'accounts')
+        if not any(item['id'] == self.account_id and item['status'] == 'ACCOUNT_STATUS_OPEN' for item in accounts):
+            raise ValueError('open_sandbox_account_required')
+
     def read_risk(self, account_id: str, contract_id: str) -> RiskSnapshot:
         if self.company_id is None or (account_id, contract_id) != (self.account_id, self.contract_id):
             raise ValueError('sandbox_selection_mismatch')
+        self.require_open_account()
         future = self.call('FutureBy', service='InstrumentsService', account=False,
                            id=contract_id, idType='INSTRUMENT_ID_TYPE_UID')['instrument']
         tick = amount(future['minPriceIncrement'])
@@ -156,26 +161,31 @@ class TBankSandbox:
             },
         })
 
-    def order_fill(self, order_id: str, *, request: bool, side: str) -> tuple[bool, Fill | None]:
+    def read_order(self, order_id: str, *, request: bool, side: str,
+                   receipt: str | None = None) -> tuple[bool, Fill | None, str | None]:
         if request:
             order_id = str(UUID(order_id))
         try:
             row = self.call('GetSandboxOrderState', orderId=order_id, priceType=POINTS,
                             orderIdType='ORDER_ID_TYPE_REQUEST' if request else 'ORDER_ID_TYPE_EXCHANGE')
         except httpx.HTTPError:
-            return False, None
+            return False, None, None
+        broker_id = identifier(row['orderId'])
+        echoed_key = row.get('orderRequestId')
         if (row['instrumentUid'] != self.contract_id or row['direction'] != 'ORDER_DIRECTION_' + side
-                or (row.get('orderRequestId') not in (None, '', order_id) if request else row['orderId'] != order_id)):
+                or (echoed_key not in (None, '', order_id) if request else broker_id != order_id)
+                or (receipt is not None and receipt != broker_id)):
             raise ValueError('order_identity_mismatch')
         lots = integer(row['lotsExecuted'])
         status = row['executionReportStatus']
-        if status not in {ORDER_STATUS + 'FILL', ORDER_STATUS + 'CANCELLED', ORDER_STATUS + 'REJECTED'}:
-            return False, None
-        if not 0 <= lots <= integer(row['lotsRequested']) or (status == ORDER_STATUS + 'FILL' and not lots):
+        requested = integer(row['lotsRequested'])
+        if not 0 <= lots <= requested or (status == ORDER_STATUS + 'FILL' and not lots):
             raise ValueError('invalid_filled_lots')
-        if not lots:
-            return True, None
-        return True, Fill(identifier(row['orderId']), lots, amount(row['averagePositionPrice']))
+        fill = Fill(broker_id, lots, amount(row['averagePositionPrice'])) if lots else None
+        terminal = status in {ORDER_STATUS + 'FILL', ORDER_STATUS + 'CANCELLED', ORDER_STATUS + 'REJECTED'}
+        owned = not request or echoed_key == order_id or receipt == broker_id
+        pending_id = broker_id if owned and status in {ORDER_STATUS + 'NEW', ORDER_STATUS + 'PARTIALLYFILL'} else None
+        return terminal, fill, pending_id
 
     def read_trade(self, entry: EntryReservation, operations: dict[str, str],
                    receipts: dict[str, str | None]) -> TradeState:
@@ -219,22 +229,28 @@ class TBankSandbox:
                 else:
                     children.append(child)
         settled &= seen == set(stop_ids)
-        known_entry, fill = self.order_fill(operations['enter'], request=True, side=entry_side)
+        known_entry, fill, pending_entry = self.read_order(operations['enter'], request=True, side=entry_side,
+                                                           receipt=receipts.get('enter'))
         settled &= known_entry
+        pending = {pending_entry} if pending_entry else set()
         exits = []
-        requests = [(child, False) for child in children]
-        if 'close' in operations:
-            requests.append((operations['close'], True))
-        for order_id, request in requests:
-            known, exit_fill = self.order_fill(order_id, request=request, side=exit_side)
+        requests: list[tuple[str, bool, str | None]] = [(child, False, None) for child in children]
+        requests.extend((key, True, receipts.get(action)) for action, key in close_requests(operations))
+        for order_id, request, receipt in requests:
+            known, exit_fill, pending_id = self.read_order(order_id, request=request, side=exit_side, receipt=receipt)
             settled &= known
             if exit_fill is not None:
                 exits.append(exit_fill)
+            # A market close has already passed the stop and ordinary order barrier. Let it settle.
+            if not request and pending_id is not None:
+                pending.add(pending_id)
         ordinary = rows(self.call('GetSandboxOrders'), 'orders')
+        active_ids = {identifier(order['orderId']) for order in ordinary}
         lots, foreign_position = self.positions()
         return TradeState(settled=settled, position_lots=lots, entry=fill, exits=tuple(exits),
                           protection=tuple(protection), active_orders=bool(ordinary),
-                          other_exposure=foreign or foreign_position)
+                          other_exposure=foreign or foreign_position,
+                          cancellable_orders=tuple(sorted(pending & active_ids)))
 
     def enter(self, entry: EntryReservation, operation_id: str) -> str:
         side = 'BUY' if entry.side == 'long' else 'SELL'
@@ -264,11 +280,18 @@ class TBankSandbox:
         return identifier(response['stopOrderId'])
 
     def cancel_protection(self, entry: EntryReservation, operation_id: str, ids: tuple[str, ...]) -> None:
+        self.cancel_all('CancelSandboxStopOrder', 'stopOrderId', ids)
+
+    def cancel_orders(self, entry: EntryReservation, operation_id: str, ids: tuple[str, ...]) -> None:
+        self.cancel_all('CancelSandboxOrder', 'orderId', ids, orderIdType='ORDER_ID_TYPE_EXCHANGE')
+
+    def cancel_all(self, method: str, id_field: str, ids: tuple[str, ...], **options: str) -> None:
         uncertain = False
         for broker_id in ids:
+            args: dict[str, Any] = {id_field: broker_id, **options}
             try:
-                self.call('CancelSandboxStopOrder', stopOrderId=broker_id)
-            except httpx.HTTPError:
+                self.call(method, **args)
+            except (httpx.HTTPError, ValueError):
                 uncertain = True
         if uncertain:
             raise ValueError('cancellation_unconfirmed')
@@ -293,7 +316,10 @@ def run_sandbox_trade(
         with EventArchive(database) as events:
             executor = SandboxExecutor(events, broker)
             if approval is None:
-                return executor.reconcile(close=close, contract_id=contract_id)
+                result = executor.reconcile(close=close, contract_id=contract_id)
+                if result['status'] == 'idle':
+                    broker.require_open_account()
+                return result
             archive = Archive(publications)
             with closing(archive.db):
                 return executor.start(archive, approval, allowed_contracts={contract_id},

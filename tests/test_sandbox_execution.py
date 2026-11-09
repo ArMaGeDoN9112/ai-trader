@@ -1,8 +1,11 @@
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
+from threading import Event
 from typing import Literal
+from unittest.mock import patch
 
 import test_risk
 
@@ -84,6 +87,9 @@ class ControlBroker:
             raise TimeoutError
         self.state = replace(self.state, position_lots=0, exits=(Fill('exit-order', lots, Decimal('303')),))
         return 'exit-order'
+
+    def cancel_orders(self, entry: EntryReservation, operation_id: str, ids: tuple[str, ...]) -> None:
+        raise AssertionError('the control broker exposes no cancellable ordinary orders')
 
 
 class SandboxExecutionTest(test_risk.RiskFixture):
@@ -187,3 +193,51 @@ class SandboxExecutionTest(test_risk.RiskFixture):
         object.__setattr__(self.broker.state.protection[0], 'status', 'ACTIVE')
         self.assertEqual(self.reconcile(close=True)['reason'], 'invalid_broker_state')
         self.assertEqual(self.broker.calls, ['enter', 'sl', 'tp'])
+
+    def test_parallel_delivery_has_only_one_owner_and_replay_cannot_reenter(self) -> None:
+        approval = self.approved()
+        submitting = Event()
+        resume = Event()
+        enter = self.broker.enter
+
+        def pending(entry: EntryReservation, operation_id: str) -> str | None:
+            submitting.set()
+            if not resume.wait(timeout=5):
+                raise TimeoutError
+            return enter(entry, operation_id)
+
+        with patch.object(self.broker, 'enter', pending), ThreadPoolExecutor(1) as pool:
+            first = pool.submit(self.start, approval)
+            try:
+                self.assertTrue(submitting.wait(timeout=5))
+                self.assertEqual(self.start(approval)['reason'], 'executor_busy')
+                self.assertEqual(self.reconcile(close=True)['reason'], 'executor_busy')
+            finally:
+                resume.set()
+            self.assertEqual(first.result()['status'], 'protected')
+        self.assertEqual(self.reconcile(close=True)['status'], 'closed')
+        self.assertEqual(self.start(approval)['reason'], 'proposal_already_reserved')
+        self.assertEqual(self.broker.calls.count('enter'), 1)
+
+    def test_unavailable_read_persists_block_and_close_request_until_broker_recovers(self) -> None:
+        approval = self.approved()
+        self.assertEqual(self.start(approval)['status'], 'protected')
+        another_approval = self.approved(reason='A new approved proposal.')
+        with patch.object(self.broker, 'read_trade', side_effect=TimeoutError):
+            self.assertEqual(self.reconcile(close=True)['reason'], 'broker_read_unavailable')
+            self.assertEqual(self.start(another_approval)['reason'], 'entry_already_reserved')
+            with EventArchive(self.events_db) as events:
+                cycle, = trade_journal(events)
+            self.assertEqual((cycle['status'], cycle['reason']), ('blocked', 'broker_read_unavailable'))
+            self.assertEqual(self.broker.calls, ['enter', 'sl', 'tp'])
+        self.assertEqual(self.reconcile()['status'], 'closed')
+
+    def test_close_for_another_cycle_does_not_touch_current_protection(self) -> None:
+        result = self.start(self.approved())
+        self.assertEqual(result['status'], 'protected')
+        with EventArchive(self.events_db) as events:
+            executor = SandboxExecutor(events, self.broker)
+            self.assertEqual(executor.reconcile(close=True, cycle_id='old-cycle')['reason'],
+                             'sandbox_cycle_mismatch')
+            self.assertEqual(self.broker.calls, ['enter', 'sl', 'tp'])
+            self.assertEqual(executor.reconcile(close=True, cycle_id=result['cycle_id'])['status'], 'closed')

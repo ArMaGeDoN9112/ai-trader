@@ -50,6 +50,7 @@ class TradeState:
     requests and activated stop children. An absent result alone is insufficient.
     Position is signed in lots. Fills are per exchange order, with average prices.
     Foreign positions, orders and stops are reported as other exposure.
+    Cancellable orders are active exchange IDs confirmed to belong to this cycle.
     """
 
     settled: bool
@@ -59,6 +60,7 @@ class TradeState:
     protection: tuple[Protection, ...]
     active_orders: bool
     other_exposure: bool
+    cancellable_orders: tuple[Identifier, ...] = ()
 
 
 TRADE_STATE = TypeAdapter(TradeState)
@@ -91,6 +93,7 @@ class SandboxBroker(Protocol):
         ...
 
     def cancel_protection(self, entry: EntryReservation, operation_id: str, ids: tuple[str, ...]) -> None: ...
+    def cancel_orders(self, entry: EntryReservation, operation_id: str, ids: tuple[str, ...]) -> None: ...
     def close(self, entry: EntryReservation, operation_id: str, lots: int) -> str | None: ...
 
 
@@ -110,6 +113,10 @@ def trade_journal(events: EventArchive) -> list[dict[str, Any]]:
              ]}
             for row in events.db.execute('SELECT * FROM sandbox_cycles ORDER BY rowid')
         ]
+
+
+def close_requests(operations: dict[str, str]) -> list[tuple[str, str]]:
+    return [(action, key) for action, key in operations.items() if action.partition(':')[0] == 'close']
 
 
 class SandboxExecutor:
@@ -179,7 +186,8 @@ class SandboxExecutor:
             self._send(entry, operations, 'enter', lambda key: self.broker.enter(entry, key))
             return self._advance(entry, operations, close=False)
 
-    def reconcile(self, *, close: bool = False, contract_id: str | None = None) -> dict[str, str]:
+    def reconcile(self, *, close: bool = False, contract_id: str | None = None,
+                  cycle_id: str | None = None) -> dict[str, str]:
         with self._exclusive() as acquired:
             if not acquired:
                 return {'status': 'blocked', 'reason': 'executor_busy'}
@@ -188,6 +196,8 @@ class SandboxExecutor:
             """, (self.broker.account_id,)).fetchone()
             if row is None:
                 return {'status': 'idle', 'reason': ''}
+            if cycle_id is not None and row['id'] != cycle_id:
+                return {'status': 'blocked', 'reason': 'sandbox_cycle_mismatch'}
             if row['source'] != self.broker.source:
                 return {'status': 'blocked', 'reason': 'broker_source_mismatch'}
             entry = EntryReservation.model_validate_json(row['terms'])
@@ -196,7 +206,8 @@ class SandboxExecutor:
             operations = {
                 details['action']: details['operation_id']
                 for event in self.db.execute(
-                    "SELECT details FROM sandbox_journal WHERE cycle_id = ? AND kind = 'intent'", (entry.id,),
+                    "SELECT details FROM sandbox_journal WHERE cycle_id = ? AND kind = 'intent' ORDER BY seq",
+                    (entry.id,),
                 )
                 for details in (json.loads(event['details']),)
             }
@@ -216,7 +227,7 @@ class SandboxExecutor:
         self, entry: EntryReservation, operations: dict[str, str], action: str,
         submit: Callable[[str], str | None], **terms: Any,
     ) -> None:
-        if action in operations and action != 'cancel_protection':
+        if action in operations and action not in ('cancel_protection', 'cancel_orders'):
             raise ValueError('operation_already_attempted')
         key = uuid5(UUID(entry.id), action).hex
         self._log(entry, 'intent', action=action, operation_id=key, **terms)
@@ -247,12 +258,24 @@ class SandboxExecutor:
             WHERE cycle_id = ? AND kind = 'confirmed_fills' ORDER BY seq DESC LIMIT 1
         """, (entry.id,)).fetchone()
         confirmed = json.loads(previous['details'])['fills'] if previous else {}
+        closes = close_requests(operations)
+        close_lots = None
+        if closes:
+            last_close = self.db.execute("""
+                SELECT details FROM sandbox_journal WHERE cycle_id = ? AND kind = 'intent'
+                AND json_extract(details, '$.operation_id') = ?
+            """, (entry.id, closes[-1][1])).fetchone()
+            close_lots = json.loads(last_close['details'])['lots']
+        close_count = len(closes)
+        close |= close_count > 0 or 'cancel_protection' in operations
+        close_attempted = False
         cancel_attempted = False
+        cancel_orders_attempted = False
         while True:
             receipts = {}
             for row in self.db.execute("""
                 SELECT kind, details FROM sandbox_journal
-                WHERE cycle_id = ? AND kind IN ('response_received', 'response_rejected')
+                WHERE cycle_id = ? AND kind IN ('response_received', 'response_rejected') ORDER BY seq
             """, (entry.id,)):
                 details = json.loads(row['details'])
                 if row['kind'] == 'response_rejected' or details.get('broker_id'):
@@ -271,11 +294,19 @@ class SandboxExecutor:
                     or len({stop.id for stop in state.protection}) != len(state.protection)):
                 return self._finish(entry, 'blocked', 'protection_ownership_unconfirmed')
             native_exit = any(stop.status == 'executed' for stop in state.protection)
+            if not state.settled and not native_exit and (operations.keys() & {'sl', 'tp'}) - receipts.keys():
+                return self._finish(entry, 'blocked', 'protection_submission_unconfirmed')
             if active and (native_exit or close) and not cancel_attempted:
                 ids = tuple(stop.id for stop in active)
                 cancel_attempted = True
                 self._send(entry, operations, 'cancel_protection',
                            lambda key: self.broker.cancel_protection(entry, key, ids), stop_ids=ids)
+                continue
+            if state.active_orders and state.cancellable_orders and not active and not cancel_orders_attempted:
+                order_ids = state.cancellable_orders
+                cancel_orders_attempted = True
+                self._send(entry, operations, 'cancel_orders',
+                           lambda key: self.broker.cancel_orders(entry, key, order_ids), order_ids=order_ids)
                 continue
             if not state.settled or state.active_orders or state.other_exposure:
                 return self._finish(entry, 'blocked', 'unresolved_broker_state')
@@ -319,8 +350,14 @@ class SandboxExecutor:
                 cancel_attempted = True
                 self._send(entry, operations, 'cancel_protection',
                            lambda key: self.broker.cancel_protection(entry, key, ids), stop_ids=ids)
-            elif active or 'close' in operations:
+            elif active or (close_lots is not None and remaining >= close_lots):
                 return self._finish(entry, 'blocked', 'exit_or_cancellation_unconfirmed')
+            elif close_attempted:
+                return self._finish(entry, 'blocked', 'close_residual_pending')
             else:
-                self._send(entry, operations, 'close', lambda key: self.broker.close(entry, key, remaining),
+                action = f'close:{close_count + 1}' if close_count else 'close'
+                close_attempted = True
+                close_lots = remaining
+                self._send(entry, operations, action, lambda key: self.broker.close(entry, key, remaining),
                            lots=remaining, reason='control_exit' if close else 'protection_unconfirmed')
+                close = True
