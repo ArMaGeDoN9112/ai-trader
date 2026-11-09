@@ -20,33 +20,82 @@ from news_futures.common.artifacts import replace_json
 from news_futures.application.workflow import Shutdown, analyze_news
 from news_futures.news.publications import Archive, utc_now
 from news_futures.application.config import RuntimeSettings, cycle_inputs, load_settings
+from news_futures.application.operator_state import OperatorState
 from news_futures.common.errors import RuntimeErrorInfo, error_code
 from news_futures.application.records import pending_revisions, review_path, runtime_tables, save_broker_status, save_result
 from news_futures.trading.executor import AUTONOMOUS_PROTECTION_UNAVAILABLE, SandboxExecutor
 from news_futures.adapters.tbank.rest import TBankReader, TBankSandbox, sandbox_client
 from news_futures.adapters.telegram import configured_channels, default_session, run_telegram, session_path
 from news_futures.trading.journal import trade_journal
+from news_futures.trading.terms import CloseIntent
 
 
 class Runtime:
     def __init__(
         self, settings: RuntimeSettings, reader: Callable[[str], BrokerReader],
         broker: Callable[[str], SandboxBroker] | None, *, run_id: str | None = None,
+        on_controls: Callable[..., None] | None = None,
     ):
         self.settings = settings
         self.account = BrokerAccount(settings.account_id, settings.contracts, reader)
         self.broker = broker
         self.run_id = run_id
+        self.operator = OperatorState(settings.data_dir.resolve())
+        self.on_controls = on_controls
+        self.pause_version: str | None = None
         self.stop = Event()
         self.failed = False
         self.broker_ready = False
         self.sources_ready = False
         self.position: OpenPosition | None = None
 
+    def _pause(self) -> dict[str, Any]:
+        pause = self.operator.pause()
+        if self.on_controls is not None and pause['changed_at'] != self.pause_version:
+            self.pause_version = pause['changed_at']
+            self.on_controls(pause_version=self.pause_version)
+        return pause
+
+    def _entry_block(self, result: dict[str, Any]) -> str | None:
+        pause = self._pause()
+        if pause['paused']:
+            return 'entries_paused'
+        if pause['changed_at'] != result.get('entry_pause_version'):
+            return 'entry_pause_changed'
+        return None
+
+    def _manual_close(self, events: EventArchive) -> None:
+        if self.broker is None or self.on_controls is None or self.stop.is_set():
+            return
+        row = self.operator.close_intent(pending=True)
+        if row is None:
+            return
+        intent = CloseIntent(**{name: row[name] for name in ('request_id', 'cycle_id', 'contract_id', 'side', 'quantity')})
+        reason = 'close_position_changed'
+        if intent.contract_id in self.settings.contracts:
+            result = SandboxExecutor(events, self.broker(intent.contract_id)).reconcile(
+                contract_id=intent.contract_id, cycle_id=intent.cycle_id, manual=intent,
+            )
+            if result.get('manual') == 'accepted':
+                self.operator.finish_close(intent.request_id, 'accepted', result['reason'])
+                return
+            if result['reason'] == 'executor_busy':
+                return
+            if result['status'] == 'rejected':
+                reason = result['reason']
+        self.operator.finish_close(intent.request_id, 'rejected', reason)
+
     def refresh(self) -> None:
         archive = Archive(self.settings.publications)
         with closing(archive.db), EventArchive(self.settings.events) as events:
+            self._pause()
+            self._manual_close(events)
             self.refresh_broker(archive, events)
+
+    def poll_controls(self) -> None:
+        self._pause()
+        if self.broker is not None and self.operator.close_intent(pending=True):
+            self.refresh()
 
     def refresh_broker(self, archive: Archive, events: EventArchive) -> None:
         settings = self.settings
@@ -146,13 +195,19 @@ class Runtime:
             directory = original / 'resumed'
             result['legacy'] = True
         if not result.get('inputs_saved'):
+            saved = self.operator.saved() if self.on_controls is not None else {}
+            models = saved.get('models') if saved.get('account_id') == settings.account_id else None
+            inputs = cycle_inputs(settings, models)
+            result['entry_pause_version'] = self._pause()['changed_at']
             directory.mkdir(parents=True, exist_ok=True)
             replace_json(directory / 'runtime.json', settings.model_dump(mode='json'))
             replace_json(directory / 'publication.json', publication)
-            for field, content in cycle_inputs(settings).items():
+            for field, content in inputs.items():
                 (directory / f'{field}.json').write_bytes(content)
             result['inputs_saved'] = True
             save_result(archive, result)
+            if models is not None and self.on_controls is not None:
+                self.on_controls(models=models)
         catalog = (directory / 'catalog.json').read_bytes()
 
         def read_snapshot(events: EventArchive) -> Snapshot:
@@ -170,13 +225,19 @@ class Runtime:
         if attempt := state.get('review_attempt'):
             result['review_attempt'] = attempt
         result.pop('reconcile_pending', None)
-        if self.broker is None or state['status'] != 'approved_for_checks':
+        if state['status'] != 'approved_for_checks':
+            return
+        proposal = state['proposal']
+        assert proposal is not None
+        if proposal['action'] == 'enter' and (blocked := self._entry_block(result)):
+            result.update(status='skipped', reason=blocked)
+            return
+        if self.broker is None:
             return
         if self.stop.is_set():
             result.update(status='processing', reason='shutdown_before_execution')
             return
-        proposal = state['proposal']
-        assert proposal is not None and attempt is not None
+        assert attempt is not None
         self._execute_review(
             archive, events, review_path(directory, attempt), proposal, state.get('position_id'), result,
         )
@@ -225,7 +286,7 @@ class Runtime:
 
         if proposal['action'] == 'enter':
             execution = executor.start(archive, review, allowed_contracts=set(self.settings.contracts),
-                                       record_risk=record_risk)
+                                       record_risk=record_risk, entry_block=lambda: self._entry_block(result))
             if execution['reason'] == 'independent_stops_require_opt_in':
                 execution['reason'] = AUTONOMOUS_PROTECTION_UNAVAILABLE
         else:
@@ -244,6 +305,7 @@ async def run_runtime(
     run_id: str | None = None, channels: list[str] | None = None,
     on_phase: Callable[[str], None] | None = None,
     on_source: Callable[[str, bool], None] | None = None,
+    on_controls: Callable[..., None] | None = None,
 ) -> int:
     settings = load_settings(config) if isinstance(config, Path) else config
     inputs = cycle_inputs(settings)
@@ -276,7 +338,8 @@ async def run_runtime(
         def broker(contract: str) -> SandboxBroker:
             return TBankSandbox(client, settings.account_id, contract, settings.contracts[contract])
 
-        runtime = Runtime(settings, reader, broker if settings.mode == 'sandbox' else None, run_id=run_id)
+        runtime = Runtime(settings, reader, broker if settings.mode == 'sandbox' else None,
+                          run_id=run_id, on_controls=on_controls)
         archive = Archive(settings.publications)
         with closing(archive.db):
             runtime_tables(archive)
@@ -308,12 +371,18 @@ async def run_runtime(
             await in_worker(runtime.process)
 
         async def monitor() -> None:
+            loop = asyncio.get_running_loop()
+            next_check = 0.0
             while not runtime.stop.is_set():
                 try:
-                    await in_worker(runtime.refresh)
+                    if loop.time() >= next_check:
+                        await in_worker(runtime.refresh)
+                        next_check = loop.time() + 15
+                    elif on_controls is not None:
+                        await in_worker(runtime.poll_controls)
                 except Exception as error:
                     print(json.dumps({'broker_monitor_error': error_code(error)}), flush=True)
-                await asyncio.sleep(15)
+                await asyncio.sleep(1 if on_controls is not None else 15)
 
         await in_worker(runtime.refresh)
         observer = None if once else asyncio.create_task(monitor())

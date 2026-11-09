@@ -33,6 +33,7 @@ def worker_main(run_id: str) -> int:
         task = asyncio.create_task(run_runtime(
             settings, False, run_id=run_id, channels=payload['channels'], on_phase=on_phase,
             on_source=lambda name, ok: emit(source=name, ok=ok),
+            on_controls=emit,
         ))
         loop = asyncio.get_running_loop()
 

@@ -10,7 +10,9 @@ from typing import Any
 from urllib.parse import parse_qs
 
 from news_futures.operator.news import catalog_series, news_view, trace_view, visible
+from news_futures.operator.settings import Preferences
 from news_futures.operator.supervisor import Worker
+from news_futures.operator.trades import trades_view
 
 
 PAGE = Path(__file__).with_name('page.html')
@@ -50,7 +52,7 @@ class OperatorHandler(BaseHTTPRequestHandler):
             self.reply(403, {'result': 'forbidden'})
         elif self.path == '/':
             self.reply(200, self.server.page, html=True)
-        elif path in ('/api/overview', '/api/news', '/api/trace'):
+        elif path in ('/api/overview', '/api/news', '/api/trace', '/api/trades', '/api/controls'):
             if not self.authorized():
                 self.reply(403, {'result': 'forbidden'})
                 return
@@ -59,12 +61,16 @@ class OperatorHandler(BaseHTTPRequestHandler):
             value: dict[str, Any] | None
             try:
                 if path == '/api/overview':
-                    value = worker.overview(self.server.channels)
+                    value = worker.overview()
                 elif path == '/api/news':
                     value = visible(news_view(worker.directory, worker.profile, self.server.catalog,
                                               self.server.series, query.get('company', [''])[0]))
-                else:
+                elif path == '/api/trace':
                     value = trace_view(worker.directory, worker.profile['account_id'], query.get('revision', [''])[0])
+                elif path == '/api/trades':
+                    value = trades_view(worker.directory, worker.profile['account_id'], query.get('cycle', [''])[0])
+                else:
+                    value = worker.controls()
             except (sqlite3.Error, OSError, ValueError, KeyError, TypeError):
                 self.reply(503, {'result': 'archive_unavailable'})
             else:
@@ -82,6 +88,22 @@ class OperatorHandler(BaseHTTPRequestHandler):
         elif self.path in ('/api/start', '/api/stop', '/api/restart'):
             code, result = self.server.worker.request(self.path.removeprefix('/api/'))
             self.reply(code, {'result': result})
+        elif self.path in ('/api/pause', '/api/close', '/api/settings'):
+            try:
+                lengths = self.headers.get_all('Content-Length', [])
+                if (len(lengths) != 1 or not 0 < int(lengths[0]) <= 32768
+                        or self.headers.get_all('Transfer-Encoding')
+                        or self.headers.get_content_type() != 'application/json'):
+                    raise ValueError
+                body = json.loads(self.rfile.read(int(lengths[0])))
+                if not isinstance(body, dict):
+                    raise ValueError
+                code, result = self.server.worker.configure(self.path.removeprefix('/api/'), body)
+            except (ValueError, TimeoutError):
+                code, result = 400, 'invalid_request'
+            except (OSError, sqlite3.Error):
+                code, result = 503, 'settings_unavailable'
+            self.reply(code, {'result': result})
         else:
             self.reply(404, {'result': 'not_found'})
 
@@ -90,7 +112,7 @@ class OperatorServer(ThreadingHTTPServer):
     def __init__(self, worker: Worker, channels: list[str], port: int, catalog: dict[str, Any] | None = None,
                  series: dict[str, Any] | None = None):
         self.worker = worker
-        self.channels = channels
+        self.worker.channels = channels
         self.catalog = catalog or {}
         self.series = series or {}
         self.session = token_urlsafe(32)
@@ -106,19 +128,19 @@ class OperatorServer(ThreadingHTTPServer):
 def serve_operator(config: Path, port: int) -> int:
     from news_futures.agents.routing import load_catalog
     from news_futures.application.config import load_settings
-    from news_futures.trading.executor import AUTONOMOUS_PROTECTION_UNAVAILABLE
+    from news_futures.application.operator_state import OperatorState
     from news_futures.adapters.telegram import configured_channels
 
     try:
         settings = load_settings(config)
         channels = configured_channels(settings.sources)
-    except (OSError, ValueError, TypeError, KeyError):
+        preferences = Preferences(settings, channels, OperatorState(settings.data_dir))
+        profile, channels, payload = preferences.prepare(check_cycles=False)
+    except (OSError, ValueError, TypeError, KeyError, sqlite3.Error):
         print('Проверьте общую конфигурацию и список источников. См. docs/runtime.md.', file=sys.stderr)
         return 1
-    profile = settings.model_dump(include={'mode', 'account_id', 'contracts'})
-    profile['entry_block'] = AUTONOMOUS_PROTECTION_UNAVAILABLE if settings.mode == 'sandbox' else None
-    payload = json.dumps({'settings': settings.model_dump(mode='json'), 'channels': channels}).encode()
-    worker = Worker(settings.data_dir, profile, [sys.executable, '-m', 'news_futures.operator.worker'], payload)
+    worker = Worker(settings.data_dir, profile, [sys.executable, '-m', 'news_futures.operator.worker'],
+                    payload, preferences)
     catalog: dict[str, Any] = {}
     series: dict[str, Any] = {}
     try:

@@ -4,6 +4,7 @@ from contextlib import closing
 from datetime import datetime, timedelta
 import json
 from pathlib import Path
+import re
 import sqlite3
 import subprocess
 import sys
@@ -12,11 +13,17 @@ from typing import Any
 from uuid import uuid4
 
 from news_futures.news.publications import utc_now
+from news_futures.application.operator_state import OperatorState
+from news_futures.operator.news import has_table, read_archive, visible
+from news_futures.operator.settings import Preferences, profile_view
 from news_futures.operator.worker import FAILURES
+from news_futures.trading.terms import CloseIntent
 
 
 FRESH_FOR = timedelta(seconds=45)
 SOURCE_FRESH_FOR = timedelta(seconds=60)
+CYCLE_ID = re.compile(r'[0-9a-f]{32}')
+REQUEST_ID = re.compile(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}')
 BLOCKS = {
     'protection_unconfirmed': 'protection_unconfirmed',
     'protection_ownership_unconfirmed': 'protection_unconfirmed',
@@ -51,7 +58,10 @@ def broker_status(path: Path, profile: dict[str, Any], run_id: str | None) -> di
                 if (position['contract_id'] not in profile['contracts'] or position['side'] not in ('long', 'short')
                         or type(position['quantity']) is not int or position['quantity'] <= 0):
                     raise ValueError('Invalid position')
+                cycle_id = position.get('id')
                 position = {key: position[key] for key in ('contract_id', 'side', 'quantity')}
+                if isinstance(cycle_id, str) and CYCLE_ID.fullmatch(cycle_id):
+                    position['cycle_id'] = cycle_id
             protection = last['protection']['status']
             if protection not in ('none', 'confirmed', 'unconfirmed'):
                 raise ValueError('Invalid protection')
@@ -73,12 +83,33 @@ def broker_status(path: Path, profile: dict[str, Any], run_id: str | None) -> di
     }
 
 
+def processing_error(path: Path) -> dict[str, Any] | None:
+    try:
+        with read_archive(path) as db:
+            if db is not None and has_table(db, 'runtime_decisions'):
+                row = db.execute("""
+                    SELECT json_extract(result, '$.stage') AS stage, json_extract(result, '$.at') AS at,
+                           json_extract(result, '$.reason') AS reason FROM runtime_decisions
+                    WHERE json_extract(result, '$.status') = 'failed' ORDER BY at DESC LIMIT 1
+                """).fetchone()
+                if row:
+                    return {key: visible(row[key]) for key in ('stage', 'at', 'reason')}
+    except (OSError, sqlite3.Error):
+        pass
+    return None
+
+
 class Worker:
-    def __init__(self, directory: Path, profile: dict[str, Any], command: list[str], settings: bytes):
+    def __init__(self, directory: Path, profile: dict[str, Any], command: list[str], settings: bytes,
+                 preferences: Preferences | None = None):
         self.directory = directory.resolve()
         self.profile = profile
         self.command = command
         self.settings = settings
+        self.controls_state = OperatorState(self.directory)
+        self.preferences = preferences
+        self.channels: list[str] = []
+        self.pause_applied: tuple[str, str] | None = None
         self.lock = Lock()
         self.state = 'stopped'
         self.failure: str | None = None
@@ -117,6 +148,11 @@ class Worker:
             if action not in self._allowed():
                 self.record(action, 'ignored')
                 return 409, 'ignored'
+            if action in ('start', 'restart') and self.state != 'running':
+                reason = self._prepare()
+                if reason is not None:
+                    self.record(action, reason)
+                    return 409, reason
             if not self.record(action, 'accepted') and action != 'stop':
                 return 503, 'journal_error'
             self.result = action + '_accepted'
@@ -127,11 +163,22 @@ class Worker:
                 self._start()
             return 202, self.result
 
+    def _prepare(self) -> str | None:
+        if self.preferences is not None:
+            try:
+                self.profile, self.channels, self.settings = self.preferences.prepare()
+            except ValueError as error:
+                return 'account_has_operations' if str(error) == 'account_has_operations' else 'settings_unavailable'
+            except (OSError, sqlite3.Error):
+                return 'settings_unavailable'
+        return None
+
     def _start(self) -> None:
         self.state = 'starting'
         self.failure = None
         self.exit_code = None
         self.sources.clear()
+        self.pause_applied = None
         run_id = self.run_id = uuid4().hex
         self.thread = Thread(target=self._supervise, args=(run_id,))
         self.thread.start()
@@ -171,8 +218,13 @@ class Worker:
                 self.state = self.result = 'stopped'
                 self.record('worker', 'stopped')
                 if self.restart and not self.closed:
-                    self.result = 'restart_accepted'
-                    self._start()
+                    prepare_error = self._prepare()
+                    if prepare_error is None:
+                        self.result = 'restart_accepted'
+                        self._start()
+                    else:
+                        self.result = prepare_error
+                        self.record('restart', prepare_error)
             else:
                 self.state = self.result = 'failed'
                 self.failure = reason
@@ -191,27 +243,103 @@ class Worker:
             if event.get('ready') is True and self.state == 'starting':
                 self.state = self.result = 'running'
                 self.record('worker', 'running')
+                if self.preferences is not None:
+                    self.preferences.profile_at = utc_now().isoformat()
             if isinstance(event.get('source'), str) and type(event.get('ok')) is bool:
                 self.sources[event['source']] = (event['ok'], utc_now())
+            if isinstance(version := event.get('pause_version'), str) and (
+                self.pause_applied is None or version > self.pause_applied[0]
+            ):
+                self.pause_applied = (version, utc_now().isoformat())
+            if self.preferences is not None and isinstance(models := event.get('models'), dict):
+                self.preferences.active['models'] = models
+                self.preferences.models_at = utc_now().isoformat()
         failure = event.get('failure')
         return failure if isinstance(failure, str) and failure in FAILURES else reason
 
-    def overview(self, channels: list[str]) -> dict[str, Any]:
+    def overview(self) -> dict[str, Any]:
         with self.lock:
             active = self.state == 'running'
             now = utc_now()
             sources = {}
-            for name in channels:
+            for name in self.channels:
                 seen = self.sources.get(name)
                 sources[name] = ('unknown' if not active or seen is None or now - seen[1] > SOURCE_FRESH_FOR
                                  else 'connected' if seen[0] else 'unavailable')
             broker = broker_status(self.directory / 'publications.sqlite3', self.profile,
                                    self.run_id if active else None)
+            pause = self.controls_state.pause()
+            applied = self.pause_applied if active else None
+            pause['applied_at'] = applied[1] if applied and pause['changed_at'] == applied[0] else None
             return self.profile | {
                 'worker': self.state, 'failure': self.failure, 'command': self.result,
                 'exit_code': self.exit_code, 'allowed': self._allowed(),
-                'journal_error': self.journal_error, 'sources': sources, 'broker': broker,
+                'journal_error': self.journal_error, 'sources': sources, 'broker': broker, 'pause': pause,
+                'processing_error': processing_error(self.directory / 'publications.sqlite3'),
             }
+
+    def controls(self) -> dict[str, Any]:
+        with self.lock:
+            close = self.controls_state.close_intent()
+            if close and close['status'] == 'accepted':
+                with read_archive(self.directory / 'events.sqlite3') as db:
+                    if db is not None and has_table(db, 'sandbox_cycles'):
+                        row = db.execute('SELECT status, reason FROM sandbox_cycles WHERE id = ?',
+                                         (close['cycle_id'],)).fetchone()
+                        if row is not None:
+                            close.update(status=row['status'] if row['status'] in ('closed', 'no_fill') else 'accepted',
+                                         reason=row['reason'])
+            return {'settings': self.preferences.view() if self.preferences else None, 'close': close}
+
+    def configure(self, action: str, body: dict[str, Any]) -> tuple[int, str]:
+        with self.lock:
+            if self.closed:
+                return 409, 'ignored'
+            if action == 'pause':
+                if type(body.get('paused')) is not bool:
+                    return 400, 'invalid_request'
+                self.controls_state.set_pause(body['paused'])
+                result = 'pause_saved'
+            elif action == 'close':
+                code, result = self._queue_close(body)
+                self.record(action, result)
+                return code, result
+            elif self.preferences is not None:
+                try:
+                    self.preferences.save(body, stopped=self.state in ('stopped', 'failed'))
+                except ValueError as error:
+                    reason = str(error)
+                    self.record(action, reason)
+                    return (400 if reason.startswith('invalid_') else 409), reason
+                if self.state in ('stopped', 'failed'):
+                    profile = profile_view(self.preferences.runtime(self.preferences.active))
+                    self.profile = profile
+                result = 'settings_saved'
+            else:
+                return 503, 'settings_unavailable'
+            self.record(action, result)
+            return 200, result
+
+    def _queue_close(self, body: dict[str, Any]) -> tuple[int, str]:
+        names = ('request_id', 'cycle_id', 'contract_id', 'side', 'quantity')
+        if (set(body) != set(names)
+                or not isinstance(body['request_id'], str) or not REQUEST_ID.fullmatch(body['request_id'])
+                or not isinstance(body['cycle_id'], str) or not CYCLE_ID.fullmatch(body['cycle_id'])
+                or not isinstance(body['contract_id'], str) or body['side'] not in ('long', 'short')
+                or type(body['quantity']) is not int or not 0 < body['quantity'] < 2 ** 53):
+            return 400, 'invalid_request'
+        existing = self.controls_state.close_intent(request_id=body['request_id'])
+        if existing is not None:
+            if any(existing[key] != body[key] for key in names):
+                return 409, 'invalid_request'
+            return 202, 'close_queued'
+        if self.state != 'running' or self.profile['mode'] != 'sandbox':
+            return 409, 'ignored'
+        current = broker_status(self.directory / 'publications.sqlite3', self.profile, self.run_id)['current']
+        position = current.get('position') if current and current['protection'] == 'confirmed' else None
+        if not position or any(position.get(key) != body[key] for key in names[1:]):
+            return 409, 'close_position_changed'
+        return self.controls_state.queue(CloseIntent(**body))
 
     def close(self) -> None:
         with self.lock:

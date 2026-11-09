@@ -26,6 +26,7 @@ from tests.support.telegram import ControlledTransport
 from news_futures.cli import main
 from news_futures.agents.company import CompanyContext, CompanyProposal
 from news_futures.agents.contracts import Review
+from news_futures.agents.events import EventArchive
 from news_futures.application.checkpoints import checkpoint_serializer
 from news_futures.common.paths import EVENT_SETTINGS, JEV_SETTINGS, PACKAGE, REVIEW_SETTINGS, TELEGRAM_SOURCES
 from news_futures.trading.broker import Fill
@@ -35,6 +36,9 @@ from news_futures.operator.news import news_view, trace_view
 from news_futures.news.publications import Archive, Publication, utc_now
 from news_futures.application.runtime import Runtime
 from news_futures.application.config import load_settings
+from news_futures.application.operator_state import OperatorState
+from news_futures.application.records import runtime_tables
+from news_futures.application.workflow import Shutdown
 from news_futures.trading.executor import SandboxExecutor
 from news_futures.adapters.tbank.rest import SANDBOX_REST, TBankReader, restrict_to_reads
 from news_futures.adapters.telegram import Difference, Source
@@ -244,6 +248,53 @@ class RuntimeAcceptance(RiskFixture):
         self.serve()
         self.assertEqual(len(self.jev_requests), 1)
         self.assertEqual(self.broker.calls, ['enter', 'sl', 'tp'])
+
+    def test_paused_entry_remains_skipped_after_restart_and_resume(self) -> None:
+        self.sandbox()
+        controls = OperatorState(self.root)
+        controls.set_pause(True)
+        paused = self.news(self.market, 'SBER raised its forecast.')
+        self.serve(self.proposal('enter', paused), review())
+        self.assertEqual(self.report(paused)['result']['reason'], 'entries_paused')
+        self.assertEqual(self.broker.calls, [])
+        self.assertTrue(OperatorState(self.root).pause()['paused'])
+        controls.set_pause(False)
+        fresh = self.news(self.market, 'SBER raised its dividend.')
+        self.serve({'match': 'different', 'event_id': None, 'change': None, 'reason': 'Different.', 'evidence': None},
+                   self.proposal('enter', fresh), review())
+        self.assertEqual(self.report(paused)['result']['status'], 'skipped')
+        self.assertEqual(self.report(fresh)['result']['status'], 'protected')
+
+    def test_panel_model_edit_applies_to_the_next_revision_and_keeps_frozen_review(self) -> None:
+        controls = OperatorState(self.root)
+        runtime = Runtime(load_settings(self.profile), lambda _: self.broker, None, on_controls=lambda **event: None)
+        runtime.broker_ready = True
+        first = self.news(self.market, 'SBER raised its forecast.')
+        second = self.news(self.market, 'SBER raised its dividend.')
+        observed = []
+
+        def analyze(settings: object, directory: Path, *args: Any, **kwargs: Any) -> dict[str, Any]:
+            observed.append(json.loads((directory / 'review.json').read_bytes())['analyst']['model'])
+            if len(observed) == 1:
+                raise Shutdown
+            return {'stage': 'review', 'status': 'no_action'}
+
+        archive = Archive(self.publications_db)
+        with (closing(archive.db), EventArchive(self.events_db) as events,
+              patch('news_futures.application.runtime.analyze_news', side_effect=analyze)):
+            runtime_tables(archive)
+            first_result = {'revision': first.revision_key(), 'mode': 'observation', 'inputs_saved': False}
+            with self.assertRaises(Shutdown):
+                runtime.process_revision(archive, events, first.record(), first_result)
+            frozen = self.root / 'decisions' / first.revision_key()
+            controls.save_settings({'account_id': self.account_id, 'models': {
+                'jev': json.loads((frozen / 'jev.json').read_bytes())['model'], 'matcher': 'test/matcher',
+                'analyst': 'test/new-analyst', 'critic': 'test/critic',
+            }})
+            runtime.process_revision(archive, events, first.record(), first_result)
+            runtime.process_revision(archive, events, second.record(),
+                                     {'revision': second.revision_key(), 'mode': 'observation', 'inputs_saved': False})
+        self.assertEqual(observed, ['test/analyst', 'test/analyst', 'test/new-analyst'])
 
     def test_failed_reconciliation_keeps_the_last_confirmed_broker_state(self) -> None:
         self.sandbox()

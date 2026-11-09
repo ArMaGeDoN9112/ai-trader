@@ -118,6 +118,16 @@ class TBankReader:
         if not any(item['id'] == self.account_id and item['status'] == 'ACCOUNT_STATUS_OPEN' for item in accounts):
             raise ValueError('open_sandbox_account_required')
 
+    def account_activity(self) -> tuple[bool, bool]:
+        self.require_open_account()
+        lots, foreign = self.positions()
+        orders = rows(self.call('GetSandboxOrders'), 'orders')
+        stops = self.stops()
+        return bool(lots) or foreign, bool(orders) or any(
+            stop['status'] not in (STOP_STATUS + 'CANCELED', STOP_STATUS + 'EXPIRED', STOP_STATUS + 'EXECUTED')
+            for stop in stops
+        )
+
     def read_risk(self, account_id: str, contract_id: str) -> RiskSnapshot:
         if self.company_id is None or (account_id, contract_id) != (self.account_id, self.contract_id):
             raise ValueError('sandbox_selection_mismatch')

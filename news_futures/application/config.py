@@ -1,5 +1,6 @@
 """Validated runtime profile and per-publication configuration inputs."""
 
+import json
 from pathlib import Path
 from typing import Literal
 
@@ -49,7 +50,7 @@ def load_settings(config: Path) -> RuntimeSettings:
     return settings.model_copy(update=paths)
 
 
-def cycle_inputs(settings: RuntimeSettings) -> dict[str, bytes]:
+def cycle_inputs(settings: RuntimeSettings, models: dict[str, str] | None = None) -> dict[str, bytes]:
     inputs = {}
     for field, validate in (
         ('catalog', load_catalog), ('jev', JevSettings.model_validate_json),
@@ -63,4 +64,15 @@ def cycle_inputs(settings: RuntimeSettings) -> dict[str, bytes]:
         inputs[field] = content
     if set(settings.contracts.values()) - {row.company_id for row in catalog_rows(inputs['catalog']) if row.share_id}:
         raise RuntimeErrorInfo('Сопоставьте contracts с компаниями из catalog.')
+    if models is not None:
+        for field in ('jev', 'matcher', 'review'):
+            options = json.loads(inputs[field])
+            if field == 'review':
+                for role in ('analyst', 'critic'):
+                    options[role]['model'] = models[role]
+                Settings.model_validate(options)
+            else:
+                options['model'] = models[field]
+                (JevSettings if field == 'jev' else RoleSettings).model_validate(options)
+            inputs[field] = json.dumps(options).encode()
     return inputs

@@ -12,7 +12,7 @@ from uuid import UUID, uuid5
 from pydantic import ValidationError
 
 from news_futures.trading.broker import (
-    TRADE_STATE, SandboxBroker, SubmissionRejected, reconciled_fills, verified_protection,
+    TRADE_STATE, SandboxBroker, SubmissionRejected, TradeState, reconciled_fills, verified_protection,
 )
 from news_futures.agents.approval import read_approval
 from news_futures.agents.company import CompanyProposal, EntryReason
@@ -23,7 +23,7 @@ from news_futures.news.publications import Archive
 from news_futures.trading.risk import (
     MAX_RISK_DATA_AGE, _fresh, check_publication, reserve_entry,
 )
-from news_futures.trading.terms import EntryReservation, RiskSnapshot
+from news_futures.trading.terms import CloseIntent, EntryReservation, RiskSnapshot
 from news_futures.trading.journal import active_cycles, append_event, close_requests, initialize_journal, read_evidence
 
 
@@ -55,6 +55,7 @@ class SandboxExecutor:
         self, publications: Archive, approval: Path, *,
         allowed_contracts: Set[str], allow_independent_stops: bool = False,
         record_risk: Callable[[str, dict[str, Any], object], None] | None = None,
+        entry_block: Callable[[], str | None] | None = None,
     ) -> dict[str, str]:
         if self.broker.source not in ('control', 'sandbox'):
             return {'status': 'rejected', 'reason': 'unsupported_broker_source'}
@@ -79,6 +80,8 @@ class SandboxExecutor:
         with self._exclusive() as acquired:
             if not acquired:
                 return {'status': 'blocked', 'reason': 'executor_busy'}
+            if entry_block is not None and (reason := entry_block()):
+                return {'status': 'skipped', 'reason': reason}
             if len(active_cycles(self.db, self.broker.account_id)) > 1:
                 return {'status': 'blocked', 'reason': 'conflicting_active_cycles'}
             risk_input: dict[str, Any] = {'allowed_contracts': sorted(allowed_contracts)}
@@ -95,6 +98,9 @@ class SandboxExecutor:
                             entry.model_dump(mode='json') if entry else {'reason': admission.reason})
             if entry is None:
                 return {'status': 'rejected', 'reason': admission.reason or 'admission_failed'}
+            if entry_block is not None and (reason := entry_block()):
+                self._finish(entry, 'no_fill', reason)
+                return {'status': 'skipped', 'reason': reason, 'cycle_id': entry.id}
             operations: dict[str, str] = {}
             self._send(entry, operations, 'enter', lambda key: self.broker.enter(entry, key))
             return self._advance(entry, operations, close=False)
@@ -103,10 +109,19 @@ class SandboxExecutor:
                   cycle_id: str | None = None,
                   review: tuple[Archive, Path] | None = None,
                   publications: Archive | None = None,
-                  record_risk: Callable[[str, dict[str, Any], object], None] | None = None) -> dict[str, str]:
+                  record_risk: Callable[[str, dict[str, Any], object], None] | None = None,
+                  manual: CloseIntent | None = None) -> dict[str, str]:
         with self._exclusive() as acquired:
             if not acquired:
                 return {'status': 'blocked', 'reason': 'executor_busy'}
+            if manual is not None:
+                completed = self.db.execute("""SELECT c.status, c.reason FROM sandbox_cycles c
+                    JOIN sandbox_journal j ON j.cycle_id = c.id
+                    WHERE c.id = ? AND c.account_id = ? AND c.source = ? AND c.status IN ('closed', 'no_fill')
+                    AND j.kind = 'manual_close' AND json_extract(j.details, '$.request_id') = ?
+                    """, (manual.cycle_id, self.broker.account_id, self.broker.source, manual.request_id)).fetchone()
+                if completed:
+                    return dict(completed) | {'cycle_id': manual.cycle_id, 'manual': 'accepted'}
             active = active_cycles(self.db, self.broker.account_id)
             if not active:
                 return {'status': 'idle', 'reason': ''}
@@ -121,6 +136,18 @@ class SandboxExecutor:
             if contract_id is not None and contract_id != entry.contract_id:
                 return {'status': 'blocked', 'reason': 'sandbox_selection_mismatch'}
             operations = read_evidence(self.db, entry.id).operations
+            if manual is not None:
+                saved = self.db.execute("""SELECT 1 FROM sandbox_journal WHERE cycle_id = ?
+                    AND kind = 'manual_close' AND json_extract(details, '$.request_id') = ?
+                    """, (entry.id, manual.request_id)).fetchone()
+                if saved:
+                    return self._advance(entry, operations, close=True) | {'manual': 'accepted'}
+                if (self.broker.source != 'sandbox' or manual.cycle_id != entry.id
+                        or manual.contract_id != entry.contract_id or manual.side != entry.side
+                        or row['status'] != 'protected' or row['close_requested']
+                        or close_requests(operations) or 'cancel_protection' in operations):
+                    return self._reject_manual(entry, manual, 'close_position_changed')
+                return self._confirm_manual_close(entry, operations, manual)
             if 'enter' not in operations:
                 return self._finish(entry, 'no_fill', 'entry_never_submitted')
             if review is not None:
@@ -233,8 +260,36 @@ class SandboxExecutor:
                                 (entry.account_id, entry.id))
         return {'status': status, 'reason': reason, 'cycle_id': entry.id}
 
+    def _reject_manual(self, entry: EntryReservation, manual: CloseIntent, reason: str) -> dict[str, str]:
+        self._log(entry, 'manual_close_rejected', request_id=manual.request_id, reason=reason)
+        return {'status': 'rejected', 'reason': reason, 'cycle_id': entry.id}
+
+    def _confirm_manual_close(self, entry: EntryReservation, operations: dict[str, str],
+                              manual: CloseIntent) -> dict[str, str]:
+        # Confirm the browser snapshot before recording any actionable close intent.
+        evidence = read_evidence(self.db, entry.id)
+        try:
+            state = TRADE_STATE.validate_python(self.broker.read_trade(entry, operations, evidence.receipts))
+        except Exception:
+            return self._reject_manual(entry, manual, 'broker_read_unavailable')
+        fills = reconciled_fills(entry, state)
+        active = tuple(stop for stop in state.protection if stop.status == 'active')
+        if (not state.settled or state.active_orders or state.other_exposure or fills is None
+                or fills[0] != manual.quantity or any(stop.status == 'executed' for stop in state.protection)
+                or len(active) != 2 or len({stop.id for stop in state.protection}) != len(state.protection)
+                or verified_protection(entry, manual.quantity, active) != {('sl', entry.stop_loss), ('tp', entry.take_profit)}
+                or any(fills[1].get(order) != fill for order, fill in evidence.confirmed_fills.items())):
+            self._log(entry, 'reconciliation', state=asdict(state))
+            return self._reject_manual(entry, manual, 'close_position_changed')
+        with self.db:
+            self.db.execute('UPDATE sandbox_cycles SET close_requested = 1 WHERE id = ?', (entry.id,))
+            append_event(self.db, entry.id, 'manual_close', request_id=manual.request_id,
+                         quantity=manual.quantity, side=manual.side, contract_id=manual.contract_id)
+        return self._advance(entry, operations, close=True, observation=state) | {'manual': 'accepted'}
+
     def _advance(
         self, entry: EntryReservation, operations: dict[str, str], *, close: bool,
+        observation: TradeState | None = None,
     ) -> dict[str, str]:
         evidence = read_evidence(self.db, entry.id)
         confirmed = evidence.confirmed_fills
@@ -247,14 +302,17 @@ class SandboxExecutor:
         cancel_orders_attempted = False
         while True:
             receipts = read_evidence(self.db, entry.id).receipts
-            try:
-                observation = self.broker.read_trade(entry, dict(operations), receipts)
-            except Exception:
-                return self._finish(entry, 'blocked', 'broker_read_unavailable')
-            try:
-                state = TRADE_STATE.validate_python(observation)
-            except ValidationError:
-                return self._finish(entry, 'blocked', 'invalid_broker_state')
+            if observation is None:
+                try:
+                    observed = self.broker.read_trade(entry, dict(operations), receipts)
+                except Exception:
+                    return self._finish(entry, 'blocked', 'broker_read_unavailable')
+                try:
+                    state = TRADE_STATE.validate_python(observed)
+                except ValidationError:
+                    return self._finish(entry, 'blocked', 'invalid_broker_state')
+            else:
+                state, observation = observation, None
             self._log(entry, 'reconciliation', state=asdict(state))
             active = tuple(stop for stop in state.protection if stop.status == 'active')
             if ((active and not operations.keys() & {'sl', 'tp', 'protect'})

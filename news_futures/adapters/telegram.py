@@ -46,7 +46,10 @@ class Transport(Protocol):
 
 
 def configured_channels(path: Path) -> list[str]:
-    channels = json.loads(path.read_text(encoding='utf-8'))['channels']
+    return validate_channels(json.loads(path.read_text(encoding='utf-8'))['channels'])
+
+
+def validate_channels(channels: object) -> list[str]:
     if (not isinstance(channels, list) or not channels
             or any(not isinstance(name, str) or not re.fullmatch(r'[a-zA-Z][a-zA-Z0-9_]{4,31}', name)
                    for name in channels)):

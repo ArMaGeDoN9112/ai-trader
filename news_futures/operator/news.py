@@ -321,7 +321,8 @@ def news_view(root: Path, profile: dict[str, Any], catalog: dict[str, Any],
                 details = step['details']
                 operation = details.get('operation_id')
                 if step['kind'] == 'intent':
-                    order = {'contract_id': contract_id, 'action': details['action'], 'at': step['at'], 'status': 'intent'}
+                    order = {'id': operation, 'contract_id': contract_id, 'action': details['action'],
+                             'at': step['at'], 'status': 'intent'}
                     intents[operation] = order
                     orders.append(order)
                 elif operation in intents:
@@ -418,11 +419,14 @@ def trace_view(root: Path, account: str, key: str) -> dict[str, Any] | None:
                  input=call.get('input') or {'publication': publication, 'search': event.get('search')},
                  output=fields(event, 'event_id', 'assessment', 'search', 'correction') | response(call))
         cycle_id = (result.get('execution') or {}).get('cycle_id')
-        if events is not None and (cycle_id or result.get('stage') == 'execution'):
+        linked_cycle = None
+        if events is not None and (cycle_id or approvals):
             for cycle in cycle_rows(events, account):
                 if cycle_id and cycle['id'] != cycle_id:
                     continue
                 related = cycle['approval'] in approvals
+                if related:
+                    linked_cycle = cycle['id']
                 records = list(journal_events(events, cycle['id']))
                 if related and cycle['approval'] not in approved_risk:
                     step('entry-reservation', 'risk', 'approved', output=cycle['terms'],
@@ -431,6 +435,8 @@ def trace_view(root: Path, account: str, key: str) -> dict[str, Any] | None:
                     kind, details = item['kind'], item['details']
                     if kind == 'reviewed_close':
                         related = details.get('approval') in approvals
+                        if related:
+                            linked_cycle = cycle['id']
                         if details.get('approval') in approved_risk:
                             continue
                     if related:
@@ -453,5 +459,5 @@ def trace_view(root: Path, account: str, key: str) -> dict[str, Any] | None:
         for item in steps:
             del item['_sort_at']
         return cast(dict[str, Any], visible(summary(key, event, result, set()) | {
-            'publication': publication, 'steps': steps,
+            'publication': publication, 'steps': steps, 'cycle_id': linked_cycle or cycle_id,
         }))

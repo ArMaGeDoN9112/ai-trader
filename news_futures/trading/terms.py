@@ -1,5 +1,6 @@
 """Validated broker data and the immutable terms reserved for an entry."""
 
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Annotated, Literal
 
@@ -64,3 +65,12 @@ class EntryReservation(Contract):
     planned_risk: Decimal
     notional: Decimal
     initial_margin: Decimal
+
+
+@dataclass(frozen=True)
+class CloseIntent:
+    request_id: str
+    cycle_id: str
+    contract_id: str
+    side: str
+    quantity: int
