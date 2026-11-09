@@ -5,12 +5,13 @@ import json
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import AwareDatetime, Field
 
 from news_futures.analysis import Contract, Position, ProposalTerms, ReviewContext
 from news_futures.analysis import chat_model, review_cycle, validate_levels
 from news_futures.events import EventArchive, model_publication
-from news_futures.local import write_json
+from news_futures.local import replace_json
 from news_futures.publications import utc_now
 
 
@@ -51,11 +52,18 @@ class Snapshot(Contract):
     instruments: list[Instrument]
 
 
+class EntrySource(Contract):
+    revision: Nonempty
+    url: Nonempty
+    quote: Nonempty
+
+
 class EntryReason(Contract):
     account_id: Nonempty
     position_id: Nonempty
     contract_id: Nonempty
     reason: Nonempty
+    sources: list[EntrySource] = Field(default_factory=list)
 
 
 class CompanyContext(ReviewContext):
@@ -92,6 +100,17 @@ class CompanyProposal(ProposalTerms):
     contract_id: Nonempty | None
     assessments: list[CandidateAssessment]
     level_rationale: LevelRationale | None
+
+
+def entry_sources(proposal: CompanyProposal, context: dict[str, Any]) -> list[EntrySource]:
+    publications = {row['revision']: row['publication'] for row in context['related_news']}
+    publications[context['event']['revision']] = context['publication']
+    return [
+        EntrySource(revision=ref.revision, url=source['url'], quote=ref.quote)
+        for assessment in proposal.assessments if assessment.contract_id == proposal.contract_id
+        for ref in assessment.evidence
+        if (source := publications.get(ref.revision)) and ref.quote in source['text']
+    ]
 
 
 SYSTEM = """You are the {role} in a read-only news-futures decision cycle.
@@ -144,14 +163,17 @@ def save_entry_reason(archive: EventArchive, record: EntryReason) -> None:
     archive.db.execute('''
         CREATE TABLE IF NOT EXISTS position_entry_reasons (
             account_id TEXT NOT NULL, position_id TEXT NOT NULL,
-            contract_id TEXT NOT NULL, reason TEXT NOT NULL,
+            contract_id TEXT NOT NULL, reason TEXT NOT NULL, sources TEXT NOT NULL DEFAULT '[]',
             PRIMARY KEY (account_id, position_id)
         )
     ''')
+    if 'sources' not in {row['name'] for row in archive.db.execute('PRAGMA table_info(position_entry_reasons)')}:
+        archive.db.execute("ALTER TABLE position_entry_reasons ADD COLUMN sources TEXT NOT NULL DEFAULT '[]'")
     existing = entry_reason(archive, record.account_id, record.position_id)
     if existing is None:
-        archive.db.execute('INSERT INTO position_entry_reasons VALUES (?, ?, ?, ?)', (
+        archive.db.execute('INSERT INTO position_entry_reasons VALUES (?, ?, ?, ?, ?)', (
             record.account_id, record.position_id, record.contract_id, record.reason,
+            json.dumps(record.model_dump(mode='json')['sources'], ensure_ascii=False),
         ))
     elif existing != record:
         raise ValueError('Причина входа уже зафиксирована для этой позиции')
@@ -166,7 +188,34 @@ def entry_reason(archive: EventArchive, account_id: str, position_id: str) -> En
         'SELECT * FROM position_entry_reasons WHERE account_id = ? AND position_id = ?',
         (account_id, position_id),
     ).fetchone()
-    return EntryReason.model_validate(dict(row)) if row else None
+    if row is None:
+        return None
+    data = dict(row)
+    data['sources'] = json.loads(data.get('sources', '[]'))
+    return EntryReason.model_validate(data)
+
+
+def restore_entry_sources(archive: EventArchive, record: EntryReason) -> EntryReason:
+    if record.sources or not archive.db.execute(
+        "SELECT 1 FROM sqlite_master WHERE name = 'sandbox_cycles'"
+    ).fetchone():
+        return record
+    row = archive.db.execute('SELECT approval, proposal_id FROM sandbox_cycles WHERE id = ? AND account_id = ?',
+                             (record.position_id, record.account_id)).fetchone()
+    if row is None:
+        return record
+    # Old reservations store the approval path and ID instead of inline evidence.
+    from news_futures.risk import read_approval
+
+    try:
+        proposal, proposal_id, _, context = read_approval(Path(row['approval']))
+        if (proposal_id == row['proposal_id'] and proposal.action == 'enter'
+                and proposal.contract_id == record.contract_id and proposal.reason == record.reason
+                and context['account']['id'] == record.account_id):
+            return record.model_copy(update={'sources': entry_sources(proposal, context)})
+    except (OSError, KeyError, TypeError, ValueError):
+        pass  # A legacy reason may outlive the files containing its citations.
+    return record
 
 
 def news_record(row: dict[str, Any]) -> dict[str, Any]:
@@ -200,6 +249,7 @@ def prepare_context(archive: EventArchive, decision_id: int, snapshot: Snapshot)
             original = entry_reason(archive, snapshot.account.id, position.id)
             if held is None or original is None or original.contract_id != position.contract_id:
                 raise ValueError('Для открытой позиции нужны её инструмент и сохранённая причина входа')
+            original = restore_entry_sources(archive, original)
             if held not in candidates:
                 candidates.append(held)
         observed_at = [snapshot.account.observed_at, *(candidate.market.observed_at for candidate in candidates)]
@@ -275,12 +325,15 @@ def validate_company_proposal(proposal: dict[str, Any], context: dict[str, Any])
 
 def analyze_event(archive: EventArchive, decision_id: int, snapshot_path: Path,
                   config: Path, directory: Path, *,
-                  mode: Literal['observation', 'sandbox'] = 'observation') -> dict[str, Any]:
+                  mode: Literal['observation', 'sandbox'] = 'observation',
+                  checkpointer: BaseCheckpointSaver[str] | None = None,
+                  thread_id: str | None = None) -> dict[str, Any]:
     snapshot = Snapshot.model_validate_json(snapshot_path.read_bytes())
     context = prepare_context(archive, decision_id, snapshot)
     trace = review_cycle(config, directory, context, model_factory=chat_model, mode=mode,
-                         system=SYSTEM, proposal_schema=CompanyProposal, validate=validate_company_proposal)
+                         system=SYSTEM, proposal_schema=CompanyProposal, validate=validate_company_proposal,
+                         checkpointer=checkpointer, thread_id=thread_id)
     if not any(row['decision_id'] == decision_id for row in archive.history(current_only=True)):
         trace.update(status='rejected', approved_proposal=None, error='superseded_event')
-    write_json(directory / 'trace.json', trace)
+    replace_json(directory / 'trace.json', trace)
     return trace

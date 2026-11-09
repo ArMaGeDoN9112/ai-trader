@@ -18,6 +18,12 @@ def write_json(path: Path, value: object) -> None:
         output.write('\n')
 
 
+def replace_json(path: Path, value: object) -> None:
+    temporary = path.with_suffix(path.suffix + '.tmp')
+    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + '\n', encoding='utf-8')
+    temporary.replace(path)
+
+
 def run(directory: Path) -> dict[str, Any]:
     control = json.loads(Path(__file__).with_name('control.json').read_text(encoding='utf-8'))
     directory.mkdir(parents=True, exist_ok=False)

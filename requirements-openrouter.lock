@@ -1,5 +1,6 @@
 # Resolved for Python 3.11, Windows; pip report verified against installed versions.
 PyYAML==6.0.3
+aiosqlite==0.22.1
 annotated-types==0.8.0
 anyio==4.16.0
 certifi==2026.10.23
@@ -21,6 +22,7 @@ langchain-openrouter==0.2.9
 langchain-protocol==0.0.21
 langgraph==1.2.20
 langgraph-checkpoint==4.3.1
+langgraph-checkpoint-sqlite==3.1.3
 langgraph-prebuilt==1.1.1
 langgraph-sdk==0.4.14
 langsmith==0.14.17
@@ -35,6 +37,7 @@ regex==2026.11.7
 requests==2.34.2
 requests-toolbelt==1.0.0
 sniffio==1.3.1
+sqlite-vec==0.1.9
 tenacity==9.2.1
 tiktoken==0.14.0
 truststore==0.10.5

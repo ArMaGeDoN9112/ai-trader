@@ -1,5 +1,7 @@
 from copy import deepcopy
 from dataclasses import replace
+from datetime import timedelta
+from decimal import Decimal
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -20,8 +22,14 @@ from news_futures.__main__ import main
 from news_futures.jev import assess_batch
 from news_futures.local import write_json
 from news_futures.publications import Publication, utc_now
+from news_futures.runtime import Runtime, load_settings
+from news_futures.sandbox_execution import Fill, SandboxExecutor
 from news_futures.telegram import Difference, Source
 from news_futures.tbank_execution import SANDBOX_REST, TBankReader, restrict_to_reads
+
+
+class Interrupted(BaseException):
+    pass
 
 
 class RuntimeTest(unittest.TestCase):
@@ -171,6 +179,207 @@ class RuntimeAcceptance(test_risk.RiskFixture):
 
     def sandbox(self) -> None:
         self.profile.write_text(json.dumps(self.profile_data | {'mode': 'sandbox'}), encoding='utf-8')
+
+    def test_restart_during_critic_resumes_the_saved_proposal(self) -> None:
+        self.sandbox()
+        incoming = self.news(self.market, 'SBER raised its forecast.')
+
+        def interrupt(body: dict[str, Any]) -> dict[str, Any]:
+            raise Interrupted
+
+        with self.assertRaises(Interrupted):
+            self.serve(self.proposal('enter', incoming), interrupt)
+        self.market.differences.append(Difference(self.market.pts, [incoming]))
+        self.assertEqual(len(self.serve(review()).requests), 1)
+        self.assertEqual(len(self.jev_requests), 1)
+        self.assertEqual(self.broker.calls, ['enter', 'sl', 'tp'])
+        self.assertEqual(self.report(incoming)['result']['status'], 'protected')
+
+    def test_restart_consumes_a_saved_publication_once_after_transport_replay(self) -> None:
+        self.sandbox()
+        incoming = self.news(self.market, 'SBER raised its forecast.')
+        with patch.object(Runtime, 'process', side_effect=Interrupted):
+            with self.assertRaises(Interrupted):
+                self.serve()
+        self.market.differences.append(Difference(self.market.pts, [incoming]))
+        self.serve(self.proposal('enter', incoming), review())
+        self.serve()
+        self.assertEqual(len(self.jev_requests), 1)
+        self.assertEqual(self.broker.calls, ['enter', 'sl', 'tp'])
+
+    def test_restart_reconciles_entry_with_lost_response_before_processing(self) -> None:
+        self.sandbox()
+        incoming = self.news(self.market, 'SBER raised its forecast.')
+        enter = self.broker.enter
+
+        def interrupt(*args: Any) -> None:
+            enter(*args)
+            raise Interrupted
+
+        with patch.object(self.broker, 'enter', side_effect=interrupt), self.assertRaises(Interrupted):
+            self.serve(self.proposal('enter', incoming), review())
+        self.broker.state = replace(self.broker.state, settled=False)
+        self.serve()
+        self.assertEqual(self.broker.calls, ['enter'])
+        self.assertEqual(self.report()['broker']['broker'], 'blocked')
+        self.assertEqual(self.report(incoming)['result']['status'], 'processing')
+        self.broker.state = replace(self.broker.state, settled=True)
+        self.serve()
+        self.assertEqual(self.report(incoming)['result']['status'], 'protected')
+        self.assertEqual(self.broker.calls, ['enter', 'sl', 'tp'])
+        self.assertEqual(len(self.jev_requests), 1)
+
+    def test_restart_between_stop_submissions_confirms_both_without_resending_the_first(self) -> None:
+        self.sandbox()
+        incoming = self.news(self.market, 'SBER raised its forecast.')
+        protect = self.broker.protect
+
+        def interrupt(*args: Any) -> None:
+            protect(*args)
+            raise Interrupted
+
+        with patch.object(self.broker, 'protect', side_effect=interrupt), self.assertRaises(Interrupted):
+            self.serve(self.proposal('enter', incoming), review())
+        self.serve()
+        self.assertEqual(self.broker.calls, ['enter', 'sl', 'tp'])
+        self.assertEqual(self.report()['broker']['protection']['status'], 'confirmed')
+
+    def test_blocked_response_is_updated_when_restart_confirms_the_exit(self) -> None:
+        self.sandbox()
+        entry = self.news(self.market, 'SBER raised its forecast.')
+        self.serve(self.proposal('enter', entry), review())
+        original = self.report(entry)['event']['event_id']
+        incoming = self.news(self.rbc, 'SBER withdrew its forecast.')
+        self.broker.close_unavailable = True
+        self.serve({'match': 'same', 'event_id': original, 'change': 'retraction', 'reason': 'Retracted.',
+                    'evidence': None}, self.proposal('close', incoming), review())
+        self.assertEqual(self.report(incoming)['result']['status'], 'blocked')
+        self.broker.state = replace(self.broker.state, settled=True, position_lots=0,
+                                    exits=(Fill('late-exit', 3, Decimal('303')),))
+        self.serve()
+        self.assertEqual(self.report(incoming)['result']['status'], 'closed')
+        self.assertEqual(self.broker.calls, ['enter', 'sl', 'tp', 'cancel_protection', 'close'])
+
+    def test_restart_rejects_expired_close_before_canceling_any_protection(self) -> None:
+        self.sandbox()
+        entry = self.news(self.market, 'SBER raised its forecast.')
+        self.serve(self.proposal('enter', entry), review())
+        original = self.report(entry)['event']['event_id']
+        incoming = self.news(self.rbc, 'SBER withdrew its forecast.')
+        advance = SandboxExecutor._advance
+
+        def interrupt(executor: SandboxExecutor, *args: Any, close: bool) -> dict[str, str]:
+            if close:
+                raise Interrupted
+            return advance(executor, *args, close=close)
+
+        with patch.object(SandboxExecutor, '_advance', new=interrupt), self.assertRaises(Interrupted):
+            self.serve({'match': 'same', 'event_id': original, 'change': 'retraction', 'reason': 'Retracted.',
+                        'evidence': None}, self.proposal('close', incoming), review())
+        with patch('news_futures.risk.utc_now', return_value=utc_now() + timedelta(minutes=2)):
+            self.serve()
+        self.assertEqual(self.report(incoming)['result']['reason'], 'stale_or_future_proposal')
+        self.assertEqual(self.report()['broker']['protection']['status'], 'confirmed')
+        self.assertEqual(self.broker.calls, ['enter', 'sl', 'tp'])
+
+    def test_restart_reanalyzes_with_actual_position_and_keeps_the_previous_attempt(self) -> None:
+        self.sandbox()
+        entry = self.news(self.market, 'SBER raised its forecast.')
+        self.serve(self.proposal('enter', entry), review())
+        original = self.report(entry)['event']['event_id']
+        incoming = self.news(self.rbc, 'SBER withdrew its forecast.')
+
+        def interrupt(body: dict[str, Any]) -> dict[str, Any]:
+            raise Interrupted
+
+        with self.assertRaises(Interrupted):
+            self.serve({'match': 'same', 'event_id': original, 'change': 'retraction', 'reason': 'Retracted.',
+                        'evidence': None}, self.proposal('close', incoming), interrupt)
+        stop, take_profit = self.broker.state.protection
+        self.broker.state = replace(self.broker.state, position_lots=0,
+                                    protection=(replace(stop, status='executed'), take_profit),
+                                    exits=(Fill('native-exit', 3, Decimal('290')),))
+        self.serve(self.proposal('skip', incoming), review())
+        decision = self.report(incoming)
+        self.assertEqual(decision['result']['status'], 'no_action')
+        self.assertIsNone(decision['context']['position'])
+        self.assertEqual(len(decision['previous_reviews']), 1)
+        self.assertEqual(self.broker.calls, ['enter', 'sl', 'tp', 'cancel_protection'])
+
+    def test_restart_after_exit_with_lost_response_recovers_exit_and_entry_sources(self) -> None:
+        self.sandbox()
+        entry = self.news(self.market, 'SBER raised its forecast.')
+        self.serve(self.proposal('enter', entry), review())
+        original = self.report(entry)['event']['event_id']
+        incoming = self.news(self.rbc, 'SBER withdrew its forecast.')
+        close = self.broker.close
+
+        def interrupt(*args: Any) -> None:
+            close(*args)
+            raise Interrupted
+
+        with patch.object(self.broker, 'close', side_effect=interrupt), self.assertRaises(Interrupted):
+            self.serve({'match': 'same', 'event_id': original, 'change': 'retraction', 'reason': 'Retracted.',
+                        'evidence': None}, self.proposal('close', incoming), review())
+        self.serve()
+        decision = self.report(incoming)
+        self.assertEqual(decision['result']['status'], 'closed')
+        self.assertEqual(decision['context']['entry_reason']['sources'], [
+            {'revision': entry.revision_key(), 'url': entry.url, 'quote': entry.text},
+        ])
+        self.assertEqual(self.broker.calls, ['enter', 'sl', 'tp', 'cancel_protection', 'close'])
+
+    def test_old_gap_publication_reassesses_position_without_lifting_entry_age_limit(self) -> None:
+        self.sandbox()
+        old_time = utc_now() - timedelta(minutes=20)
+        entry = self.news(self.market, 'SBER raised its forecast.')
+        with patch('news_futures.telegram.utc_now', return_value=old_time - timedelta(minutes=1)):
+            self.serve(self.proposal('enter', entry), review())
+        original = self.report(entry)['event']['event_id']
+        incoming = replace(self.news(self.rbc, 'SBER gave updated guidance.'), published_at=old_time)
+        self.rbc.messages = [incoming]
+        self.rbc.differences[-1] = Difference(self.rbc.pts, [], too_long=True)
+        self.serve({'match': 'same', 'event_id': original, 'change': 'new_facts', 'reason': 'Update.',
+                    'evidence': None}, self.proposal('hold', incoming), review())
+        self.assertEqual(self.report(incoming)['publication']['published_at'], old_time.isoformat())
+        self.assertEqual(self.report(incoming)['result']['status'], 'no_action')
+        self.assertEqual(self.broker.calls, ['enter', 'sl', 'tp'])
+
+    def test_initial_history_and_old_gap_publications_cannot_open_a_position(self) -> None:
+        self.sandbox()
+        now = utc_now()
+        old_time = now - timedelta(minutes=20)
+        self.market.messages[0] = replace(self.market.messages[0], text='SBER initial history.')
+        with patch('news_futures.telegram.utc_now', return_value=old_time - timedelta(minutes=1)):
+            self.serve()
+        self.assertEqual(self.jev_requests, [])
+        incoming = replace(self.news(self.market, 'SBER missed publication.'), published_at=old_time)
+        self.market.messages.append(incoming)
+        self.market.differences[-1] = Difference(self.market.pts, [], too_long=True)
+        self.assertEqual(self.serve().requests, [])
+        self.assertEqual(self.report(incoming)['result']['reason'], 'publication_context_only')
+        self.assertEqual(self.broker.calls, [])
+
+    def test_shutdown_keeps_protection_and_leaves_reviewed_close_for_restart(self) -> None:
+        self.sandbox()
+        entry = self.news(self.market, 'SBER raised its forecast.')
+        self.serve(self.proposal('enter', entry), review())
+        original = self.report(entry)['event']['event_id']
+        incoming = self.news(self.rbc, 'SBER withdrew its forecast.')
+        runtime = Runtime(load_settings(self.profile), lambda _: self.broker, lambda _: self.broker)
+
+        def stop(body: dict[str, Any]) -> dict[str, Any]:
+            runtime.stop.set()
+            return dict(review()(body))
+
+        with patch('news_futures.runtime.Runtime', return_value=runtime):
+            self.serve({'match': 'same', 'event_id': original, 'change': 'retraction', 'reason': 'Retracted.',
+                        'evidence': None}, self.proposal('close', incoming), stop)
+        self.assertEqual(self.report(incoming)['result']['reason'], 'shutdown_before_execution')
+        self.assertEqual(self.report()['broker']['protection']['status'], 'confirmed')
+        self.assertEqual(self.broker.calls, ['enter', 'sl', 'tp'])
+        self.serve()
+        self.assertEqual(self.report(incoming)['result']['status'], 'closed')
 
     def test_observation_never_writes_and_mode_switch_does_not_replay_approval(self) -> None:
         item = self.news(self.market, 'SBER raised its forecast.', media=True)

@@ -4,24 +4,30 @@ import asyncio
 from collections.abc import Callable
 from contextlib import closing
 from datetime import datetime, timedelta
+from hashlib import sha256
 import json
 from pathlib import Path
+import sqlite3
 from threading import Event
 from typing import Any, Literal, Protocol, TypedDict, cast
+from uuid import uuid4
 
-from langchain_core.runnables import RunnableLambda
+from langchain_core.runnables import RunnableConfig, RunnableLambda
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langsmith import tracing_context
 from pydantic import Field
 
-from news_futures.analysis import Contract, RoleSettings, Settings
+from news_futures.analysis import Contract, Review, RoleSettings, Settings
 from news_futures.credentials import load_token
 from news_futures.decisions import (
-    Account, Instrument, Market, Nonempty, OpenPosition, Snapshot, analyze_event,
+    MAX_SNAPSHOT_AGE, Account, CompanyContext, CompanyProposal, Instrument, Market, Nonempty,
+    OpenPosition, Snapshot, analyze_event,
 )
 from news_futures.events import EventArchive, match_route
 from news_futures.jev import JevSettings, catalog_rows, load_catalog, route_publication
-from news_futures.local import write_json
+from news_futures.local import replace_json
 from news_futures.publications import Archive, utc_now
 from news_futures.risk import MAX_NEWS_AGE, EntryReservation, RiskSnapshot
 from news_futures.sandbox_execution import (
@@ -36,6 +42,10 @@ PACKAGE = Path(__file__).resolve().parent
 
 class RuntimeErrorInfo(ValueError):
     """A sanitized configuration or operation error suitable for CLI output."""
+
+
+class Shutdown(Exception):
+    pass
 
 
 class RuntimeSettings(Contract):
@@ -99,6 +109,14 @@ def runtime_tables(archive: Archive) -> None:
     """)
 
 
+def save_result(archive: Archive, result: dict[str, Any]) -> None:
+    with archive.db:
+        archive.db.execute('''
+            INSERT INTO runtime_decisions VALUES (?, ?)
+            ON CONFLICT (revision) DO UPDATE SET result = excluded.result
+        ''', (result['revision'], json.dumps(result)))
+
+
 class Reader(Protocol):
     def read_risk(self, account_id: str, contract_id: str) -> object: ...
     def read_trade(self, entry: EntryReservation, operations: dict[str, str],
@@ -111,8 +129,9 @@ class NewsState(TypedDict, total=False):
     reason: str | None
     decision_id: int
     affected: list[str]
-    snapshot: Snapshot
+    position_id: str | None
     proposal: dict[str, Any] | None
+    review_attempt: str | None
 
 
 class Runtime:
@@ -125,6 +144,9 @@ class Runtime:
         self.broker = broker
         self.stop = Event()
         self.failed = False
+        self.broker_ready = False
+        self.sources_ready = False
+        self.position: OpenPosition | None = None
 
     def read_markets(self, catalog: bytes) -> list[RiskSnapshot]:
         settings = self.settings
@@ -221,14 +243,20 @@ class Runtime:
                 if entry['contract_id'] in settings.contracts:
                     status['reconciliation'] = SandboxExecutor(events, self.broker(entry['contract_id'])).reconcile(
                         contract_id=entry['contract_id'], cycle_id=entry['id'],
+                        publications=archive if self.sources_ready else None,
                     )
             snapshot, protection = self.snapshot(events, settings.catalog.read_bytes())
+            self.position = snapshot.position
             status.update(broker='connected', position=snapshot.model_dump(mode='json')['position'],
                           protection=protection)
+            reconciliation = status.get('reconciliation', {})
+            if reconciliation.get('status') == 'blocked' or protection['status'] == 'unconfirmed':
+                status.update(broker='blocked', error=reconciliation.get('reason') or 'protection_unconfirmed')
         except Exception as error:
             status.update(broker='blocked', error=error_code(error), position=None,
                           protection={'status': 'unconfirmed'})
         finally:
+            self.broker_ready = status.get('broker') == 'connected'
             with archive.db:
                 archive.db.execute('INSERT OR REPLACE INTO runtime_status VALUES (1, ?)', (json.dumps(status),))
             print(json.dumps(status, ensure_ascii=False), flush=True)
@@ -238,62 +266,118 @@ class Runtime:
         archive = Archive(settings.publications)
         with closing(archive.db), EventArchive(settings.events) as events:
             rows = archive.db.execute("""
-                SELECT revision, publication FROM revisions
-                WHERE historical = 0 AND status IN ('pending', 'context_only')
+                SELECT revisions.revision, publication, result FROM revisions
+                LEFT JOIN runtime_decisions USING (revision)
+                WHERE historical = 0 AND revisions.status IN ('pending', 'context_only')
                   AND json_extract(publication, '$.change') != 'delete'
                   AND trim(json_extract(publication, '$.text')) != ''
-                  AND NOT EXISTS (SELECT 1 FROM runtime_decisions WHERE revision = revisions.revision)
-                ORDER BY rowid
+                  AND (result IS NULL OR json_extract(result, '$.status') = 'processing'
+                       OR json_extract(result, '$.reconcile_pending') = 1
+                       OR (json_extract(result, '$.inputs_saved') IS NULL
+                           AND json_extract(result, '$.status') = 'blocked'
+                           AND json_extract(result, '$.execution.cycle_id') IS NOT NULL))
+                ORDER BY revisions.rowid
             """).fetchall()
             for row in rows:
                 if self.stop.is_set():
                     break
                 publication = json.loads(row['publication'])
-                result: dict[str, Any] = {'revision': row['revision'], 'mode': settings.mode, 'status': 'processing',
-                                          'publication_id': publication['id']}
-                with archive.db:
-                    claimed = archive.db.execute('INSERT OR IGNORE INTO runtime_decisions VALUES (?, ?)',
-                                                 (row['revision'], json.dumps(result))).rowcount
-                if not claimed:
-                    continue
+                if row['result'] is None:
+                    if not self.broker_ready:
+                        continue
+                    result = {'revision': row['revision'], 'mode': settings.mode, 'status': 'processing',
+                              'publication_id': publication['id'], 'inputs_saved': False}
+                    save_result(archive, result)
+                else:
+                    result = json.loads(row['result'])
                 try:
                     self.process_revision(archive, events, publication, result)
+                except Shutdown:
+                    break
                 except Exception as error:
-                    result.update(status='failed', reason=error_code(error))
+                    status = 'processing' if result.get('stage') == 'execution' else 'failed'
+                    result.update(status=status, reason=error_code(error))
+                    self.failed = True
                 self.failed |= result['status'] == 'failed' or (
                     result['status'] == 'rejected' and result.get('stage') == 'review'
                 )
                 result['latency_ms'] = round((utc_now() - datetime.fromisoformat(
                     publication['received_at'],
                 )) / timedelta(milliseconds=1))
-                with archive.db:
-                    archive.db.execute('UPDATE runtime_decisions SET result = ? WHERE revision = ?',
-                                       (json.dumps(result), row['revision']))
+                save_result(archive, result)
                 print(json.dumps(result, ensure_ascii=False), flush=True)
 
     def process_revision(self, archive: Archive, events: EventArchive, publication: dict[str, Any],
                          result: dict[str, Any]) -> None:
         settings = self.settings
         directory = settings.data_dir / 'decisions' / result['revision']
-        directory.mkdir(parents=True)
-        write_json(directory / 'runtime.json', settings.model_dump(mode='json'))
-        write_json(directory / 'publication.json', publication)
-        inputs = cycle_inputs(settings)
-        for field, content in inputs.items():
-            (directory / f'{field}.json').write_bytes(content)
-        review = directory / 'review'
-        state = self.analyze_news(directory, publication, result['revision'], inputs['catalog'])
+        legacy = 'inputs_saved' not in result and directory.exists()
+        original = directory
+        if result.get('legacy'):
+            directory = directory / 'resumed'
+        approval = directory / 'review'
+        if attempt := result.get('review_attempt'):
+            approval /= attempt
+        if result['mode'] == 'sandbox' and (legacy or result.get('stage') == 'execution'):
+            trades = trade_journal(events, approval=approval)
+            if trades:
+                trade, = trades
+                cycle = trade['reservation']['id']
+                status, reason = trade['status'], trade['reason']
+                approval_path = str(approval.resolve())
+                is_close = trade['approval'] != approval_path
+                abandoned = next((event['details'] for event in reversed(trade['events'])
+                                  if event['kind'] == 'reviewed_close_abandoned'
+                                  and event['details']['approval'] == approval_path), None)
+                result.pop('reconcile_pending', None)
+                if abandoned:
+                    status, reason = 'rejected', abandoned['reason']
+                elif (status in ('reserved', 'blocked') or (is_close and status != 'closed')
+                        or (status == 'protected' and not self.broker_ready)):
+                    result['reconcile_pending'] = True
+                    status, reason = result['status'], reason or 'broker_reconciliation_required'
+                result.update(stage='execution', status=status, reason=reason,
+                              execution={'cycle_id': cycle, 'status': status, 'reason': reason})
+                return
+        if not self.broker_ready:
+            return
+        frozen = (original if legacy else directory) / 'runtime.json'
+        previous = (RuntimeSettings.model_validate_json(frozen.read_bytes())
+                    if result.get('inputs_saved') or (legacy and frozen.is_file()) else settings)
+        if (result['mode'] != settings.mode or previous.account_id != settings.account_id
+                or previous.contracts != settings.contracts):
+            result.update(status='skipped', reason='runtime_profile_changed')
+            return
+        if legacy:
+            # Keep ticket 11's partial artifacts and broker approval path available for audit.
+            directory = original / 'resumed'
+            result['legacy'] = True
+        if not result.get('inputs_saved'):
+            directory.mkdir(parents=True, exist_ok=True)
+            replace_json(directory / 'runtime.json', settings.model_dump(mode='json'))
+            replace_json(directory / 'publication.json', publication)
+            for field, content in cycle_inputs(settings).items():
+                (directory / f'{field}.json').write_bytes(content)
+            result['inputs_saved'] = True
+            save_result(archive, result)
+        state = self.analyze_news(directory, publication, result['revision'], (directory / 'catalog.json').read_bytes())
         result.update(stage=state['stage'], status=state['status'], reason=state.get('reason'))
         if 'decision_id' in state:
             result['decision_id'] = state['decision_id']
+        result.pop('review_attempt', None)
+        if attempt := state.get('review_attempt'):
+            result['review_attempt'] = attempt
+        result.pop('reconcile_pending', None)
         if self.broker is None or state['status'] != 'approved_for_checks':
             return
         if self.stop.is_set():
-            result.update(status='skipped', reason='shutdown_before_execution')
+            result.update(status='processing', reason='shutdown_before_execution')
             return
-        result['stage'] = 'execution'
+        result.update(stage='execution', status='processing', reason='broker_reconciliation_required')
+        save_result(archive, result)
         proposal = state['proposal']
-        assert proposal is not None
+        assert proposal is not None and attempt is not None
+        review = directory / 'review' / attempt
         executor = SandboxExecutor(events, self.broker(proposal['contract_id']))
         if proposal['action'] == 'enter':
             # Live T-Bank writes remain gated by the executor's independent-stop policy.
@@ -301,18 +385,23 @@ class Runtime:
             if execution['reason'] == 'independent_stops_require_opt_in':
                 execution['reason'] = 'autonomous_protection_unavailable'
         else:
-            position = state['snapshot'].position
-            assert position is not None
+            position_id = state['position_id']
+            assert position_id is not None
             execution = executor.reconcile(contract_id=proposal['contract_id'],
-                                           cycle_id=position.id, review=(archive, review))
+                                           cycle_id=position_id, review=(archive, review))
         result.update(status=execution['status'], reason=execution['reason'], execution=execution)
+        if execution['status'] == 'blocked':
+            result['reconcile_pending'] = True
 
     def analyze_news(self, directory: Path, publication: dict[str, Any], revision: str, catalog: bytes) -> NewsState:
         settings = self.settings
 
         def route(_: NewsState) -> NewsState:
+            route_dir = directory / 'route'
+            if route_dir.exists():
+                route_dir.rename(directory / f'route-interrupted-{uuid4().hex}')
             routed = route_publication(directory / 'jev.json', directory / 'publication.json',
-                                       directory / 'catalog.json', directory / 'route')
+                                       directory / 'catalog.json', route_dir)
             if routed['status'] != 'completed':
                 return {'status': 'failed', 'reason': routed['error']}
             return {'status': 'continue'}
@@ -320,7 +409,7 @@ class Runtime:
         def match(_: NewsState) -> NewsState:
             with EventArchive(settings.events) as events:
                 event = match_route(events, directory / 'route', directory / 'matcher.json')
-            write_json(directory / 'event.json', event)
+            replace_json(directory / 'event.json', event)
             affected = event['analysis_company_ids']
             result: NewsState = {'decision_id': event['decision_id'], 'affected': affected}
             if event['kind'] == 'model_error':
@@ -349,17 +438,25 @@ class Runtime:
                 return {'status': 'skipped', 'reason': 'unrelated_to_position'}
             if not snapshot.position and utc_now() - datetime.fromisoformat(publication['published_at']) > MAX_NEWS_AGE:
                 return {'status': 'skipped', 'reason': 'publication_context_only'}
-            write_json(directory / 'snapshot.json', snapshot.model_dump(mode='json'))
-            return {'snapshot': snapshot}
+            replace_json(directory / 'snapshot.json', snapshot.model_dump(mode='json'))
+            return {}
 
         def review(state: NewsState) -> NewsState:
+            snapshot_path = directory / 'snapshot.json'
+            content = snapshot_path.read_bytes()
+            snapshot = Snapshot.model_validate_json(content)
+            attempt = sha256(content).hexdigest()
             with EventArchive(settings.events) as events:
-                trace = analyze_event(events, state['decision_id'], directory / 'snapshot.json',
-                                      directory / 'review.json', directory / 'review', mode=settings.mode)
-            return {'status': trace['status'], 'reason': trace['error'], 'proposal': trace['approved_proposal']}
+                trace = analyze_event(events, state['decision_id'], snapshot_path,
+                                      directory / 'review.json', directory / 'review' / attempt, mode=settings.mode,
+                                      checkpointer=checkpointer, thread_id=f'{revision}:review:{attempt}')
+            return {'status': trace['status'], 'reason': trace['error'], 'proposal': trace['approved_proposal'],
+                    'position_id': snapshot.position.id if snapshot.position else None, 'review_attempt': attempt}
 
         def audited(stage: str, node: Callable[[NewsState], NewsState]) -> RunnableLambda[NewsState, dict[str, Any]]:
             def invoke(state: NewsState) -> dict[str, Any]:
+                if self.stop.is_set():
+                    raise Shutdown
                 try:
                     updates = node(state)
                 except Exception as error:
@@ -378,8 +475,26 @@ class Runtime:
         graph.add_conditional_edges('event', lambda state: 'snapshot' if state['status'] == 'continue' else END)
         graph.add_conditional_edges('snapshot', lambda state: 'review' if state['status'] == 'continue' else END)
         graph.add_edge('review', END)
-        with tracing_context(enabled=False):
-            return cast(NewsState, graph.compile().invoke({'status': 'continue'}))
+        with closing(sqlite3.connect(settings.data_dir / 'checkpoints.sqlite3', check_same_thread=False)) as db:
+            checkpointer = SqliteSaver(db, serde=JsonPlusSerializer(allowed_msgpack_modules=[
+                (cls.__module__, cls.__name__) for cls in (CompanyContext, CompanyProposal, Review)
+            ]))
+            config: RunnableConfig = {'configurable': {'thread_id': revision}}
+            with tracing_context(enabled=False):
+                compiled = graph.compile(checkpointer=checkpointer)
+                saved = compiled.get_state(config)
+                if saved.created_at and ('review' in saved.next or saved.values.get('stage') == 'review'):
+                    snapshot = Snapshot.model_validate_json((directory / 'snapshot.json').read_bytes())
+                    timestamps = [snapshot.account.observed_at, *(item.market.observed_at for item in snapshot.instruments)]
+                    if snapshot.position != self.position or (saved.next and utc_now() - min(timestamps) > MAX_SNAPSHOT_AGE):
+                        compiled.update_state(config, {'status': 'continue', 'reason': None, 'proposal': None,
+                                                       'review_attempt': None}, as_node='event')
+                        saved = compiled.get_state(config)
+                if saved.created_at and not saved.next:
+                    return cast(NewsState, saved.values)
+                return cast(NewsState, compiled.invoke(
+                    None if saved.created_at else {'status': 'continue'}, config, durability='sync',
+                ))
 
 
 def error_code(error: Exception) -> str:
@@ -395,7 +510,16 @@ async def run_runtime(config: Path, once: bool) -> int:
     except (OSError, ValueError, TypeError, KeyError) as error:
         raise RuntimeErrorInfo('Проверьте sources и внешний путь к session.') from error
     load_token('openrouter', 'api_key')
-    with sandbox_client(settings.ca_file, read_only=settings.mode == 'observation') as client:
+    settings.data_dir.mkdir(parents=True, exist_ok=True)
+    with closing(sqlite3.connect(settings.data_dir / 'runtime-lock.sqlite3', timeout=0)) as lock, sandbox_client(
+        settings.ca_file, read_only=settings.mode == 'observation',
+    ) as client:
+        try:
+            lock.execute('BEGIN IMMEDIATE')
+        except sqlite3.OperationalError as error:
+            if error.sqlite_errorcode != sqlite3.SQLITE_BUSY:
+                raise
+            raise RuntimeErrorInfo('serve уже работает с этим каталогом данных.') from error
         def reader(contract: str) -> Reader:
             return TBankReader(client, settings.account_id, contract, settings.contracts[contract])
 
@@ -426,16 +550,20 @@ async def run_runtime(config: Path, once: bool) -> int:
                 raise
 
         async def process() -> None:
+            if not runtime.sources_ready:
+                runtime.sources_ready = True
+                await in_worker(runtime.refresh)
             await in_worker(runtime.process)
 
         async def monitor() -> None:
-            while True:
+            while not runtime.stop.is_set():
                 try:
                     await in_worker(runtime.refresh)
                 except Exception as error:
                     print(json.dumps({'broker_monitor_error': error_code(error)}), flush=True)
                 await asyncio.sleep(15)
 
+        await in_worker(runtime.refresh)
         observer = None if once else asyncio.create_task(monitor())
         try:
             source_code = await run_telegram(settings.sources, settings.publications, session, once, process=process)
@@ -443,6 +571,7 @@ async def run_runtime(config: Path, once: bool) -> int:
                 await in_worker(runtime.refresh)
             return source_code or int(runtime.failed)
         finally:
+            runtime.stop.set()
             if observer is not None:
                 observer.cancel()
                 await asyncio.gather(observer, return_exceptions=True)
@@ -472,14 +601,24 @@ def runtime_report(config: Path, decision: str | None) -> dict[str, Any]:
             raise RuntimeErrorInfo('Решение не найдено. Возьмите decision_id или revision из runtime-status.')
         directory = settings.data_dir / 'decisions' / row['revision']
         result = json.loads(row['result'])
+        if result.get('legacy'):
+            directory = directory / 'resumed'
+        review = directory / 'review'
+        if attempt := result.get('review_attempt'):
+            review /= attempt
         report = {'result': result, 'publication': json.loads(row['publication'])}
         for name, file in (
             ('settings', directory / 'runtime.json'), ('route', directory / 'route' / 'trace.json'),
-            ('event', directory / 'event.json'), ('context', directory / 'review' / 'context.json'),
-            ('review', directory / 'review' / 'trace.json'),
+            ('event', directory / 'event.json'), ('context', review / 'context.json'),
+            ('review', review / 'trace.json'),
         ):
             if file.is_file():
                 report[name] = json.loads(file.read_bytes())
         if cycle_id := result.get('execution', {}).get('cycle_id'):
             report['trades'] = trade_journal(events, cycle_id=cycle_id)
+        previous_reviews = [str(path) for path in (directory / 'review').glob('*/context.json') if path.parent != review]
+        if previous_reviews:
+            report['previous_reviews'] = previous_reviews
+        if interrupted_routes := sorted(directory.glob('route-interrupted-*')):
+            report['interrupted_routes'] = [str(path) for path in interrupted_routes]
         return report

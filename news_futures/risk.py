@@ -232,7 +232,7 @@ def _size(
 def reserve_entry(
     events: EventArchive, publications: Archive, directory: Path, *, account_id: str,
     allowed_contracts: Set[str], read_snapshot: Callable[[str, str], object],
-    on_reserve: Callable[[EntryReservation, str], None] | None = None,
+    on_reserve: Callable[[EntryReservation, CompanyProposal, dict[str, Any]], None] | None = None,
 ) -> Admission:
     """Re-read risk data and reserve an entry. The callback records intent in the same transaction."""
     try:
@@ -269,7 +269,7 @@ def reserve_entry(
                 account_id, reservation.id, reservation.model_dump_json(),
             ))
             if on_reserve is not None:
-                on_reserve(reservation, proposal.reason)
+                on_reserve(reservation, proposal, context)
         return Admission(reservation=reservation)
     except Rejected as error:
         return Admission(reason=str(error))

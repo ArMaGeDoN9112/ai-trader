@@ -94,7 +94,7 @@ class Archive:
     def save_batch(
         self, source: str, pts: int, publications: list[Publication], *,
         historical: bool = False, notices: tuple[str, ...] = (), checked_at: datetime | None = None,
-        history_since: datetime | None = None,
+        history_since: datetime | None = None, history_before: datetime | None = None,
     ) -> None:
         if pts <= 0 or any(item.source != source for item in publications):
             raise ValueError('Invalid channel batch')
@@ -104,7 +104,10 @@ class Archive:
             if current and pts < current['pts']:
                 raise ValueError('Channel pts cannot move backwards')
             for item in publications:
-                if historical or now - item.published_at > timedelta(minutes=15):
+                context_only = historical or (
+                    history_before is not None and (item.edited_at or item.published_at) < history_before
+                )
+                if context_only or now - item.published_at > timedelta(minutes=15):
                     status = 'context_only'
                 elif item.change == 'delete' or not item.text.strip():
                     status = 'no_text'
@@ -112,7 +115,7 @@ class Archive:
                     status = 'pending'
                 self.db.execute('INSERT OR IGNORE INTO revisions VALUES (?, ?, ?, ?, NULL)', (
                     item.revision_key(), json.dumps(item.record(), ensure_ascii=False),
-                    historical, status,
+                    context_only, status,
                 ))
             self.db.execute('INSERT OR REPLACE INTO channels VALUES (?, ?, ?, ?)', (
                 source, pts, (checked_at or now).isoformat(),
@@ -131,7 +134,9 @@ class Archive:
         row = self.db.execute("""
             SELECT revision, historical, publication FROM revisions
             WHERE json_extract(publication, '$.id') = ?
-            ORDER BY (json_extract(publication, '$.change') = 'delete') DESC, rowid DESC LIMIT 1
+            ORDER BY (json_extract(publication, '$.change') = 'delete') DESC,
+                     coalesce(json_extract(publication, '$.edited_at'), json_extract(publication, '$.published_at')) DESC,
+                     rowid DESC LIMIT 1
         """, (publication_id,)).fetchone()
         if row is None:
             return None

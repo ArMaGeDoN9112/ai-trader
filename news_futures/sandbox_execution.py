@@ -13,7 +13,7 @@ from uuid import UUID, uuid5
 from pydantic import ConfigDict, Field, TypeAdapter, ValidationError
 from pydantic.dataclasses import dataclass
 
-from news_futures.decisions import EntryReason, save_entry_reason
+from news_futures.decisions import CompanyProposal, EntryReason, entry_sources, save_entry_reason
 from news_futures.events import EventArchive
 from news_futures.publications import Archive, utc_now
 from news_futures.risk import (
@@ -120,7 +120,9 @@ class SandboxBroker(Protocol):
 
 def trade_journal(
     events: EventArchive, *, cycle_id: str | None = None, active_account: str | None = None,
+    approval: Path | None = None,
 ) -> list[dict[str, Any]]:
+    approval_path = str(approval.resolve()) if approval else None
     with events.db:
         if events.db.execute("SELECT 1 FROM sqlite_master WHERE name = 'sandbox_cycles'").fetchone() is None:
             return []
@@ -138,8 +140,12 @@ def trade_journal(
                 SELECT * FROM sandbox_cycles
                 WHERE (? IS NULL OR id = ?)
                   AND (? IS NULL OR (account_id = ? AND status NOT IN ('closed', 'no_fill')))
+                  AND (? IS NULL OR approval = ? OR EXISTS (
+                      SELECT 1 FROM sandbox_journal WHERE cycle_id = sandbox_cycles.id
+                      AND kind = 'reviewed_close' AND json_extract(details, '$.approval') = ?
+                  ))
                 ORDER BY rowid
-            """, (cycle_id, cycle_id, active_account, active_account))
+            """, (cycle_id, cycle_id, active_account, active_account, approval_path, approval_path, approval_path))
         ]
 
 
@@ -188,7 +194,7 @@ class SandboxExecutor:
         if self.broker.source == 'sandbox' and allow_independent_stops is not True:
             return {'status': 'rejected', 'reason': 'independent_stops_require_opt_in'}
 
-        def record(entry: EntryReservation, reason: str) -> None:
+        def record(entry: EntryReservation, proposal: CompanyProposal, context: dict[str, Any]) -> None:
             if self.db.execute(
                 'SELECT 1 FROM sandbox_cycles WHERE account_id = ? AND proposal_id = ?',
                 (entry.account_id, entry.proposal_id),
@@ -199,9 +205,9 @@ class SandboxExecutor:
                 VALUES (?, ?, ?, ?, ?, ?, 'reserved')
             """, (entry.id, entry.account_id, entry.proposal_id, entry.model_dump_json(),
                   str(approval.resolve()), self.broker.source))
-            save_entry_reason(self.events, EntryReason(
-                account_id=entry.account_id, position_id=entry.id, contract_id=entry.contract_id, reason=reason,
-            ))
+            save_entry_reason(self.events, EntryReason(account_id=entry.account_id, position_id=entry.id,
+                                                       contract_id=entry.contract_id, reason=proposal.reason,
+                                                       sources=entry_sources(proposal, context)))
 
         with self._exclusive() as acquired:
             if not acquired:
@@ -219,7 +225,8 @@ class SandboxExecutor:
 
     def reconcile(self, *, close: bool = False, contract_id: str | None = None,
                   cycle_id: str | None = None,
-                  review: tuple[Archive, Path] | None = None) -> dict[str, str]:
+                  review: tuple[Archive, Path] | None = None,
+                  publications: Archive | None = None) -> dict[str, str]:
         with self._exclusive() as acquired:
             if not acquired:
                 return {'status': 'blocked', 'reason': 'executor_busy'}
@@ -254,9 +261,32 @@ class SandboxExecutor:
             elif close:
                 with self.db:
                     self.db.execute('UPDATE sandbox_cycles SET close_requested = 1 WHERE id = ?', (entry.id,))
-            return self._advance(entry, operations, close=close or bool(row['close_requested']))
+            elif row['close_requested']:
+                close = True
+                if 'cancel_protection' not in operations and not close_requests(operations):
+                    saved = self.db.execute('''
+                        SELECT details FROM sandbox_journal WHERE cycle_id = ? AND kind = 'reviewed_close'
+                        AND seq > coalesce((SELECT max(seq) FROM sandbox_journal
+                            WHERE cycle_id = ? AND kind = 'reviewed_close_abandoned'), 0)
+                        ORDER BY seq DESC LIMIT 1
+                    ''', (entry.id, entry.id)).fetchone()
+                    if saved is not None:
+                        close = False
+                        if publications is not None:
+                            approval = json.loads(saved['details'])['approval']
+                            try:
+                                self._record_reviewed_close(entry, publications, Path(approval), persist=False)
+                            except Rejected as error:
+                                with self.db:
+                                    self.db.execute('UPDATE sandbox_cycles SET close_requested = 0 WHERE id = ?',
+                                                    (entry.id,))
+                                    self._log(entry, 'reviewed_close_abandoned', approval=approval, reason=str(error))
+                            else:
+                                close = True
+            return self._advance(entry, operations, close=close)
 
-    def _record_reviewed_close(self, entry: EntryReservation, publications: Archive, approval: Path) -> None:
+    def _record_reviewed_close(self, entry: EntryReservation, publications: Archive, approval: Path, *,
+                               persist: bool = True) -> None:
         proposal, proposal_id, formed_at, context = read_approval(approval)
         position = context.get('position')
         if (proposal.action != 'close' or proposal.contract_id != entry.contract_id or not position
@@ -283,8 +313,9 @@ class SandboxExecutor:
                     or not all(_fresh(at, now, MAX_RISK_DATA_AGE)
                                for at in (snapshot.account_observed_at, contract.observed_at, contract.quote_at))):
                 raise Rejected('close_market_or_position_unconfirmed')
-            self.db.execute('UPDATE sandbox_cycles SET close_requested = 1 WHERE id = ?', (entry.id,))
-            self._log(entry, 'reviewed_close', proposal_id=proposal_id, approval=str(approval.resolve()))
+            if persist:
+                self.db.execute('UPDATE sandbox_cycles SET close_requested = 1 WHERE id = ?', (entry.id,))
+                self._log(entry, 'reviewed_close', proposal_id=proposal_id, approval=str(approval.resolve()))
 
     def _log(self, entry: EntryReservation, kind: str, **details: Any) -> None:
         with self.db:

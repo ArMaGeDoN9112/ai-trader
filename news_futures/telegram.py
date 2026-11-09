@@ -81,14 +81,15 @@ async def collect(transport: Transport, archive: Archive, source: Source) -> int
             history = await transport.history(
                 source, datetime.fromisoformat(state['history_since']), utc_now(),
             )
-            publications = history + publications
+            publications = sorted(history + publications, key=lambda item: item.edited_at or item.published_at)
             notices = ('channel_difference_too_long', 'history_available_only',
                        'intermediate_editions_and_deleted_posts_unrecoverable')
         else:
             pts = difference.pts
         checkpoint_time = (requested_at if difference.final and not difference.too_long
                            else datetime.fromisoformat(state['checked_at']))
-        archive.save_batch(source.id, pts, publications, historical=difference.too_long,
+        archive.save_batch(source.id, pts, publications,
+                           history_before=checkpoint_time.replace(microsecond=0) if difference.too_long else None,
                            notices=notices, checked_at=checkpoint_time)
         state = archive.cursor(source.id)
         assert state is not None
@@ -96,7 +97,8 @@ async def collect(transport: Transport, archive: Archive, source: Source) -> int
             return max(1, difference.timeout)
 
 
-async def watch_channel(transport: Transport, archive: Archive, username: str, once: bool) -> bool:
+async def watch_channel(transport: Transport, archive: Archive, username: str, once: bool, *,
+                        first_poll: asyncio.Event | None = None) -> bool:
     source: Source | None = None
     while True:
         delay = 5
@@ -119,6 +121,8 @@ async def watch_channel(transport: Transport, archive: Archive, username: str, o
             delay = max(5, int(getattr(error, 'seconds', 5)))
         if once:
             return ok
+        if first_poll is not None:
+            first_poll.set()
         await asyncio.sleep(delay)
 
 
@@ -271,7 +275,7 @@ async def run_telegram(
     path = session_path(path)
     client = await open_client(path, login=False)
     archive: Archive | None = None
-    worker: asyncio.Task[None] | None = None
+    tasks: list[asyncio.Task[Any]] = []
     try:
         from telethon import functions
         identity_path = path.with_suffix('.identity')
@@ -289,15 +293,19 @@ async def run_telegram(
             archive.process_pending()
 
         consume = process if process is not None else simulate
+        ready = [asyncio.Event() for _ in channels]
+        tasks.extend(asyncio.create_task(watch_channel(transport, archive, name, once, first_poll=polled))
+                     for name, polled in zip(channels, ready))
         if not once:
-            worker = asyncio.create_task(process_queue(consume))
-        results = await asyncio.gather(*(watch_channel(transport, archive, name, once) for name in channels))
+            await asyncio.gather(*(polled.wait() for polled in ready))
+            tasks.append(asyncio.create_task(process_queue(consume)))
+        results = await asyncio.gather(*tasks)
         await consume()
         return 0 if all(results) else 1
     finally:
-        if worker:
-            worker.cancel()
-            await asyncio.gather(worker, return_exceptions=True)
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
         if archive:
             archive.db.close()
         await client.disconnect()

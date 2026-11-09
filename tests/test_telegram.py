@@ -121,8 +121,8 @@ class CollectionTest(unittest.IsolatedAsyncioTestCase):
                       [row['code'] for row in report['notices']])
         self.assertEqual(report['channels'][0]['pts'], 20)
         self.assertEqual(len(report['revisions']), 2)
-        self.assertEqual(report['revisions'][-1]['historical'], 1)
-        self.assertEqual(report['revisions'][-1]['status'], 'context_only')
+        self.assertEqual(report['revisions'][-1]['historical'], 0)
+        self.assertEqual(report['revisions'][-1]['status'], 'pending')
         self.assertEqual(transport.requests[-1], 20)
         self.assertEqual(transport.windows[-1][0], transport.windows[0][0])
 
@@ -144,6 +144,18 @@ class CollectionTest(unittest.IsolatedAsyncioTestCase):
         after = dict(self.archive.cursor(transport.source.id))  # type: ignore[arg-type]
         self.assertEqual(after['pts'], 11)
         self.assertEqual(after['checked_at'], before['checked_at'])
+
+    async def test_gap_recovery_includes_posts_in_the_second_of_the_previous_poll(self) -> None:
+        transport = self.transport
+        poll = utc_now().replace(microsecond=500_000)
+        with patch('news_futures.telegram.utc_now', return_value=poll):
+            await collect(transport, self.archive, transport.source)
+        incoming = replace(transport.original, external_id='2', published_at=poll.replace(microsecond=0))
+        transport.messages.append(incoming)
+        transport.pts = 20
+        transport.differences = [Difference(20, [], too_long=True)]
+        await collect(transport, self.archive, transport.source)
+        self.assertEqual([row['historical'] for row in self.archive.report()['revisions']], [1, 0])
 
     async def test_error_messages_do_not_leak_exception_contents(self) -> None:
         with patch('sys.stderr', new_callable=StringIO) as errors:

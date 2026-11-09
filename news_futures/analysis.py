@@ -10,12 +10,14 @@ from uuid import uuid4
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langsmith import tracing_context
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 from news_futures.credentials import load_token
-from news_futures.local import publication_digest, write_json
+from news_futures.local import publication_digest, replace_json, write_json
 from news_futures.openrouter_model import OpenRouterChat
 from news_futures.publications import utc_now
 
@@ -152,6 +154,7 @@ class CycleState(TypedDict):
     proposal_id: str | None
     review: Review | None
     previous_review: Review | None
+    calls: list[dict[str, Any]]
     revisions: int
     error: str | None
 
@@ -161,9 +164,7 @@ ModelResult = TypeVar('ModelResult', bound=BaseModel)
 
 def proposal_payload(state: CycleState) -> dict[str, Any] | None:
     proposal = state['proposal']
-    if proposal is None:
-        return None
-    return proposal.model_dump(mode='json') | {'id': state['proposal_id']}
+    return proposal.model_dump(mode='json') | {'id': state['proposal_id']} if proposal is not None else None
 
 
 def validate_proposal(proposal: dict[str, Any], context: dict[str, Any]) -> None:
@@ -210,20 +211,18 @@ def review_cycle(
     mode: str = 'openrouter-control', system: str = SYSTEM,
     proposal_schema: type[ProposalTerms] = Proposal,
     validate: Callable[[dict[str, Any], dict[str, Any]], None] = validate_proposal,
+    checkpointer: BaseCheckpointSaver[str] | None = None, thread_id: str | None = None,
 ) -> dict[str, Any]:
     """Read settings once; persist each result; return only reviewed proposals."""
     settings = Settings.model_validate_json(config_path.read_bytes())
     snapshot = settings.model_dump(mode='json')
     version = sha256(json.dumps(snapshot, sort_keys=True).encode()).hexdigest()
-    cycle_id = str(uuid4())
-    directory.mkdir(parents=True, exist_ok=False)
-    write_json(directory / 'publication.json', context.publication)
-    write_json(directory / 'context.json', context.model_dump(mode='json'))
-    write_json(directory / 'settings.json', {'version': version, **snapshot})
-    calls: list[dict[str, Any]] = []
+    cycle_id = thread_id or str(uuid4())
+    directory.mkdir(parents=True, exist_ok=checkpointer is not None)
 
     def invoke(role: Literal['analyst', 'critic'], schema: type[ModelResult],
-               data: dict[str, Any], *, proposal_id: str | None = None) -> ModelResult:
+               data: dict[str, Any], calls: list[dict[str, Any]], *,
+               proposal_id: str | None = None) -> ModelResult:
         role_settings = getattr(settings, role)
         record: dict[str, Any] = {
             'role': role, 'mode': mode, 'requested_model': role_settings.model,
@@ -282,31 +281,36 @@ def review_cycle(
         finally:
             record['latency_ms'] = round((perf_counter() - started) * 1000, 3)
             calls.append(record)
-            write_json(directory / f'call-{len(calls):02}.json', record)
+            path = directory / f'call-{len(calls):02}.json'
+            if path.exists():
+                path.rename(directory / f'{path.stem}-interrupted-{uuid4().hex}.json')
+            replace_json(path, record)
 
     def analyst(state: CycleState) -> dict[str, Any]:
+        calls = list(state['calls'])
         try:
             review = state['review']
             proposal_id = f'{cycle_id}:{len(calls) + 1}'
             proposal = invoke('analyst', proposal_schema, {
-                'context': state['context'].model_dump(mode='json'),
-                'proposal': proposal_payload(state), 'review': review.model_dump(mode='json') if review else None,
-            }, proposal_id=proposal_id)
-            return {'proposal': proposal, 'proposal_id': proposal_id, 'review': None,
+                'context': state['context'].model_dump(mode='json'), 'proposal': proposal_payload(state),
+                'review': review.model_dump(mode='json') if review else None,
+            }, calls, proposal_id=proposal_id)
+            return {'proposal': proposal, 'proposal_id': proposal_id, 'calls': calls, 'review': None,
                     'previous_review': review, 'revisions': state['revisions'] + int(review is not None)}
         except Exception as error:
-            return {'error': type(error).__name__, 'proposal': None, 'review': None}
+            return {'error': type(error).__name__, 'calls': calls, 'proposal': None, 'review': None}
 
     def critic(state: CycleState) -> dict[str, Any]:
+        calls = list(state['calls'])
         try:
             previous = state['previous_review']
             review = invoke('critic', Review, {
                 'context': state['context'].model_dump(mode='json'), 'proposal': proposal_payload(state),
                 'previous_review': previous.model_dump(mode='json') if previous else None,
-            })
-            return {'review': review}
+            }, calls)
+            return {'review': review, 'calls': calls}
         except Exception as error:
-            return {'error': type(error).__name__, 'review': None}
+            return {'error': type(error).__name__, 'calls': calls, 'review': None}
 
     graph: StateGraph[CycleState, None, CycleState, CycleState] = StateGraph(CycleState)
     graph.add_node('analyst', analyst)
@@ -323,8 +327,20 @@ def review_cycle(
     graph.add_conditional_edges('critic', after_review)
     with tracing_context(enabled=False):
         initial: CycleState = {'context': context, 'proposal': None, 'proposal_id': None, 'review': None,
-                               'previous_review': None, 'revisions': 0, 'error': None}
-        state = cast(CycleState, graph.compile().invoke(initial))
+                               'calls': [], 'previous_review': None, 'revisions': 0, 'error': None}
+        compiled = graph.compile(checkpointer=checkpointer)
+        config: RunnableConfig = {'configurable': {'thread_id': cycle_id}}
+        saved = compiled.get_state(config) if checkpointer is not None else None
+        audit_context = saved.values.get('context', context) if saved else context
+        replace_json(directory / 'publication.json', audit_context.publication)
+        replace_json(directory / 'context.json', audit_context.model_dump(mode='json'))
+        replace_json(directory / 'settings.json', {'version': version, **snapshot})
+        if checkpointer is None:
+            state = cast(CycleState, compiled.invoke(initial))
+        elif saved and saved.created_at:
+            state = cast(CycleState, compiled.invoke(None, config, durability='sync') if saved.next else saved.values)
+        else:
+            state = cast(CycleState, compiled.invoke(initial, config, durability='sync'))
     review = state['review']
     proposal = state['proposal']
     approved = not state['error'] and review is not None and review.approved
@@ -333,6 +349,6 @@ def review_cycle(
         'cycle_id': cycle_id, 'mode': mode, 'settings_version': version,
         'status': 'no_action' if no_action else 'approved_for_checks' if approved else 'rejected',
         'approved_proposal': proposal_payload(state) if approved and not no_action else None,
-        'error': state['error'], 'calls': calls,
+        'error': state['error'], 'calls': state['calls'],
         'execution': {'status': 'not_requested'},
     }
