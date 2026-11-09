@@ -3,6 +3,7 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
+import re
 from secrets import compare_digest, token_urlsafe
 import sqlite3
 import sys
@@ -15,7 +16,8 @@ from news_futures.operator.supervisor import Worker
 from news_futures.operator.trades import trades_view
 
 
-PAGE = Path(__file__).with_name('page.html')
+WEB = Path(__file__).with_name('web') / 'dist'
+ASSET = re.compile(r'/assets/([\w-]+\.(js|css))', re.ASCII)
 
 
 class OperatorHandler(BaseHTTPRequestHandler):
@@ -25,14 +27,16 @@ class OperatorHandler(BaseHTTPRequestHandler):
     def log_message(self, format: str, *args: Any) -> None:
         pass
 
-    def reply(self, code: int, value: object, *, html: bool = False) -> None:
-        body = (str(value) if html else json.dumps(value, ensure_ascii=False)).encode('utf-8')
+    def reply(self, code: int, value: object, *, mime: str = 'application/json') -> None:
+        body = value if isinstance(value, bytes) else (
+            json.dumps(value, ensure_ascii=False) if mime == 'application/json' else str(value)
+        ).encode('utf-8')
         self.send_response(code)
-        self.send_header('Content-Type', ('text/html' if html else 'application/json') + '; charset=utf-8')
+        self.send_header('Content-Type', mime + '; charset=utf-8')
         self.send_header('Cache-Control', 'no-store')
         self.send_header('Content-Security-Policy',
-                         f"default-src 'none'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; "
-                         f"script-src 'nonce-{self.server.nonce}'; style-src 'unsafe-inline'")
+                         "default-src 'none'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; "
+                         "script-src 'self'; style-src 'self'; form-action 'self'")
         self.send_header('X-Content-Type-Options', 'nosniff')
         self.send_header('Cross-Origin-Resource-Policy', 'same-origin')
         self.send_header('Content-Length', str(len(body)))
@@ -51,7 +55,13 @@ class OperatorHandler(BaseHTTPRequestHandler):
         if not self.local():
             self.reply(403, {'result': 'forbidden'})
         elif self.path == '/':
-            self.reply(200, self.server.page, html=True)
+            self.reply(200, self.server.page, mime='text/html')
+        elif asset := ASSET.fullmatch(path):
+            body = self.server.assets.get(asset[1])
+            if body is None:
+                self.reply(404, {'result': 'not_found'})
+            else:
+                self.reply(200, body, mime={'js': 'text/javascript', 'css': 'text/css'}[asset[2]])
         elif path in ('/api/overview', '/api/news', '/api/trace', '/api/trades', '/api/controls'):
             if not self.authorized():
                 self.reply(403, {'result': 'forbidden'})
@@ -110,14 +120,15 @@ class OperatorHandler(BaseHTTPRequestHandler):
 
 class OperatorServer(ThreadingHTTPServer):
     def __init__(self, worker: Worker, channels: list[str], port: int, catalog: dict[str, Any] | None = None,
-                 series: dict[str, Any] | None = None):
+                 series: dict[str, Any] | None = None, *, web: Path = WEB):
         self.worker = worker
         self.worker.channels = channels
         self.catalog = catalog or {}
         self.series = series or {}
         self.session = token_urlsafe(32)
-        self.nonce = token_urlsafe(24)
-        self.page = PAGE.read_text(encoding='utf-8').replace('__SESSION__', self.session).replace('__NONCE__', self.nonce)
+        self.page = (web / 'index.html').read_text(encoding='utf-8').replace('__SESSION__', self.session)
+        self.assets = {file.name: file.read_bytes() for file in (web / 'assets').iterdir()
+                       if ASSET.fullmatch('/assets/' + file.name)}
         super().__init__(('127.0.0.1', port), OperatorHandler)
         self.host = f'127.0.0.1:{self.server_port}'
 
@@ -155,6 +166,9 @@ def serve_operator(config: Path, port: int) -> int:
             server.serve_forever()
     except KeyboardInterrupt:
         return 0
+    except FileNotFoundError:
+        print('Соберите панель командой npm --prefix news_futures/operator/web run build.', file=sys.stderr)
+        return 1
     except OSError:
         print('Не удалось запустить панель. Проверьте локальный порт и файлы приложения.', file=sys.stderr)
         return 1

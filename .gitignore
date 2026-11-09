@@ -5,3 +5,5 @@ __pycache__/
 .local/
 *.session*
 .env
+node_modules/
+news_futures/operator/web/dist/

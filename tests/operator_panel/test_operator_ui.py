@@ -15,12 +15,15 @@ from typing import Any
 import unittest
 from unittest.mock import patch
 from urllib.request import urlopen
+from uuid import uuid4
 
 from websockets.sync.client import connect
 
-from news_futures.operator.server import OperatorServer
+from news_futures.operator.server import WEB, OperatorServer
+from news_futures.operator.settings import Preferences
 from news_futures.operator.supervisor import Worker
 from news_futures.agents.events import EventArchive
+from news_futures.application.config import RuntimeSettings
 from news_futures.common.artifacts import replace_json
 from news_futures.news.publications import Archive, Publication, utc_now
 from news_futures.application.records import runtime_tables, save_result
@@ -90,10 +93,15 @@ class OperatorTest(unittest.TestCase):
         (self.root / 'control').write_text('position', encoding='utf-8')
         worker = Worker(self.root, self.profile, [sys.executable, '-c', CONTROLLED_WORKER, str(self.root)],
                         json.dumps(self.profile).encode())
+        web = WEB
+        if not (WEB / 'index.html').is_file() and not os.environ.get('OPERATOR_TEST_CHROME'):
+            web = self.root / 'web'
+            (web / 'assets').mkdir(parents=True)
+            (web / 'index.html').write_text('<meta name="operator-session" content="__SESSION__">', encoding='utf-8')
         self.server = self.enterContext(OperatorServer(worker, ['example'], 0, {
             'company': {'names': ['Компания А'], 'tickers': ['ABC']},
             'other': {'names': ['Компания Б'], 'tickers': ['XYZ']},
-        }))
+        }, web=web))
         thread = Thread(target=self.server.serve_forever, kwargs={'poll_interval': 0.01})
         thread.start()
         self.addCleanup(thread.join)
@@ -105,10 +113,12 @@ class OperatorTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.session = re.findall(r'<meta name="operator-session" content="([^"]+)"', page)[0]
 
-    def request(self, method: str, path: str, **headers: str) -> tuple[int, str]:
+    def request(self, method: str, path: str, *, body: object = None, **headers: str) -> tuple[int, str]:
         connection = HTTPConnection('127.0.0.1', self.port, timeout=3)
         try:
-            connection.request(method, path, headers=headers)
+            if body is not None:
+                headers['Content-Type'] = 'application/json'
+            connection.request(method, path, body=json.dumps(body) if body is not None else None, headers=headers)
             response = connection.getresponse()
             return response.status, response.read().decode()
         finally:
@@ -148,6 +158,19 @@ class OperatorTest(unittest.TestCase):
         self.assertEqual(self.request('GET', '/api/start', **session)[0], 404)
         self.assertEqual(self.overview()['worker'], 'stopped')
         self.assertFalse((self.root / 'operator-commands.jsonl').exists())
+
+    def test_mutating_controls_require_session_and_pause_is_durable(self) -> None:
+        for action in ('pause', 'settings', 'close'):
+            self.assertEqual(self.request('POST', '/api/' + action, body={}, Origin=self.origin)[0], 403)
+        self.assertEqual(self.request('GET', '/api/controls')[0], 403)
+        headers = {'Origin': self.origin, 'X-Operator-Session': self.session}
+        self.assertEqual(self.request('POST', '/api/pause', body={'paused': 'yes'}, **headers)[0], 400)
+        self.assertEqual(self.request('POST', '/api/pause', body={'paused': True}, **headers)[0], 200)
+        before = self.overview()['pause']
+        self.assertTrue(before['paused'])
+        self.assertEqual(self.request('POST', '/api/pause', body={'paused': True}, **headers)[0], 200)
+        self.assertEqual(self.overview()['pause'], before)
+        self.assertTrue(self.server.worker.controls_state.pause()['paused'])
 
     def test_two_tabs_share_one_worker_and_stop_waits_for_its_exit(self) -> None:
         self.assertEqual(self.command('start')[0], 202)
@@ -292,6 +315,14 @@ class OperatorTest(unittest.TestCase):
     @unittest.skipUnless(os.environ.get('OPERATOR_TEST_CHROME'), 'Set OPERATOR_TEST_CHROME to a Chromium executable')
     def test_ticker_to_rejected_trace_keeps_expansion_and_scroll_during_refresh(self) -> None:
         revision, _, review = self.save_news()
+        catalog = self.root / 'catalog.json'
+        replace_json(catalog, {'operations': {'catalog': {'availability': 'available', 'data': [{
+            'company_id': 'company', 'company_name': 'Компания А', 'ticker': 'ABC', 'share_id': 'share',
+        }]}}})
+        settings = RuntimeSettings(data_dir=self.root, catalog=catalog, account_id='account',
+                                   contracts={'future': 'company'})
+        worker = self.server.worker
+        worker.preferences = Preferences(settings, ['example'], worker.controls_state)
         profile = self.root / 'chromium'
         with subprocess.Popen([
             os.environ['OPERATOR_TEST_CHROME'], '--headless', '--remote-debugging-port=0',
@@ -342,42 +373,50 @@ class OperatorTest(unittest.TestCase):
 
             def search(ticker: str) -> None:
                 evaluate('location.hash = "#tickers"')
-                expect('!document.querySelector("#tickers-screen").hidden')
+                expect('document.querySelector("#ticker-form button")?.disabled === false')
                 evaluate(f'document.querySelector("#ticker-search").value = {json.dumps(ticker)};'
                          'document.querySelector("#ticker-form").requestSubmit()')
 
-            cdp('Emulation.setDeviceMetricsOverride', width=375, height=720, deviceScaleFactor=1, mobile=False)
+            cdp('Emulation.setDeviceMetricsOverride', width=1440, height=1024, deviceScaleFactor=1, mobile=False)
             cdp('Page.navigate', url=self.origin)
             expect('document.querySelectorAll("#recent a").length === 1')
             expect('!document.querySelector("#recent").innerText.includes("Без привязки")')
+            expect('window.innerWidth === 1440 && document.documentElement.scrollWidth === document.documentElement.clientWidth')
+            cdp('Emulation.setDeviceMetricsOverride', width=375, height=720, deviceScaleFactor=1, mobile=False)
+            expect('window.innerWidth === 375 && document.querySelectorAll("nav a").length === 5 && '
+                   'document.documentElement.scrollWidth === document.documentElement.clientWidth')
             search('xyz')
-            expect('document.querySelector("#company-name").textContent === "Компания Б"')
+            expect('document.querySelector("#company-name")?.textContent === "Компания Б"')
             evaluate('document.querySelector("#company-events details").open = true')
             expect('document.querySelector("#company-events").innerText.includes("Гипотеза") && '
                    'document.querySelector("#company-events").innerText.includes("Влияние не подтверждено")')
             expect('document.querySelector("#company-events").innerText.includes("Материал того же события") && '
                    'document.querySelectorAll("#company-events a[href^=\'#trace/\']").length === 1')
             search('abc')
-            expect('document.querySelector("#company-name").textContent === "Компания А"')
+            expect('document.querySelector("#company-name")?.textContent === "Компания А"')
             expect('document.querySelector("#company-events").innerText.includes("Прямая связь")')
             search('abcz5')
-            expect('document.querySelector("#company-contract").value === "old-future"')
+            expect('document.querySelector("#company-contract")?.value === "old-future"')
             expect('document.querySelectorAll("#company-decisions a").length === 1')
             expect('document.querySelector("#company-events").innerText.includes("Прямая связь")')
             evaluate('location.hash = "#decisions"')
-            expect('!document.querySelector("#decisions-screen").hidden')
-            evaluate('for (const [name, value] of [["company", "company"], ["contract", "old-future"],'
-                     '["result", "rejected"]]) { const field = document.getElementById("decision-" + name);'
-                     'field.value = value; field.dispatchEvent(new Event("change")); }')
             expect('document.querySelectorAll("#decisions a").length === 1')
-            evaluate('const from = document.querySelector("#decision-from"); from.value = "2099-01-01";'
-                     'from.dispatchEvent(new Event("change"))')
+            for name, value in (('company', 'company'), ('contract', 'old-future'), ('result', 'rejected')):
+                evaluate(f'{{ const field = document.getElementById("decision-{name}"); field.value = "{value}";'
+                         'field.dispatchEvent(new Event("change", {bubbles:true})); }')
+            expect('document.querySelectorAll("#decisions a").length === 1')
+            def set_date(value: str) -> None:
+                evaluate('((field) => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set'
+                         f'.call(field, "{value}"); field.dispatchEvent(new Event("input", {{bubbles:true}})); }})'
+                         '(document.querySelector("#decision-from"))')
+
+            set_date('2099-01-01')
             expect('document.querySelectorAll("#decisions a").length === 0')
-            evaluate('document.querySelector("#decision-from").value = "";'
-                     'document.querySelector("#decision-from").dispatchEvent(new Event("change"))')
+            set_date('')
+            expect('document.querySelectorAll("#decisions a").length === 1')
             evaluate('document.querySelector("#decisions a").click()')
-            expect(f'location.hash === "#trace/{revision}" && document.querySelector("#trace-steps").innerText'
-                   '.includes("Ответ критика")')
+            expect(f'location.hash.startsWith("#trace/{revision}") && document.querySelector("#trace-steps")'
+                   '?.innerText.includes("Ответ критика")')
             evaluate('document.querySelector("#trace-steps details").open = true; window.scrollTo(0, 550)')
             expect('window.scrollY === 550 && !document.querySelector("#trace-steps img")')
             expect('document.querySelector("#trace-steps a[href=\'https://t.me/source/1\']") !== null')
@@ -386,6 +425,41 @@ class OperatorTest(unittest.TestCase):
             expect('document.querySelector("#trace-steps").innerText.includes("Пересмотр аналитика")')
             expect('window.scrollY === 550 && document.querySelector("#trace-steps details").open')
             expect('document.documentElement.scrollWidth === document.documentElement.clientWidth')
+            evaluate('location.hash = "#trades"')
+            expect('document.body.innerText.includes("В журнале пока нет торговых циклов.")')
+            evaluate('location.hash = "#settings"')
+            expect('document.querySelector("textarea[rows=\'5\']")?.value === "example"')
+            evaluate('((field) => { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set'
+                     '.call(field, "another"); field.dispatchEvent(new Event("input", {bubbles:true})); })'
+                     '(document.querySelector("textarea[rows=\'5\']"))')
+            evaluate('document.querySelector(".save-bar .primary").click()')
+            expect('document.body.innerText.includes("Для применения перезапустите обработчик.")')
+            evaluate('location.hash = "#overview"')
+            expect('Array.from(document.querySelectorAll(".hero button")).some(button => '
+                   'button.innerText === "Пауза новых входов" && !button.disabled)')
+            evaluate('Array.from(document.querySelectorAll(".hero button")).find(button => '
+                     'button.innerText === "Пауза новых входов").click()')
+            expect('document.querySelector(".status-strip").innerText.includes("Входы на паузе")')
+            worker = self.server.worker
+            archive = Archive(self.root / 'publications.sqlite3')
+            with worker.lock, closing(archive.db), archive.db:
+                worker.state = 'running'
+                worker.run_id = 'browser-test'
+                worker.profile = self.profile | {'mode': 'sandbox'}
+                archive.db.execute('INSERT OR REPLACE INTO runtime_status VALUES (1, ?)', (json.dumps(
+                    worker.profile | {'run_id': worker.run_id, 'broker': 'connected', 'confirmed': True,
+                                      'last_confirmed': {'checked_at': utc_now().isoformat(),
+                                                         'position': {'id': uuid4().hex, 'contract_id': 'future',
+                                                                      'side': 'short', 'quantity': 2},
+                                                         'protection': {'status': 'confirmed'}}},
+                ),))
+            expect('document.querySelector(".card-actions button")?.disabled === false')
+            evaluate('document.querySelector(".card-actions button").click()')
+            expect('document.querySelector("dialog").open && document.querySelector("dialog").innerText.includes("2 лот.")'
+                   ' && document.querySelector("dialog").innerText.includes("Шорт")')
+            evaluate('document.querySelector("dialog .destructive").click()')
+            expect('document.body.innerText.includes("Запрос принят.") && '
+                   'document.body.innerText.includes("Ожидает сверки")')
 
     @unittest.skipUnless(sys.platform == 'win32', 'Windows file sharing')
     def test_saved_artifact_is_replaced_after_a_concurrent_windows_read(self) -> None:
