@@ -2,7 +2,7 @@
 
 import asyncio
 from collections.abc import Callable
-from contextlib import closing
+from contextlib import ExitStack, closing
 from datetime import datetime, timedelta
 from hashlib import sha256
 import json
@@ -38,6 +38,7 @@ from news_futures.telegram import configured_channels, default_session, run_tele
 
 
 PACKAGE = Path(__file__).resolve().parent
+AUTONOMOUS_PROTECTION_UNAVAILABLE = 'autonomous_protection_unavailable'
 
 
 class RuntimeErrorInfo(ValueError):
@@ -137,11 +138,12 @@ class NewsState(TypedDict, total=False):
 class Runtime:
     def __init__(
         self, settings: RuntimeSettings, reader: Callable[[str], Reader],
-        broker: Callable[[str], SandboxBroker] | None,
+        broker: Callable[[str], SandboxBroker] | None, *, run_id: str | None = None,
     ):
         self.settings = settings
         self.reader = reader
         self.broker = broker
+        self.run_id = run_id
         self.stop = Event()
         self.failed = False
         self.broker_ready = False
@@ -234,8 +236,9 @@ class Runtime:
         settings = self.settings
         status: dict[str, Any] = {
             'mode': settings.mode, 'account_id': settings.account_id, 'contracts': settings.contracts,
-            'checked_at': utc_now().isoformat(),
+            'run_id': self.run_id, 'confirmed': False,
         }
+        last_confirmed = None
         try:
             active = trade_journal(events, active_account=settings.account_id)
             if self.broker and len(active) == 1:
@@ -255,9 +258,25 @@ class Runtime:
         except Exception as error:
             status.update(broker='blocked', error=error_code(error), position=None,
                           protection={'status': 'unconfirmed'})
+        else:
+            if status['broker'] == 'connected':
+                status['confirmed'] = True
+                last_confirmed = {'checked_at': utc_now().isoformat(), 'position': status['position'],
+                                  'protection': status['protection']}
         finally:
+            status['checked_at'] = utc_now().isoformat()
             self.broker_ready = status.get('broker') == 'connected'
             with archive.db:
+                # Preserve the last successful snapshot even if this attempt failed.
+                archive.db.execute('BEGIN IMMEDIATE')
+                previous = archive.db.execute('SELECT data FROM runtime_status WHERE id = 1').fetchone()
+                if last_confirmed is None and previous:
+                    old = json.loads(previous['data'])
+                    if all(old.get(key) == status[key] for key in ('mode', 'account_id', 'contracts')):
+                        last_confirmed = old.get('last_confirmed')
+                        if last_confirmed is None and old.get('broker') == 'connected':
+                            last_confirmed = {key: old[key] for key in ('checked_at', 'position', 'protection')}
+                status['last_confirmed'] = last_confirmed
                 archive.db.execute('INSERT OR REPLACE INTO runtime_status VALUES (1, ?)', (json.dumps(status),))
             print(json.dumps(status, ensure_ascii=False), flush=True)
 
@@ -383,7 +402,7 @@ class Runtime:
             # Live T-Bank writes remain gated by the executor's independent-stop policy.
             execution = executor.start(archive, review, allowed_contracts=set(settings.contracts))
             if execution['reason'] == 'independent_stops_require_opt_in':
-                execution['reason'] = 'autonomous_protection_unavailable'
+                execution['reason'] = AUTONOMOUS_PROTECTION_UNAVAILABLE
         else:
             position_id = state['position_id']
             assert position_id is not None
@@ -501,32 +520,44 @@ def error_code(error: Exception) -> str:
     return str(error) if isinstance(error, RuntimeErrorInfo) else type(error).__name__
 
 
-async def run_runtime(config: Path, once: bool) -> int:
-    settings = load_settings(config)
+async def run_runtime(
+    config: Path | RuntimeSettings, once: bool, *,
+    run_id: str | None = None, channels: list[str] | None = None,
+    on_phase: Callable[[str], None] | None = None,
+    on_source: Callable[[str, bool], None] | None = None,
+) -> int:
+    settings = load_settings(config) if isinstance(config, Path) else config
     inputs = cycle_inputs(settings)
     try:
-        channels = configured_channels(settings.sources)
+        if channels is None:
+            channels = configured_channels(settings.sources)
         session = session_path(settings.session or default_session())
     except (OSError, ValueError, TypeError, KeyError) as error:
         raise RuntimeErrorInfo('Проверьте sources и внешний путь к session.') from error
     load_token('openrouter', 'api_key')
+    if on_phase is not None:
+        on_phase('directory')
     settings.data_dir.mkdir(parents=True, exist_ok=True)
-    with closing(sqlite3.connect(settings.data_dir / 'runtime-lock.sqlite3', timeout=0)) as lock, sandbox_client(
-        settings.ca_file, read_only=settings.mode == 'observation',
-    ) as client:
+    with ExitStack() as stack:
+        lock = stack.enter_context(closing(sqlite3.connect(settings.data_dir / 'runtime-lock.sqlite3', timeout=0)))
         try:
             lock.execute('BEGIN IMMEDIATE')
         except sqlite3.OperationalError as error:
             if error.sqlite_errorcode != sqlite3.SQLITE_BUSY:
                 raise
+            if on_phase is not None:
+                on_phase('directory_busy')
             raise RuntimeErrorInfo('serve уже работает с этим каталогом данных.') from error
+        if on_phase is not None:
+            on_phase('broker')
+        client = stack.enter_context(sandbox_client(settings.ca_file, read_only=settings.mode == 'observation'))
         def reader(contract: str) -> Reader:
             return TBankReader(client, settings.account_id, contract, settings.contracts[contract])
 
         def broker(contract: str) -> SandboxBroker:
             return TBankSandbox(client, settings.account_id, contract, settings.contracts[contract])
 
-        runtime = Runtime(settings, reader, broker if settings.mode == 'sandbox' else None)
+        runtime = Runtime(settings, reader, broker if settings.mode == 'sandbox' else None, run_id=run_id)
         archive = Archive(settings.publications)
         with closing(archive.db):
             runtime_tables(archive)
@@ -552,6 +583,8 @@ async def run_runtime(config: Path, once: bool) -> int:
         async def process() -> None:
             if not runtime.sources_ready:
                 runtime.sources_ready = True
+                if on_phase is not None:
+                    on_phase('running')
                 await in_worker(runtime.refresh)
             await in_worker(runtime.process)
 
@@ -566,7 +599,10 @@ async def run_runtime(config: Path, once: bool) -> int:
         await in_worker(runtime.refresh)
         observer = None if once else asyncio.create_task(monitor())
         try:
-            source_code = await run_telegram(settings.sources, settings.publications, session, once, process=process)
+            if on_phase is not None:
+                on_phase('sources')
+            source_code = await run_telegram(channels, settings.publications, session, once, process=process,
+                                             on_source=on_source)
             if once:
                 await in_worker(runtime.refresh)
             return source_code or int(runtime.failed)

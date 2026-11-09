@@ -98,7 +98,8 @@ async def collect(transport: Transport, archive: Archive, source: Source) -> int
 
 
 async def watch_channel(transport: Transport, archive: Archive, username: str, once: bool, *,
-                        first_poll: asyncio.Event | None = None) -> bool:
+                        first_poll: asyncio.Event | None = None,
+                        on_source: Callable[[str, bool], None] | None = None) -> bool:
     source: Source | None = None
     while True:
         delay = 5
@@ -119,6 +120,8 @@ async def watch_channel(transport: Transport, archive: Archive, username: str, o
                 pass  # Storage can be unavailable too; stderr remains an independent signal.
             print(json.dumps({'source': identity, 'error': code}), file=sys.stderr, flush=True)
             delay = max(5, int(getattr(error, 'seconds', 5)))
+        if on_source is not None:
+            on_source(username, ok)
         if once:
             return ok
         if first_poll is not None:
@@ -268,14 +271,14 @@ async def open_client(path: Path, login: bool) -> Any:
 
 
 async def run_telegram(
-    config: Path, database: Path, path: Path, once: bool, *,
+    config: Path | list[str], database: Path, path: Path, once: bool, *,
     process: Callable[[], Awaitable[None]] | None = None,
+    on_source: Callable[[str, bool], None] | None = None,
 ) -> int:
-    channels = configured_channels(config)
+    channels = configured_channels(config) if isinstance(config, Path) else config
     path = session_path(path)
     client = await open_client(path, login=False)
     archive: Archive | None = None
-    tasks: list[asyncio.Task[Any]] = []
     try:
         from telethon import functions
         identity_path = path.with_suffix('.identity')
@@ -294,18 +297,16 @@ async def run_telegram(
 
         consume = process if process is not None else simulate
         ready = [asyncio.Event() for _ in channels]
-        tasks.extend(asyncio.create_task(watch_channel(transport, archive, name, once, first_poll=polled))
-                     for name, polled in zip(channels, ready))
-        if not once:
-            await asyncio.gather(*(polled.wait() for polled in ready))
-            tasks.append(asyncio.create_task(process_queue(consume)))
-        results = await asyncio.gather(*tasks)
+        async with asyncio.TaskGroup() as tasks:
+            watchers = [tasks.create_task(watch_channel(transport, archive, name, once, first_poll=polled,
+                                                        on_source=on_source))
+                        for name, polled in zip(channels, ready)]
+            if not once:
+                await asyncio.gather(*(polled.wait() for polled in ready))
+                tasks.create_task(process_queue(consume))
         await consume()
-        return 0 if all(results) else 1
+        return 0 if all(watcher.result() for watcher in watchers) else 1
     finally:
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
         if archive:
             archive.db.close()
         await client.disconnect()

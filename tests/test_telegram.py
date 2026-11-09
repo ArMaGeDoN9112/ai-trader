@@ -228,6 +228,43 @@ class TelethonAdapterTest(unittest.IsolatedAsyncioTestCase):
             finally:
                 archive.db.close()
 
+    async def test_stop_waits_for_the_queue_consumer_to_finish_draining(self) -> None:
+        client = AsyncMock(return_value=SimpleNamespace(pts=1, qts=2, seq=3, date=utc_now()))
+        client.get_me.return_value = SimpleNamespace(id=42)
+        started, draining, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+        async def process() -> None:
+            started.set()
+            try:
+                await asyncio.Future[None]()
+            except asyncio.CancelledError:
+                draining.set()
+                await release.wait()
+                raise
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with (patch('news_futures.telegram.open_client', return_value=client),
+                  patch('news_futures.telegram.TelethonTransport', return_value=ControlledTransport()),
+                  patch('sys.stdout', new_callable=StringIO)):
+                task = asyncio.create_task(run_telegram(
+                    ['example'], root / 'archive.sqlite3', root / 'user.session', False, process=process,
+                ))
+                try:
+                    await asyncio.wait_for(started.wait(), 2)
+                    task.cancel()
+                    await asyncio.wait_for(draining.wait(), 2)
+                    done, _ = await asyncio.wait({task}, timeout=0.05)
+                    self.assertFalse(done)
+                    client.disconnect.assert_not_awaited()
+                finally:
+                    release.set()
+                    if not task.cancelling():
+                        task.cancel()
+                    with self.assertRaises(asyncio.CancelledError):
+                        await asyncio.wait_for(task, 2)
+                client.disconnect.assert_awaited_once()
+
     async def test_sdk_requests_only_configured_channels_and_normalizes_edits(self) -> None:
         from telethon import functions, types
         now = utc_now()

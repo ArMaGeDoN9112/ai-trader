@@ -4,7 +4,11 @@ from dataclasses import replace
 from datetime import datetime, timedelta
 from decimal import Decimal
 import json
+import os
 from pathlib import Path
+import sqlite3
+import subprocess
+import sys
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from typing import Any, cast
@@ -207,6 +211,42 @@ class RuntimeAcceptance(test_risk.RiskFixture):
         self.serve()
         self.assertEqual(len(self.jev_requests), 1)
         self.assertEqual(self.broker.calls, ['enter', 'sl', 'tp'])
+
+    def test_failed_reconciliation_keeps_the_last_confirmed_broker_state(self) -> None:
+        self.sandbox()
+        entry = self.news(self.market, 'SBER raised its forecast.')
+        self.serve(self.proposal('enter', entry), review())
+        last = self.report()['broker']['last_confirmed']
+        self.assertEqual(last['position']['quantity'], 3)
+        settings = load_settings(self.profile)
+        runtime = Runtime(settings, lambda _: self.broker, lambda _: self.broker, run_id='test-run')
+        with (patch.object(self.broker, 'read_risk', side_effect=ConnectionError('private connection error')),
+              patch('builtins.print')):
+            runtime.refresh()
+        status = self.report()['broker']
+        self.assertFalse(status['confirmed'])
+        self.assertEqual(status['run_id'], 'test-run')
+        self.assertEqual(status['last_confirmed'], last)
+        self.assertEqual(status['error'], 'ConnectionError')
+
+    def test_second_runtime_cannot_start_with_the_same_data_directory(self) -> None:
+        credentials = self.root / '.local' / 'credentials.toml'
+        credentials.parent.mkdir()
+        credentials.write_text('[openrouter]\napi_key = "test-key"\n', encoding='utf-8')
+        settings = load_settings(self.profile)
+        payload = json.dumps({'settings': settings.model_dump(mode='json'), 'channels': ['markettwits']})
+        with closing(sqlite3.connect(self.root / 'runtime-lock.sqlite3')) as lock:
+            lock.execute('BEGIN IMMEDIATE')
+            result = subprocess.run(
+                [sys.executable, '-m', 'news_futures.operator_ui', 'test-run'],
+                cwd=self.root, env=os.environ | {'PYTHONPATH': str(Path(__file__).resolve().parents[1])},
+                input=payload + '\n', capture_output=True, text=True, timeout=30, check=False,
+            )
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(json.loads(result.stdout), {'failure': 'directory_busy'})
+        self.assertFalse((self.root / 'publications.sqlite3').exists())
+        self.serve()
+        self.assertTrue((self.root / 'publications.sqlite3').exists())
 
     def test_restart_reconciles_entry_with_lost_response_before_processing(self) -> None:
         self.sandbox()
