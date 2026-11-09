@@ -2,6 +2,7 @@ from contextlib import closing
 from datetime import timedelta
 import json
 from typing import Any
+from uuid import UUID
 
 import httpx
 import test_risk
@@ -37,6 +38,8 @@ class TBankExecutionTest(test_risk.RiskFixture):
             args = json.loads(request.content)
             if method.startswith(('Post', 'Cancel')):
                 writes.append((method, args))
+            if method.startswith('Post') or method == 'GetSandboxOrderState':
+                self.assertEqual(args['orderId'], str(UUID(args['orderId'])))
             if method == 'PostSandboxOrder':
                 entering = args['orderType'] == 'ORDER_TYPE_LIMIT'
                 self.assertEqual(positions, 0 if entering else 1)

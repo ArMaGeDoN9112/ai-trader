@@ -6,6 +6,7 @@ from decimal import Decimal
 from pathlib import Path
 import ssl
 from typing import Annotated, Any, Literal
+from uuid import UUID
 
 import httpx
 from pydantic import BaseModel, Field
@@ -156,6 +157,8 @@ class TBankSandbox:
         })
 
     def order_fill(self, order_id: str, *, request: bool, side: str) -> tuple[bool, Fill | None]:
+        if request:
+            order_id = str(UUID(order_id))
         try:
             row = self.call('GetSandboxOrderState', orderId=order_id, priceType=POINTS,
                             orderIdType='ORDER_ID_TYPE_REQUEST' if request else 'ORDER_ID_TYPE_EXCHANGE')
@@ -235,7 +238,7 @@ class TBankSandbox:
 
     def enter(self, entry: EntryReservation, operation_id: str) -> str:
         side = 'BUY' if entry.side == 'long' else 'SELL'
-        response = self.call('PostSandboxOrder', orderId=operation_id, instrumentId=entry.contract_id,
+        response = self.call('PostSandboxOrder', orderId=str(UUID(operation_id)), instrumentId=entry.contract_id,
                              quantity=str(entry.lots), direction='ORDER_DIRECTION_' + side,
                              orderType='ORDER_TYPE_LIMIT', priceType=POINTS, price=quotation(entry.entry_price),
                              timeInForce='TIME_IN_FORCE_FILL_AND_KILL', confirmMarginTrade=True)
@@ -247,7 +250,7 @@ class TBankSandbox:
         price = entry.stop_loss if kind == 'sl' else entry.take_profit
         options: dict[str, Any] = {'takeProfitType': 'TAKE_PROFIT_TYPE_REGULAR'} if kind == 'tp' else {}
         try:
-            response = self.call('PostSandboxStopOrder', orderId=operation_id, instrumentId=entry.contract_id,
+            response = self.call('PostSandboxStopOrder', orderId=str(UUID(operation_id)), instrumentId=entry.contract_id,
                                  quantity=str(lots), direction='STOP_ORDER_DIRECTION_' + side,
                                  stopOrderType=STOP_TYPES[kind], stopPrice=quotation(price), priceType=POINTS,
                                  expirationType='STOP_ORDER_EXPIRATION_TYPE_GOOD_TILL_CANCEL',
@@ -272,7 +275,7 @@ class TBankSandbox:
 
     def close(self, entry: EntryReservation, operation_id: str, lots: int) -> str:
         side = 'SELL' if entry.side == 'long' else 'BUY'
-        response = self.call('PostSandboxOrder', orderId=operation_id, instrumentId=entry.contract_id,
+        response = self.call('PostSandboxOrder', orderId=str(UUID(operation_id)), instrumentId=entry.contract_id,
                              quantity=str(lots), direction='ORDER_DIRECTION_' + side,
                              orderType='ORDER_TYPE_MARKET', priceType=POINTS, confirmMarginTrade=True)
         return identifier(response['orderId'])
