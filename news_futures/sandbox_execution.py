@@ -188,6 +188,7 @@ class SandboxExecutor:
     def start(
         self, publications: Archive, approval: Path, *,
         allowed_contracts: Set[str], allow_independent_stops: bool = False,
+        record_risk: Callable[[str, dict[str, Any], object], None] | None = None,
     ) -> dict[str, str]:
         if self.broker.source not in ('control', 'sandbox'):
             return {'status': 'rejected', 'reason': 'unsupported_broker_source'}
@@ -212,11 +213,18 @@ class SandboxExecutor:
         with self._exclusive() as acquired:
             if not acquired:
                 return {'status': 'blocked', 'reason': 'executor_busy'}
+            risk_input: dict[str, Any] = {'allowed_contracts': sorted(allowed_contracts)}
+            if record_risk is not None:
+                record_risk('processing', risk_input, None)
             admission = reserve_entry(
                 self.events, publications, approval, account_id=self.broker.account_id,
                 allowed_contracts=allowed_contracts, read_snapshot=self.broker.read_risk, on_reserve=record,
+                risk_input=risk_input if record_risk is not None else None,
             )
             entry = admission.reservation
+            if record_risk is not None:
+                record_risk('approved' if entry else 'rejected', risk_input,
+                            entry.model_dump(mode='json') if entry else {'reason': admission.reason})
             if entry is None:
                 return {'status': 'rejected', 'reason': admission.reason or 'admission_failed'}
             operations: dict[str, str] = {}
@@ -226,7 +234,8 @@ class SandboxExecutor:
     def reconcile(self, *, close: bool = False, contract_id: str | None = None,
                   cycle_id: str | None = None,
                   review: tuple[Archive, Path] | None = None,
-                  publications: Archive | None = None) -> dict[str, str]:
+                  publications: Archive | None = None,
+                  record_risk: Callable[[str, dict[str, Any], object], None] | None = None) -> dict[str, str]:
         with self._exclusive() as acquired:
             if not acquired:
                 return {'status': 'blocked', 'reason': 'executor_busy'}
@@ -253,10 +262,19 @@ class SandboxExecutor:
             if 'enter' not in operations:
                 return self._finish(entry, 'no_fill', 'entry_never_submitted')
             if review is not None:
+                risk_input: dict[str, Any] = {}
+                if record_risk is not None:
+                    record_risk('processing', risk_input, None)
                 try:
-                    self._record_reviewed_close(entry, *review)
+                    self._record_reviewed_close(
+                        entry, *review, risk_input=risk_input if record_risk is not None else None,
+                    )
                 except Rejected as error:
+                    if record_risk is not None:
+                        record_risk('rejected', risk_input, {'reason': str(error)})
                     return {'status': 'rejected', 'reason': str(error), 'cycle_id': entry.id}
+                if record_risk is not None:
+                    record_risk('approved', risk_input, None)
                 close = True
             elif close:
                 with self.db:
@@ -286,8 +304,10 @@ class SandboxExecutor:
             return self._advance(entry, operations, close=close)
 
     def _record_reviewed_close(self, entry: EntryReservation, publications: Archive, approval: Path, *,
-                               persist: bool = True) -> None:
+                               persist: bool = True, risk_input: dict[str, Any] | None = None) -> None:
         proposal, proposal_id, formed_at, context = read_approval(approval)
+        if risk_input is not None:
+            risk_input['proposal'] = proposal.model_dump(mode='json')
         position = context.get('position')
         if (proposal.action != 'close' or proposal.contract_id != entry.contract_id or not position
                 or position['id'] != entry.id or position['side'] != entry.side
@@ -298,6 +318,8 @@ class SandboxExecutor:
             snapshot = RiskSnapshot.model_validate(self.broker.read_risk(entry.account_id, entry.contract_id))
         except Exception as error:
             raise Rejected('risk_data_unavailable_or_invalid') from error
+        if risk_input is not None:
+            risk_input['snapshot'] = snapshot.model_dump(mode='json')
         contract = snapshot.contract
         with publications.db, self.db:
             self.db.execute('BEGIN IMMEDIATE')

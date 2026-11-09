@@ -27,7 +27,7 @@ from news_futures.decisions import (
 )
 from news_futures.events import EventArchive, match_route
 from news_futures.jev import JevSettings, catalog_rows, load_catalog, route_publication
-from news_futures.local import replace_json
+from news_futures.local import move_artifact, replace_json
 from news_futures.publications import Archive, utc_now
 from news_futures.risk import MAX_NEWS_AGE, EntryReservation, RiskSnapshot
 from news_futures.sandbox_execution import (
@@ -111,6 +111,7 @@ def runtime_tables(archive: Archive) -> None:
 
 
 def save_result(archive: Archive, result: dict[str, Any]) -> None:
+    result['at'] = utc_now().isoformat()
     with archive.db:
         archive.db.execute('''
             INSERT INTO runtime_decisions VALUES (?, ?)
@@ -164,7 +165,7 @@ class Runtime:
             readings.append(risk)
         return readings
 
-    def snapshot(self, events: EventArchive, catalog: bytes) -> tuple[Snapshot, dict[str, Any]]:
+    def snapshot(self, events: EventArchive, catalog: bytes) -> tuple[Snapshot, dict[str, Any], list[RiskSnapshot]]:
         settings = self.settings
         active = trade_journal(events, active_account=settings.account_id)
         position = None
@@ -211,7 +212,8 @@ class Runtime:
         companies = load_catalog(catalog)
         instruments = []
         account = None
-        for risk in self.read_markets(catalog):
+        readings = self.read_markets(catalog)
+        for risk in readings:
             contract = risk.contract
             if risk.execution_uncertain or risk.has_position != bool(position) or (
                 not position and risk.has_active_orders
@@ -225,7 +227,7 @@ class Runtime:
                 market=Market(observed_at=contract.quote_at, last_price=float(contract.last_price)),
             ))
         assert account is not None
-        return Snapshot(account=account, position=position, instruments=instruments), protection
+        return Snapshot(account=account, position=position, instruments=instruments), protection, readings
 
     def refresh(self) -> None:
         archive = Archive(self.settings.publications)
@@ -248,10 +250,14 @@ class Runtime:
                         contract_id=entry['contract_id'], cycle_id=entry['id'],
                         publications=archive if self.sources_ready else None,
                     )
-            snapshot, protection = self.snapshot(events, settings.catalog.read_bytes())
+            snapshot, protection, readings = self.snapshot(events, settings.catalog.read_bytes())
             self.position = snapshot.position
             status.update(broker='connected', position=snapshot.model_dump(mode='json')['position'],
                           protection=protection)
+            status['instruments'] = {
+                reading.contract.contract_id: {'company_id': reading.contract.company_id, 'ticker': reading.contract.ticker}
+                for reading in readings
+            }
             reconciliation = status.get('reconciliation', {})
             if reconciliation.get('status') == 'blocked' or protection['status'] == 'unconfirmed':
                 status.update(broker='blocked', error=reconciliation.get('reason') or 'protection_unconfirmed')
@@ -270,9 +276,15 @@ class Runtime:
                 # Preserve the last successful snapshot even if this attempt failed.
                 archive.db.execute('BEGIN IMMEDIATE')
                 previous = archive.db.execute('SELECT data FROM runtime_status WHERE id = 1').fetchone()
-                if last_confirmed is None and previous:
+                if previous:
                     old = json.loads(previous['data'])
-                    if all(old.get(key) == status[key] for key in ('mode', 'account_id', 'contracts')):
+                    instruments = old.get('instruments', {})
+                    for contract, item in status.get('instruments', {}).items():
+                        if item['ticker'] or contract not in instruments:
+                            instruments[contract] = item
+                    status['instruments'] = instruments
+                    if last_confirmed is None and all(old.get(key) == status[key] for key in
+                                                      ('mode', 'account_id', 'contracts')):
                         last_confirmed = old.get('last_confirmed')
                         if last_confirmed is None and old.get('broker') == 'connected':
                             last_confirmed = {key: old[key] for key in ('checked_at', 'position', 'protection')}
@@ -398,17 +410,31 @@ class Runtime:
         assert proposal is not None and attempt is not None
         review = directory / 'review' / attempt
         executor = SandboxExecutor(events, self.broker(proposal['contract_id']))
+        risk_path = review / f'risk-{uuid4().hex}.json'
+        risk_audit_error = False
+
+        def record_risk(status: str, inputs: dict[str, Any], output: object) -> None:
+            nonlocal risk_audit_error
+            try:
+                replace_json(risk_path, {'at': utc_now().isoformat(), 'status': status,
+                                         'input': inputs, 'output': output})
+            except OSError:
+                risk_audit_error = True
+
         if proposal['action'] == 'enter':
             # Live T-Bank writes remain gated by the executor's independent-stop policy.
-            execution = executor.start(archive, review, allowed_contracts=set(settings.contracts))
+            execution = executor.start(archive, review, allowed_contracts=set(settings.contracts),
+                                       record_risk=record_risk)
             if execution['reason'] == 'independent_stops_require_opt_in':
                 execution['reason'] = AUTONOMOUS_PROTECTION_UNAVAILABLE
         else:
             position_id = state['position_id']
             assert position_id is not None
-            execution = executor.reconcile(contract_id=proposal['contract_id'],
-                                           cycle_id=position_id, review=(archive, review))
+            execution = executor.reconcile(contract_id=proposal['contract_id'], cycle_id=position_id,
+                                           review=(archive, review), record_risk=record_risk)
         result.update(status=execution['status'], reason=execution['reason'], execution=execution)
+        if risk_audit_error:
+            result['audit_error'] = 'risk_audit_unavailable'
         if execution['status'] == 'blocked':
             result['reconcile_pending'] = True
 
@@ -418,7 +444,7 @@ class Runtime:
         def route(_: NewsState) -> NewsState:
             route_dir = directory / 'route'
             if route_dir.exists():
-                route_dir.rename(directory / f'route-interrupted-{uuid4().hex}')
+                move_artifact(route_dir, directory / f'route-interrupted-{uuid4().hex}')
             routed = route_publication(directory / 'jev.json', directory / 'publication.json',
                                        directory / 'catalog.json', route_dir)
             if routed['status'] != 'completed':
@@ -452,7 +478,7 @@ class Runtime:
                     LIMIT 1
                 """, (publication['text'], publication['published_at'])).fetchone():
                     return {'status': 'skipped', 'reason': 'historical_reprint'}
-                snapshot, _ = self.snapshot(events, catalog)
+                snapshot, _, _ = self.snapshot(events, catalog)
             if snapshot.position and settings.contracts[snapshot.position.contract_id] not in state['affected']:
                 return {'status': 'skipped', 'reason': 'unrelated_to_position'}
             if not snapshot.position and utc_now() - datetime.fromisoformat(publication['published_at']) > MAX_NEWS_AGE:
@@ -473,14 +499,26 @@ class Runtime:
                     'position_id': snapshot.position.id if snapshot.position else None, 'review_attempt': attempt}
 
         def audited(stage: str, node: Callable[[NewsState], NewsState]) -> RunnableLambda[NewsState, dict[str, Any]]:
+            def note(record: dict[str, Any]) -> None:
+                if stage != 'route':
+                    try:
+                        replace_json(directory / f'{stage}-status.json', record)
+                    except OSError:
+                        # Stage markers are supplementary to the checkpoint and the decision record.
+                        pass
+
             def invoke(state: NewsState) -> dict[str, Any]:
                 if self.stop.is_set():
                     raise Shutdown
+                started = utc_now().isoformat()
+                note({'at': started, 'status': 'processing'})
                 try:
                     updates = node(state)
                 except Exception as error:
                     updates = {'status': 'failed', 'reason': error_code(error)}
                 updates['stage'] = stage
+                note({'at': utc_now().isoformat(), 'started_at': started,
+                      'status': updates.get('status', 'completed'), 'reason': updates.get('reason')})
                 return dict(updates)
             return RunnableLambda(invoke)
 

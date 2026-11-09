@@ -1,16 +1,28 @@
 from collections.abc import Callable
+from contextlib import closing
+from datetime import timedelta
 from http.client import HTTPConnection
 import json
 from pathlib import Path
+import os
 import re
+import subprocess
 import sys
 from tempfile import TemporaryDirectory
 from threading import Thread
 import time
 from typing import Any
 import unittest
+from unittest.mock import patch
+from urllib.request import urlopen
+
+from websockets.sync.client import connect
 
 from news_futures.operator_ui import OperatorServer, Worker
+from news_futures.events import EventArchive
+from news_futures.local import replace_json
+from news_futures.publications import Archive, Publication, utc_now
+from news_futures.runtime import runtime_tables, save_result
 
 
 CONTROLLED_WORKER = """
@@ -77,7 +89,10 @@ class OperatorTest(unittest.TestCase):
         (self.root / 'control').write_text('position', encoding='utf-8')
         worker = Worker(self.root, self.profile, [sys.executable, '-c', CONTROLLED_WORKER, str(self.root)],
                         json.dumps(self.profile).encode())
-        self.server = self.enterContext(OperatorServer(worker, ['example'], 0))
+        self.server = self.enterContext(OperatorServer(worker, ['example'], 0, {
+            'company': {'names': ['Компания А'], 'tickers': ['ABC']},
+            'other': {'names': ['Компания Б'], 'tickers': ['XYZ']},
+        }))
         thread = Thread(target=self.server.serve_forever, kwargs={'poll_interval': 0.01})
         thread.start()
         self.addCleanup(thread.join)
@@ -194,3 +209,187 @@ class OperatorTest(unittest.TestCase):
         journal.mkdir()
         self.assertEqual(self.command('stop')[0], 202)
         self.assertTrue(self.wait_for(lambda view: view['worker'] == 'stopped')['journal_error'])
+
+    def save_news(self) -> tuple[str, str, Path]:
+        now = utc_now() - timedelta(minutes=1)
+        source = 'telegram:42'
+        linked = Publication(source, '1', 'https://t.me/source/1', '<img src=x onerror=alert(1)> ' + 'Новости. ' * 260,
+                             now, now)
+        earlier = now - timedelta(seconds=2)
+        unlinked = Publication(source, '2', 'https://t.me/source/2', 'Без привязки', earlier, earlier)
+        revision = linked.revision_key()
+        links = [{'company_id': 'company', 'kind': 'direct'}, {'company_id': 'other', 'kind': 'inferred'}]
+        event = {'event_id': 'event-1', 'kind': 'unmatched', 'recorded_at': now.isoformat(),
+                 'analysis_company_ids': ['company', 'other'], 'call': None}
+        with (closing(Archive(self.root / 'publications.sqlite3').db) as db,
+              EventArchive(self.root / 'events.sqlite3') as events):
+            # Real archive schemas, with saved evidence from a rejected review.
+            with db, events.db:
+                for publication, bindings in ((linked, links), (unlinked, [])):
+                    key = publication.revision_key()
+                    record = json.dumps(publication.record())
+                    db.execute("INSERT INTO revisions VALUES (?, ?, 0, 'pending', NULL)", (key, record))
+                    events.db.execute('INSERT INTO event_revisions VALUES (?, ?, ?)',
+                                      (key, record, json.dumps(bindings)))
+                    events.db.execute('INSERT INTO event_decisions (revision, details) VALUES (?, ?)',
+                                      (key, json.dumps(event)))
+        archive = Archive(self.root / 'publications.sqlite3')
+        with closing(archive.db):
+            runtime_tables(archive)
+            save_result(archive, {'revision': revision, 'stage': 'review', 'status': 'rejected', 'decision_id': 1})
+            save_result(archive, {'revision': unlinked.revision_key(), 'stage': 'event', 'status': 'skipped'})
+        directory = self.root / 'decisions' / revision
+        review = directory / 'review'
+        review.mkdir(parents=True)
+        context = {'candidates': [{'company_id': 'company', 'contract_id': 'old-future'},
+                                  {'company_id': 'other', 'contract_id': 'other-future', 'ticker': 'XYZH6'}]}
+        replace_json(directory / 'snapshot.json', {'instruments': context['candidates']})
+        replace_json(directory / 'catalog.json', {'operations': {
+            'future': {'availability': 'available', 'data': {
+                'id': 'old-future', 'ticker': 'ABCZ5', 'underlying_share_id': 'share-a',
+            }},
+            'catalog': {'availability': 'available', 'data': [{'company_id': 'company', 'share_id': 'share-a'}]},
+        }})
+        replace_json(directory / 'runtime.json', {'session': 'private-session-path', 'api_key': 'private-key'})
+        replace_json(review / 'context.json', context)
+        replace_json(review / 'call-01.json', {'role': 'analyst', 'at': now.isoformat(), 'input': {'context': context},
+                     'output': {'action': 'skip', 'assessments': [{'contract_id': 'other-future', 'impact': 'unverified',
+                                'reason': 'Нет доказательств влияния'}]},
+                     'raw_output': json.dumps({'reason': 'Полный ответ аналитика. api_hash = "private-hash-in-text"',
+                                               'api_key': 'private-key-in-output', 'api_hash': 'private-hash-in-json'},
+                                              ensure_ascii=False),
+                     'metadata': {'session': 'private-session'}})
+        replace_json(review / 'call-02.json', {'role': 'critic', 'at': (now + timedelta(seconds=1)).isoformat(),
+                     'output': {'approved': False, 'objections': ['Нет подтверждения']}})
+        return revision, unlinked.revision_key(), review
+
+    def test_only_saved_bindings_reach_the_company_and_decision_views(self) -> None:
+        revision, unlinked, _ = self.save_news()
+        session = {'X-Operator-Session': self.session}
+        self.assertEqual(self.request('GET', '/api/news')[0], 403)
+        for company, kind in (('company', 'direct'), ('other', 'inferred')):
+            code, body = self.request('GET', '/api/news?company=' + company, **session)
+            self.assertEqual(code, 200)
+            news = json.loads(body)
+            self.assertEqual([row['revision'] for row in news['decisions']], [revision])
+            self.assertEqual(news['publications'][0]['binding']['kind'], kind)
+            self.assertEqual(news['publications'][1]['revision'], unlinked)
+            self.assertFalse(news['publications'][1]['has_trace'])
+            self.assertIn('old-future', news['decisions'][0]['contracts'])
+            if kind == 'inferred':
+                self.assertEqual(news['publications'][0]['assessments'][0]['impact'], 'unverified')
+        self.assertEqual(self.request('GET', '/api/trace?revision=' + unlinked, **session)[0], 404)
+        self.assertEqual(self.request('GET', '/api/trace?revision=../runtime.json', **session)[0], 404)
+        code, body = self.request('GET', '/api/trace?revision=' + revision, **session)
+        self.assertEqual(code, 200)
+        trace = json.loads(body)
+        self.assertEqual(trace['status'], 'rejected')
+        self.assertIn('Нет подтверждения', body)
+        self.assertIn('Полный ответ аналитика', body)
+        self.assertNotIn('private-', body)
+
+    @unittest.skipUnless(os.environ.get('OPERATOR_TEST_CHROME'), 'Set OPERATOR_TEST_CHROME to a Chromium executable')
+    def test_ticker_to_rejected_trace_keeps_expansion_and_scroll_during_refresh(self) -> None:
+        revision, _, review = self.save_news()
+        profile = self.root / 'chromium'
+        with subprocess.Popen([
+            os.environ['OPERATOR_TEST_CHROME'], '--headless', '--remote-debugging-port=0',
+            f'--user-data-dir={profile}', '--no-first-run', '--disable-background-networking', 'about:blank',
+        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) as browser:
+            try:
+                self.exercise_browser(profile, revision, review)
+            finally:
+                if browser.poll() is None:
+                    browser.terminate()
+
+    def exercise_browser(self, profile: Path, revision: str, review: Path) -> None:
+        def until(check: Callable[[], object]) -> None:
+            deadline = time.monotonic() + 8
+            while not check():
+                if time.monotonic() > deadline:
+                    self.fail('Timed out: ' + repr(check))
+                time.sleep(0.05)
+
+        port_file = profile / 'DevToolsActivePort'
+        until(port_file.is_file)
+        port = port_file.read_text().splitlines()[0]
+        with urlopen(f'http://127.0.0.1:{port}/json/list', timeout=3) as response:
+            tab = next(target for target in json.load(response) if target['type'] == 'page')
+        with connect(tab['webSocketDebuggerUrl'], open_timeout=3) as socket:
+            sequence = 0
+
+            def cdp(method: str, **params: object) -> dict[str, Any]:
+                nonlocal sequence
+                sequence += 1
+                socket.send(json.dumps({'id': sequence, 'method': method, 'params': params}))
+                while True:
+                    response = json.loads(socket.recv(timeout=5))
+                    if response.get('id') == sequence:
+                        self.assertNotIn('error', response)
+                        return dict(response.get('result', {}))
+
+            def evaluate(expression: str) -> Any:
+                result = cdp('Runtime.evaluate', expression=expression, returnByValue=True)
+                self.assertNotIn('exceptionDetails', result)
+                return result['result'].get('value')
+
+            def expect(expression: str) -> None:
+                try:
+                    until(lambda: evaluate(expression))
+                except AssertionError as error:
+                    raise AssertionError(f'{expression}: {evaluate("document.body.innerText")!r}') from error
+
+            def search(ticker: str) -> None:
+                evaluate('location.hash = "#tickers"')
+                expect('!document.querySelector("#tickers-screen").hidden')
+                evaluate(f'document.querySelector("#ticker-search").value = {json.dumps(ticker)};'
+                         'document.querySelector("#ticker-form").requestSubmit()')
+
+            cdp('Emulation.setDeviceMetricsOverride', width=375, height=720, deviceScaleFactor=1, mobile=False)
+            cdp('Page.navigate', url=self.origin)
+            expect('document.querySelectorAll("#recent a").length === 1')
+            expect('!document.querySelector("#recent").innerText.includes("Без привязки")')
+            search('xyz')
+            expect('document.querySelector("#company-name").textContent === "Компания Б"')
+            evaluate('document.querySelector("#company-events details").open = true')
+            expect('document.querySelector("#company-events").innerText.includes("Гипотеза") && '
+                   'document.querySelector("#company-events").innerText.includes("Влияние не подтверждено")')
+            expect('document.querySelector("#company-events").innerText.includes("Материал того же события") && '
+                   'document.querySelectorAll("#company-events a[href^=\'#trace/\']").length === 1')
+            search('abc')
+            expect('document.querySelector("#company-name").textContent === "Компания А"')
+            expect('document.querySelector("#company-events").innerText.includes("Прямая связь")')
+            search('abcz5')
+            expect('document.querySelector("#company-contract").value === "old-future"')
+            expect('document.querySelectorAll("#company-decisions a").length === 1')
+            expect('document.querySelector("#company-events").innerText.includes("Прямая связь")')
+            evaluate('location.hash = "#decisions"')
+            expect('!document.querySelector("#decisions-screen").hidden')
+            evaluate('for (const [name, value] of [["company", "company"], ["contract", "old-future"],'
+                     '["result", "rejected"]]) { const field = document.getElementById("decision-" + name);'
+                     'field.value = value; field.dispatchEvent(new Event("change")); }')
+            expect('document.querySelectorAll("#decisions a").length === 1')
+            evaluate('const from = document.querySelector("#decision-from"); from.value = "2099-01-01";'
+                     'from.dispatchEvent(new Event("change"))')
+            expect('document.querySelectorAll("#decisions a").length === 0')
+            evaluate('document.querySelector("#decision-from").value = "";'
+                     'document.querySelector("#decision-from").dispatchEvent(new Event("change"))')
+            evaluate('document.querySelector("#decisions a").click()')
+            expect(f'location.hash === "#trace/{revision}" && document.querySelector("#trace-steps").innerText'
+                   '.includes("Ответ критика")')
+            evaluate('document.querySelector("#trace-steps details").open = true; window.scrollTo(0, 550)')
+            expect('window.scrollY === 550 && !document.querySelector("#trace-steps img")')
+            expect('document.querySelector("#trace-steps a[href=\'https://t.me/source/1\']") !== null')
+            replace_json(review / 'call-03.json', {'role': 'analyst', 'at': utc_now().isoformat(),
+                         'input': {'review': {'approved': False}}, 'output': {'action': 'skip'}})
+            expect('document.querySelector("#trace-steps").innerText.includes("Пересмотр аналитика")')
+            expect('window.scrollY === 550 && document.querySelector("#trace-steps details").open')
+            expect('document.documentElement.scrollWidth === document.documentElement.clientWidth')
+
+    @unittest.skipUnless(sys.platform == 'win32', 'Windows file sharing')
+    def test_saved_artifact_is_replaced_after_a_concurrent_windows_read(self) -> None:
+        path = self.root / 'artifact.json'
+        replace_json(path, {'status': 'processing'})
+        with path.open('rb') as reader, patch('news_futures.local.sleep', side_effect=lambda _: reader.close()):
+            replace_json(path, {'status': 'completed'})
+        self.assertEqual(json.loads(path.read_bytes()), {'status': 'completed'})

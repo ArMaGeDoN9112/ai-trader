@@ -154,6 +154,7 @@ class TBankReader:
         open_stops = any(item['status'] not in (STOP_STATUS + 'CANCELED', STOP_STATUS + 'EXPIRED',
                                                STOP_STATUS + 'EXECUTED') for item in stops)
         now = utc_now()
+        ticker = future.get('ticker')
         return RiskSnapshot.model_validate({
             'account_id': account_id, 'account_observed_at': now, 'currency': 'RUB',
             'equity': amount(portfolio['totalAmountPortfolio'], rubles=True),
@@ -161,6 +162,7 @@ class TBankReader:
             'has_active_orders': bool(ordinary) or open_stops, 'execution_uncertain': False,
             'contract': {
                 'contract_id': contract_id, 'company_id': self.company_id,
+                'ticker': ticker if isinstance(ticker, str) and ticker.strip() else None,
                 'share_id': future['basicAssetPositionUid'], 'observed_at': now,
                 'quote_at': datetime.fromisoformat(last['time']),
                 'last_trade_at': datetime.fromisoformat(future['lastTradeDate']),

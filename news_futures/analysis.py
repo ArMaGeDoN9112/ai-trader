@@ -17,7 +17,7 @@ from langsmith import tracing_context
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 from news_futures.credentials import load_token
-from news_futures.local import publication_digest, replace_json, write_json
+from news_futures.local import move_artifact, publication_digest, replace_json, write_json
 from news_futures.openrouter_model import OpenRouterChat
 from news_futures.publications import utc_now
 
@@ -228,7 +228,12 @@ def review_cycle(
             'role': role, 'mode': mode, 'requested_model': role_settings.model,
             'actual_model': None, 'provider': None, 'settings_version': version,
             'input': data, 'output': None, 'error': None, 'usage': None, 'cost': None,
+            'started_at': utc_now().isoformat(),
         }
+        path = directory / f'call-{len(calls) + 1:02}.json'
+        if path.exists():
+            move_artifact(path, directory / f'{path.stem}-interrupted-{uuid4().hex}.json')
+        replace_json(path, record)
         started = perf_counter()
         try:
             model = model_factory(role_settings)
@@ -253,6 +258,8 @@ def review_cycle(
             if metadata.get('finish_reason') != 'stop':
                 raise ValueError('incomplete_response')
             if raw.additional_kwargs.get('refusal'):
+                if isinstance(raw.additional_kwargs['refusal'], str):
+                    record['refusal'] = raw.additional_kwargs['refusal']
                 raise ValueError('model_refusal')
             if metadata.get('model_name') != role_settings.model:
                 raise ValueError('unexpected_model')
@@ -279,11 +286,9 @@ def review_cycle(
             record['error'] = type(error).__name__
             raise
         finally:
+            record['at'] = utc_now().isoformat()
             record['latency_ms'] = round((perf_counter() - started) * 1000, 3)
             calls.append(record)
-            path = directory / f'call-{len(calls):02}.json'
-            if path.exists():
-                path.rename(directory / f'{path.stem}-interrupted-{uuid4().hex}.json')
             replace_json(path, record)
 
     def analyst(state: CycleState) -> dict[str, Any]:

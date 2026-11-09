@@ -132,14 +132,13 @@ def assess(
     publication: dict[str, Any], candidates: list[dict[str, Any]], settings: RoleSettings,
     model_factory: Callable[[RoleSettings], BaseChatModel],
 ) -> tuple[EventAssessment | None, dict[str, Any]]:
-    call: dict[str, Any] = {'settings': settings.model_dump(mode='json'), 'error': None}
+    data = {'publication': publication, 'candidates': candidates}
+    call: dict[str, Any] = {'settings': settings.model_dump(mode='json'), 'error': None, 'input': data}
     try:
         with tracing_context(enabled=False):
             response = model_factory(settings).with_structured_output(
                 EventAssessment.model_json_schema(), method='json_schema', strict=True, include_raw=True,
-            ).invoke([SystemMessage(SYSTEM), HumanMessage(json.dumps({
-                'publication': publication, 'candidates': candidates,
-            }, ensure_ascii=False))])
+            ).invoke([SystemMessage(SYSTEM), HumanMessage(json.dumps(data, ensure_ascii=False))])
         if not isinstance(response, dict):
             raise ValueError('invalid_model_response')
         raw = response['raw']

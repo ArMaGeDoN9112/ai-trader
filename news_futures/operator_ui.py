@@ -13,8 +13,10 @@ import subprocess
 import sys
 from threading import Lock, Thread
 from typing import Any
+from urllib.parse import parse_qs
 from uuid import uuid4
 
+from news_futures.operator_news import catalog_series, news_view, trace_view, visible
 from news_futures.publications import utc_now
 
 
@@ -258,15 +260,33 @@ class OperatorHandler(BaseHTTPRequestHandler):
         return len(tokens) == 1 and compare_digest(tokens[0].encode(), self.server.session.encode())
 
     def do_GET(self) -> None:
+        path, _, query_string = self.path.partition('?')
         if not self.local():
             self.reply(403, {'result': 'forbidden'})
         elif self.path == '/':
             self.reply(200, self.server.page, html=True)
-        elif self.path == '/api/overview':
-            if self.authorized():
-                self.reply(200, self.server.worker.overview(self.server.channels))
-            else:
+        elif path in ('/api/overview', '/api/news', '/api/trace'):
+            if not self.authorized():
                 self.reply(403, {'result': 'forbidden'})
+                return
+            worker = self.server.worker
+            query = parse_qs(query_string)
+            value: dict[str, Any] | None
+            try:
+                if path == '/api/overview':
+                    value = worker.overview(self.server.channels)
+                elif path == '/api/news':
+                    value = visible(news_view(worker.directory, worker.profile, self.server.catalog,
+                                              self.server.series, query.get('company', [''])[0]))
+                else:
+                    value = trace_view(worker.directory, worker.profile['account_id'], query.get('revision', [''])[0])
+            except (sqlite3.Error, OSError, ValueError, KeyError, TypeError):
+                self.reply(503, {'result': 'archive_unavailable'})
+            else:
+                if value is None:
+                    self.reply(404, {'result': 'not_found'})
+                else:
+                    self.reply(200, value)
         else:
             self.reply(404, {'result': 'not_found'})
 
@@ -282,9 +302,12 @@ class OperatorHandler(BaseHTTPRequestHandler):
 
 
 class OperatorServer(ThreadingHTTPServer):
-    def __init__(self, worker: Worker, channels: list[str], port: int):
+    def __init__(self, worker: Worker, channels: list[str], port: int, catalog: dict[str, Any] | None = None,
+                 series: dict[str, Any] | None = None):
         self.worker = worker
         self.channels = channels
+        self.catalog = catalog or {}
+        self.series = series or {}
         self.session = token_urlsafe(32)
         self.nonce = token_urlsafe(24)
         self.page = PAGE.read_text(encoding='utf-8').replace('__SESSION__', self.session).replace('__NONCE__', self.nonce)
@@ -296,6 +319,7 @@ class OperatorServer(ThreadingHTTPServer):
 
 
 def serve_operator(config: Path, port: int) -> int:
+    from news_futures.jev import load_catalog
     from news_futures.runtime import AUTONOMOUS_PROTECTION_UNAVAILABLE, load_settings
     from news_futures.telegram import configured_channels
 
@@ -309,8 +333,16 @@ def serve_operator(config: Path, port: int) -> int:
     profile['entry_block'] = AUTONOMOUS_PROTECTION_UNAVAILABLE if settings.mode == 'sandbox' else None
     payload = json.dumps({'settings': settings.model_dump(mode='json'), 'channels': channels}).encode()
     worker = Worker(settings.data_dir, profile, [sys.executable, '-m', 'news_futures.operator_ui'], payload)
+    catalog: dict[str, Any] = {}
+    series: dict[str, Any] = {}
     try:
-        with OperatorServer(worker, channels, port) as server:
+        content = settings.catalog.read_bytes()
+        catalog = dict(load_catalog(content))
+        series = catalog_series(json.loads(content))
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    try:
+        with OperatorServer(worker, channels, port, catalog, series) as server:
             print(f'Панель оператора: http://{server.host}/', flush=True)
             server.serve_forever()
     except KeyboardInterrupt:

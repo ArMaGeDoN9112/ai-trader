@@ -3,6 +3,8 @@
 from hashlib import sha256
 import json
 from pathlib import Path
+import sys
+from time import monotonic, sleep
 from typing import Any
 
 from news_futures.execution import simulate_execution
@@ -21,7 +23,21 @@ def write_json(path: Path, value: object) -> None:
 def replace_json(path: Path, value: object) -> None:
     temporary = path.with_suffix(path.suffix + '.tmp')
     temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + '\n', encoding='utf-8')
-    temporary.replace(path)
+    move_artifact(temporary, path, replace=True)
+
+
+def move_artifact(source: Path, target: Path, *, replace: bool = False) -> None:
+    move = source.replace if replace else source.rename
+    deadline = monotonic() + 0.5
+    while True:
+        try:
+            move(target)
+            return
+        except PermissionError as error:
+            # A Windows reader can briefly deny renaming an open artifact or its directory.
+            if sys.platform != 'win32' or error.winerror not in (5, 32, 33) or monotonic() >= deadline:
+                raise
+            sleep(0.01)
 
 
 def run(directory: Path) -> dict[str, Any]:

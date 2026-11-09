@@ -25,7 +25,8 @@ from test_telegram import ControlledTransport
 
 from news_futures.__main__ import main
 from news_futures.jev import assess_batch
-from news_futures.local import write_json
+from news_futures.local import replace_json, write_json
+from news_futures.operator_news import news_view, trace_view
 from news_futures.publications import Archive, Publication, utc_now
 from news_futures.runtime import Runtime, load_settings
 from news_futures.sandbox_execution import Fill, SandboxExecutor
@@ -459,6 +460,7 @@ class RuntimeAcceptance(test_risk.RiskFixture):
 
     def test_news_drives_protected_entry_hold_and_full_close(self) -> None:
         self.sandbox()
+        self.snapshot['contract']['ticker'] = 'SRZ5'
         entry = self.news(self.market, 'SBER increased profit forecast.')
         self.serve(self.proposal('enter', entry), review())
         report = self.report(entry)
@@ -487,6 +489,23 @@ class RuntimeAcceptance(test_risk.RiskFixture):
         self.assertIn('reviewed_close', [row['kind'] for row in exit_report['trades'][0]['events']])
         self.assertEqual(self.broker.calls, ['enter', 'sl', 'tp', 'cancel_protection', 'close'])
         self.assertIsNone(self.report()['broker']['position'])
+        opened = trace_view(self.root, self.account_id, entry.revision_key())
+        closed = trace_view(self.root, self.account_id, exit_news.revision_key())
+        assert opened is not None and closed is not None
+        for trace, action in ((opened, 'enter'), (closed, 'close')):
+            self.assertLess(next(i for i, step in enumerate(trace['steps']) if step['kind'] == 'risk'),
+                            next(i for i, step in enumerate(trace['steps']) if step['status'] == 'intent'))
+            intents = [step['input']['action'] for step in trace['steps'] if step['status'] == 'intent']
+            self.assertIn(action, intents)
+            self.assertNotIn('close' if action == 'enter' else 'enter', intents)
+        view = news_view(self.root, self.profile_data, {}, {}, 'sber')
+        self.assertEqual(view['contracts'][self.contract_id]['ticker'], 'SRZ5')
+        # Older archives kept instrument identity in the decision snapshot only.
+        with closing(sqlite3.connect(self.root / 'publications.sqlite3')) as db, db:
+            db.execute("UPDATE runtime_status SET data = json_remove(data, '$.instruments')")
+        archived = news_view(self.root, self.profile_data | {'contracts': {'next': 'sber'}}, {}, {}, 'sber')
+        self.assertIn('enter', [order['action'] for order in archived['orders']])
+        self.assertTrue(all(order['contract_id'] == self.contract_id for order in archived['orders']))
 
     def test_skips_and_rereads_account_after_approval(self) -> None:
         self.sandbox()
@@ -500,9 +519,43 @@ class RuntimeAcceptance(test_risk.RiskFixture):
             self.snapshot['has_position'] = True
             return dict(review()(body))
 
-        self.serve(different, self.proposal('enter', incoming), change_account)
+        read_risk = self.broker.read_risk
+        observed: list[str] = []
+
+        def observe_risk(account_id: str, contract_id: str) -> object:
+            if self.snapshot['has_position']:
+                trace = trace_view(self.root, self.account_id, incoming.revision_key())
+                if trace is not None:
+                    observed.extend(step['status'] for step in trace['steps'] if step['kind'] == 'risk')
+            return read_risk(account_id, contract_id)
+
+        with patch.object(self.broker, 'read_risk', side_effect=observe_risk):
+            self.serve(different, self.proposal('enter', incoming), change_account)
+        self.assertIn('processing', observed)
         self.assertEqual(self.report(incoming)['result']['reason'], 'account_has_exposure_or_unresolved_execution')
         self.assertEqual(self.broker.calls, [])
+        trace = trace_view(self.root, self.account_id, incoming.revision_key())
+        assert trace is not None
+        risk, = [step for step in trace['steps'] if step['kind'] == 'risk']
+        self.assertEqual(risk['status'], 'rejected')
+        self.assertTrue(risk['input']['snapshot']['has_position'])
+        self.assertFalse(any(step['status'] == 'intent' for step in trace['steps']))
+
+    def test_risk_audit_failure_keeps_the_broker_result(self) -> None:
+        self.sandbox()
+        incoming = self.news(self.market, 'SBER forecasts.')
+
+        def save(path: Path, value: object) -> None:
+            if path.name.startswith('risk-'):
+                raise PermissionError('audit file unavailable')
+            replace_json(path, value)
+
+        with patch('news_futures.runtime.replace_json', side_effect=save):
+            self.serve(self.proposal('enter', incoming), review())
+        result = self.report(incoming)['result']
+        self.assertEqual(result['status'], 'protected')
+        self.assertEqual(result['audit_error'], 'risk_audit_unavailable')
+        self.assertEqual(self.broker.calls, ['enter', 'sl', 'tp'])
 
     def test_tbank_independent_stops_block_autonomous_entry(self) -> None:
         self.sandbox()
@@ -511,6 +564,9 @@ class RuntimeAcceptance(test_risk.RiskFixture):
         self.serve(self.proposal('enter', incoming), review())
         self.assertEqual(self.report(incoming)['result']['reason'], 'autonomous_protection_unavailable')
         self.assertEqual(self.broker.calls, [])
+        trace = trace_view(self.root, self.account_id, incoming.revision_key())
+        assert trace is not None
+        self.assertNotIn('risk', [step['kind'] for step in trace['steps']])
 
     def test_reprint_of_initial_history_does_not_trigger_review(self) -> None:
         self.sandbox()

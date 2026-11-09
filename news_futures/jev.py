@@ -19,6 +19,7 @@ from pydantic import field_validator, model_validator
 
 from news_futures.credentials import CredentialsError, load_token
 from news_futures.local import publication_digest, write_json
+from news_futures.publications import utc_now
 
 
 DECISIONS_URL = 'https://openrouter.ai/api/alpha/decisions'
@@ -262,7 +263,8 @@ def route_publication(
                         'score': relevance, 'confidence': answer.confidence,
                         'requires_analyst_review': kind != 'direct',
                     })
-            record.update({'error': error, 'elapsed_ms': round((perf_counter() - started) * 1000)})
+            record.update({'error': error, 'at': utc_now().isoformat(),
+                           'elapsed_ms': round((perf_counter() - started) * 1000)})
             write_json(directory / f'batch-{len(batches) + 1:03d}.json', record)
             batches.append({key: value for key, value in record.items() if key != 'answers'})
             if error:
@@ -290,6 +292,7 @@ def route_publication(
              if batch.get('usage') and batch['usage']['cost'] is not None]
     models = list(dict.fromkeys(batch['actual_model'] for batch in state['batches'] if batch.get('actual_model')))
     trace = {
+        'at': utc_now().isoformat(),
         **source, 'links': state['links'], 'batches': state['batches'], 'error': state['error'],
         'mode': 'openrouter_decisions',
         'status': 'failed' if state['error'] else 'completed',
