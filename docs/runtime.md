@@ -1,14 +1,34 @@
 # Непрерывная обработка новостей
 
-Установите зависимости в Python 3.11 из корня репозитория. Заполните
-`.local/credentials.toml` по `credentials.example.toml`: Telegram нужен
-для чтения каналов, OpenRouter для моделей, sandbox для чтения счёта и рынка.
+Выполняйте команды PowerShell из корня репозитория с Python 3.11.
+Приложение запускается командой `python -m news_futures` из этого каталога.
+Для нового окружения выполните:
 
 ```powershell
-python -m venv .venv
+py -3.11 -m venv .venv
 .venv\Scripts\python -m pip install -r requirements-telegram.txt -r requirements-openrouter.txt -r requirements-sandbox.txt
-.venv\Scripts\python -m news_futures telegram-login
+.venv\Scripts\python -m pip check
+New-Item -ItemType Directory -Force .local | Out-Null
+if (-not (Test-Path .local/credentials.toml)) {
+    Copy-Item credentials.example.toml .local/credentials.toml -ErrorAction Stop
+}
 ```
+
+Если Launcher не видит Python 3.11, в первой команде укажите полный путь к
+`python.exe` этой версии. Заполните секции `[telegram]`,
+`[openrouter]` и `[sandbox]` по шаблону. Подпишитесь в используемом аккаунте
+на `@markettwits` и `@rbc_news`. Создайте `.local/sandbox-settings.json`
+по [инструкции диагностики](sandbox.md). Затем авторизуйтесь локально
+и выполните диагностику в новом каталоге.
+
+```powershell
+.venv\Scripts\python -m news_futures telegram-login
+.venv\Scripts\python -m news_futures sandbox-diagnostics .local/sandbox-report --config .local/sandbox-settings.json
+```
+
+Диагностика читает MCP и готовит каталог. `serve` отдельно проверяет подключение
+к Sandbox REST перед обработкой новостей. В каталоге из отчёта найдите компанию
+по совпадению `share_id` с `operations.future.data.underlying_share_id`.
 
 Сохраните `.local/runtime.json`. Пути внутри файла отсчитываются от его
 каталога. В `catalog` укажите отчёт `diagnostics.json` со списком компаний
@@ -27,12 +47,18 @@ UID фьючерсов, значения — ID компаний из катал
 ```
 
 По умолчанию используются MarketTwits и РБК, внешняя сессия
-`telegram-login` и настройки моделей из пакета. При необходимости задайте
-пути `sources`, `session`, `jev`, `matcher`, `review` и `ca_file`.
-Формат каждого модельного файла совпадает с форматом соответствующей
-диагностической команды. На каждую редакцию создаётся снимок настроек
-и каталога. Изменение модельных файлов применяется со следующей редакции.
-Изменения общей конфигурации требуют перезапуска.
+`telegram-login` и настройки моделей из пакета. Чтобы изменить их, скопируйте
+`news_futures/telegram-sources.json` и `news_futures/openrouter-models.json`
+в `.local/` и добавьте в `runtime.json` поля `"sources": "telegram-sources.json"`
+и `"review": "openrouter-models.json"`. В первом файле добавьте имя
+разрешённого канала без `@` в `channels`. Аккаунт должен быть подписан на канал.
+Во втором замените, например, `critic.model` на точный ID модели OpenRouter
+с поддержкой JSON Schema. Аналитик и критик настраиваются независимо.
+Для Jev и сопоставления событий используются поля `jev` и `matcher` и шаблоны
+`news_futures/jev-model.json` и `news_futures/event-model.json` соответственно.
+При необходимости укажите `session` и `ca_file`. На каждую редакцию создаётся
+снимок моделей и каталога. Изменение модельных файлов применяется со следующей
+редакции. Изменения общей конфигурации и списка каналов требуют перезапуска.
 
 ```powershell
 .venv\Scripts\python -m news_futures serve .local/runtime.json
@@ -54,6 +80,10 @@ UID фьючерсов, значения — ID компаний из катал
 результаты. `--decision` принимает `decision_id` из архива событий или
 `revision` из списка результатов. По нему доступны публикация, маршрутизация,
 событие, вход анализа, разбор критика и журнал связанного торгового цикла.
+В отчёте по решению смотрите `result.status` и `result.reason` для причины
+пропуска или отказа, `result.execution` и `trades` для исполнения. Общий отчёт
+без `--decision` показывает `broker.position` и `broker.protection` по последней
+сверке счёта.
 Путь к базе событий для диагностических команд —
 `.local/runtime/events.sqlite3`.
 
@@ -102,7 +132,21 @@ Telegram продолжает чтение с сохранённого курс�
 ## Приёмка
 
 ```powershell
+.venv\Scripts\python -m pip install -r requirements-dev.txt
 .venv\Scripts\python -m unittest discover -s tests -p test_runtime.py -v
 .venv\Scripts\python -m unittest discover -s tests -v
 .venv\Scripts\python -m mypy --strict news_futures tests
 ```
+
+Для нового типа источника реализуйте получение и восстановление курсора в
+адаптере. Преобразуйте входные данные в `Publication` из
+`news_futures.publications`: задайте устойчивые `source` и `external_id`,
+ссылку, текст, время публикации и получения с часовым поясом. Для редакции
+передайте `edited_at` и `change="edit"`, для удаления `change="delete"`.
+Сохраняйте пакет через `Archive.save_batch` с положительным монотонным
+курсором источника и `historical=True` для начальной истории. Архив сохраняет
+редакции и курсор одной транзакцией. Подключение транспорта нового типа
+выполняется в сборке приложения. `Runtime.process` принимает сохранённые
+редакции через общий архив, поэтому узлы графа от транспорта не зависят.
+
+[Протокол прогона тикета 13](../.scratch/news-futures/acceptance.md).

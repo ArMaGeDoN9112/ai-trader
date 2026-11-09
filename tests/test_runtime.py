@@ -1,6 +1,7 @@
+from contextlib import closing
 from copy import deepcopy
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 import json
 from pathlib import Path
@@ -21,7 +22,7 @@ from test_telegram import ControlledTransport
 from news_futures.__main__ import main
 from news_futures.jev import assess_batch
 from news_futures.local import write_json
-from news_futures.publications import Publication, utc_now
+from news_futures.publications import Archive, Publication, utc_now
 from news_futures.runtime import Runtime, load_settings
 from news_futures.sandbox_execution import Fill, SandboxExecutor
 from news_futures.telegram import Difference, Source
@@ -395,6 +396,26 @@ class RuntimeAcceptance(test_risk.RiskFixture):
         self.assertEqual(len(self.jev_requests), 1)
         self.assertEqual(self.broker.calls, [])
         self.assertEqual({row['source'] for row in self.report()['channels']}, {'telegram:123', 'telegram:456'})
+
+    def test_website_adapter_uses_the_same_observation_pipeline(self) -> None:
+        def website_publication(release: dict[str, str]) -> Publication:
+            return Publication('web:example.invalid', release['slug'],
+                               f'https://example.invalid/{release["slug"]}', release['body'],
+                               datetime.fromisoformat(release['published']), utc_now())
+
+        item = website_publication({'slug': 'release-1', 'body': 'SBER raised its forecast.',
+                                    'published': utc_now().isoformat()})
+        archive = Archive(load_settings(self.profile).publications)
+        with closing(archive.db):
+            archive.save_batch(item.source, 1, [item])
+
+        endpoint = self.serve(self.proposal('enter', item), review())
+        decision = self.report(item)
+        self.assertEqual(decision['publication'], item.record())
+        self.assertEqual(decision['context']['publication']['url'], item.url)
+        self.assertEqual(decision['result']['status'], 'approved_for_checks')
+        self.assertEqual([request['model'] for request in endpoint.requests], ['test/analyst', 'test/critic'])
+        self.write_broker.assert_not_called()
 
     def test_news_drives_protected_entry_hold_and_full_close(self) -> None:
         self.sandbox()
