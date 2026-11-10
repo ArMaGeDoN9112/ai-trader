@@ -1,4 +1,4 @@
-"""Opt-in, billed acceptance of Jev on a fixed, manually labeled Russian sample."""
+"""Opt-in acceptance of the routing model on a fixed, manually labeled Russian sample."""
 
 from collections import Counter
 from pathlib import Path

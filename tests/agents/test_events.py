@@ -230,7 +230,8 @@ class EventsTest(unittest.TestCase):
         config = Path('news_futures/agents/jev-model.json')
 
         def respond(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, json={'id': 'jev-test', 'model': json.loads(request.content)['model'],
+            self.assertEqual(json.loads(request.content)['model'], 'parallel/decisions-fast:free')
+            return httpx.Response(200, json={'id': 'route-test', 'model': 'parallel/decisions-fast-20261106',
                                              'answers': {'company_0': answer('direct')}})
 
         with httpx.Client(transport=httpx.MockTransport(respond)) as client:

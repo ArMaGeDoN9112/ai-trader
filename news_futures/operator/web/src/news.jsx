@@ -127,7 +127,7 @@ export function Tickers({ news, company, contract = '', broker, loading }) {
 }
 
 const steps = {
-  publication: 'Исходная публикация', route: 'Привязки Jev', event: 'Сопоставление события',
+  publication: 'Исходная публикация', route: 'Привязки к компаниям', event: 'Сопоставление события',
   snapshot: 'Подготовка контекста', analyst: 'Предложение аналитика', critic: 'Ответ критика',
   revision: 'Пересмотр аналитика', review: 'Проверка предложения', risk: 'Проверка риска',
   execution: 'Исполнитель', processing: 'Обработка',

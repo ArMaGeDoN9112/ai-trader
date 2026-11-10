@@ -1,5 +1,5 @@
 {
-  "model": "openai/gpt-4.1-mini",
-  "max_tokens": 1024,
+  "model": "nvidia/nemotron-3.5-super-vl:free",
+  "max_tokens": 4096,
   "timeout_ms": 60000
 }

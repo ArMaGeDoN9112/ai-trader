@@ -41,9 +41,9 @@ or permission to trade.
   `json_schema` method and provider parameter support. Validate the result locally;
   errors or incompatible models produce no executable proposal. A free-text
   fallback is not an approved trading proposal.
-- Jev uses OpenRouter's System One interface. Keep its typed decision adapter
-  separate from chat models; invoke it from a graph node without pretending it
-  implements a conversational model. Versions can change within that contract.
+- The company router uses the OpenRouter Decisions API with Parallel Decisions
+  Fast or Jev. Keep its typed decision adapter separate from chat models and
+  invoke it from a graph node. Versions can change within that contract.
 - Use Telethon for the approved MTProto source adapter. Additional channels are
   configuration; a website adapter emits the same publication contract.
 - Use the official MCP Python SDK for MCP transport. Broker operations are invoked

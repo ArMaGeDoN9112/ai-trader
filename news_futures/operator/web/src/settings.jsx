@@ -3,7 +3,7 @@ import { Bot, Radio, Save, SlidersHorizontal } from 'lucide-react';
 import { label, time } from './api';
 import { Empty, Facts, Notice, Panel } from './ui';
 
-const roles = [['jev', 'Jev · привязки'], ['matcher', 'Сопоставление событий'], ['analyst', 'Аналитик'], ['critic', 'Критик']];
+const roles = [['jev', 'Привязка к компаниям'], ['matcher', 'Сопоставление событий'], ['analyst', 'Аналитик'], ['critic', 'Критик']];
 const lines = value => value.split('\n').map(line => line.trim()).filter(Boolean);
 
 export function Settings({ settings, status, online, busy, command, error }) {

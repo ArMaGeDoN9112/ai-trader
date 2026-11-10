@@ -13,7 +13,7 @@ class Contract(BaseModel):
 
 
 class RoleSettings(Contract):
-    model: str = Field(min_length=3, pattern=r'^[^\s/:]+/[^\s:]+$')
+    model: str = Field(min_length=3, pattern=r'^[^\s/:]+/[^\s:]+(?::free)?$')
     max_tokens: int = Field(default=2048, gt=0)
     temperature: float | None = Field(default=None, ge=0, le=2)
     timeout_ms: int = Field(default=60000, gt=0)

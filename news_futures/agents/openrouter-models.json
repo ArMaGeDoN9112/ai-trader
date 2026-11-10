@@ -1,12 +1,12 @@
 {
   "analyst": {
-    "model": "openai/gpt-4.1-mini",
-    "max_tokens": 2048,
+    "model": "nvidia/nemotron-3.5-super-vl:free",
+    "max_tokens": 8192,
     "timeout_ms": 60000
   },
   "critic": {
-    "model": "openai/gpt-4.1-mini",
-    "max_tokens": 2048,
+    "model": "nvidia/nemotron-3.5-super-vl:free",
+    "max_tokens": 8192,
     "timeout_ms": 60000
   }
 }

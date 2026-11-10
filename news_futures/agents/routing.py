@@ -49,7 +49,7 @@ class Input(BaseModel):
 
 class JevSettings(Input):
     model_config = ConfigDict(extra='forbid', frozen=True)
-    model: str = Field(pattern=r'^typesafe/jev-\d+\.\d+(?:-\d{8})?$')
+    model: str = Field(pattern=r'^(?:typesafe/jev-\d+\.\d+(?:-\d{8})?|parallel/decisions-fast:free)$')
 
 
 class PublicationInput(Input):
@@ -224,7 +224,11 @@ def route_publication(
         actual_model = None
         model = state['requested_model']
         model_pattern = re.escape(model)
-        if not model.rsplit('-', 1)[-1].isdigit():
+        if model.endswith(':free'):
+            # Decisions may report the dated snapshot without the pricing suffix.
+            base = re.escape(model.removesuffix(':free'))
+            model_pattern = rf'(?:{model_pattern}|{base}-\d{{8}}(?::free)?)'
+        elif not model.rsplit('-', 1)[-1].isdigit():
             model_pattern += r'(?:-\d{8})?'
         for offset in range(0, len(entries), BATCH_SIZE):
             batch = dict(entries[offset:offset + BATCH_SIZE])
