@@ -4,6 +4,9 @@ __pycache__/
 .mypy_cache/
 .local/
 *.session*
+credentials.toml
 .env
+.env.*
+!.env.example
 node_modules/
 news_futures/operator/web/dist/
