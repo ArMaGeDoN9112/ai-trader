@@ -5,6 +5,11 @@ Use Conventional Commits: `<type>[optional scope][!]: <description>`
 
 ## Agent skills
 
+### AI agent design
+
+For any task that touches AI agents, read and apply the `ai-agent-design` skill
+at `~/.agents/skills/ai-agent-design/SKILL.md` before proceeding.
+
 ### Issue tracker
 
 Track issues and specs in `.scratch/<feature>/`. See `docs/agents/issue-tracker.md`.
