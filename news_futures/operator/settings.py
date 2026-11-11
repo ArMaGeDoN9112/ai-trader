@@ -8,20 +8,15 @@ from typing import Any
 
 from news_futures.adapters.tbank.rest import TBankReader, sandbox_client
 from news_futures.adapters.telegram import validate_channels
-from news_futures.application.config import RuntimeSettings, cycle_inputs
+from news_futures.application.config import GROQ_MODELS, RuntimeSettings, cycle_inputs, role_models
 from news_futures.application.operator_state import OperatorState
+from news_futures.common.credentials import CredentialsError, load_token
 from news_futures.common.errors import RuntimeErrorInfo
 from news_futures.news.publications import utc_now
 from news_futures.operator.news import read_archive
 from news_futures.trading.account import BrokerAccount
 from news_futures.trading.executor import AUTONOMOUS_PROTECTION_UNAVAILABLE
 from news_futures.trading.journal import active_cycles
-
-
-def role_models(inputs: dict[str, bytes]) -> dict[str, str]:
-    review = json.loads(inputs['review'])
-    return {'jev': json.loads(inputs['jev'])['model'], 'matcher': json.loads(inputs['matcher'])['model'],
-            **{role: review[role]['model'] for role in ('analyst', 'critic')}}
 
 
 def profile_view(settings: RuntimeSettings) -> dict[str, Any]:
@@ -35,9 +30,9 @@ class Preferences:
         self.base = settings
         self.state = state
         self.default: dict[str, Any] = {'mode': settings.mode, 'channels': channels, 'contracts': settings.contracts,
-                                       'models': role_models(cycle_inputs(settings))}
-        self.active = self.saved()
-        self.active['models'] = self.default['models']
+                                       'models': role_models(cycle_inputs(settings)),
+                                       'aggregator': 'openrouter', 'groq_models': GROQ_MODELS}
+        self.active = self.saved() | {'models': self.default['models'], 'aggregator': self.default['aggregator']}
         self.profile_at: str | None = None
         self.models_at: str | None = None
 
@@ -65,7 +60,7 @@ class Preferences:
                 if db is not None and any(json.loads(row['terms'])['contract_id'] not in runtime.contracts
                                           for row in active_cycles(db, runtime.account_id)):
                     raise ValueError('account_has_operations')
-        self.active = values | {'models': self.default['models']}
+        self.active = values | {'models': self.default['models'], 'aggregator': self.default['aggregator']}
         self.models_at = None
         self.profile_at = None
         return profile_view(runtime), values['channels'], json.dumps({
@@ -121,12 +116,17 @@ class Preferences:
                 or len(dict(rows)) != len(rows)):
             raise ValueError('invalid_contracts')
         contracts = dict(rows)
+        aggregator = body.get('aggregator', saved['aggregator'])
+        if aggregator not in ('openrouter', 'groq'):
+            raise ValueError('invalid_aggregator')
         models = body.get('models')
-        if (not isinstance(models, dict) or models.keys() != self.default['models'].keys()
-                or not all(isinstance(model, str) and len(model) <= 200 for model in models.values())):
-            raise ValueError('invalid_models')
+        groq_models = body.get('groq_models', saved['groq_models'])
+        for choices, defaults in ((models, self.default['models']), (groq_models, GROQ_MODELS)):
+            if (not isinstance(choices, dict) or choices.keys() != defaults.keys()
+                    or not all(isinstance(model, str) and len(model) <= 200 for model in choices.values())):
+                raise ValueError('invalid_models')
         values = {'mode': mode, 'channels': channels, 'contracts': contracts, 'models': models,
-                  'account_id': self.base.account_id}
+                  'aggregator': aggregator, 'groq_models': groq_models, 'account_id': self.base.account_id}
         candidate = self.runtime(values)
         try:
             inputs = cycle_inputs(candidate)
@@ -134,8 +134,14 @@ class Preferences:
             raise ValueError('invalid_contracts') from error
         try:
             cycle_inputs(candidate, models)
+            cycle_inputs(candidate, models | groq_models, aggregator='groq')
         except ValueError as error:
             raise ValueError('invalid_models') from error
+        if aggregator == 'groq' and aggregator != saved['aggregator']:
+            try:
+                load_token('groq', 'api_key')
+            except CredentialsError as error:
+                raise ValueError('invalid_groq_credentials') from error
         mode_changed = mode != saved['mode']
         if mode_changed and not stopped:
             raise ValueError('mode_requires_stop')

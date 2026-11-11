@@ -446,13 +446,29 @@ class OperatorTest(unittest.TestCase):
                      '(document.querySelector("textarea[rows=\'5\']"))')
             evaluate('document.querySelector(".save-bar .primary").click()')
             expect('document.body.innerText.includes("Для применения перезапустите обработчик.")')
+            expect('document.querySelector("#chat-aggregator").value === "openrouter" && '
+                   'document.querySelector(".save-bar .primary").disabled')
+            evaluate('((field) => { field.value = "groq"; field.dispatchEvent(new Event("change", {bubbles:true})); })'
+                     '(document.querySelector("#chat-aggregator"))')
+            expect('Array.from(document.querySelectorAll("label.field")).some(field => '
+                   'field.innerText.trim() === "Аналитик" && '
+                   'field.querySelector("input")?.value === "openai/gpt-oss-120b")')
+            with patch('news_futures.operator.settings.load_token', return_value='test-key'):
+                evaluate('document.querySelector(".save-bar .primary").click()')
+                until(lambda: self.server.worker.controls_state.saved().get('aggregator') == 'groq')
+                expect('document.querySelector(".save-bar .primary").disabled && '
+                       'document.querySelector("#chat-aggregator").value === "groq"')
+            worker = self.server.worker
+            saved = worker.controls_state.saved()
+            worker._update(json.dumps({'aggregator': 'groq', 'models': saved['models'] | saved['groq_models']}).encode(), '')
+            expect('Array.from(document.querySelectorAll(".facts dt")).some(term => '
+                   'term.textContent === "Агрегатор чат-моделей" && term.nextElementSibling.textContent === "Groq")')
             evaluate('location.hash = "#overview"')
             expect('Array.from(document.querySelectorAll(".hero button")).some(button => '
                    'button.innerText === "Пауза новых входов" && !button.disabled)')
             evaluate('Array.from(document.querySelectorAll(".hero button")).find(button => '
                      'button.innerText === "Пауза новых входов").click()')
             expect('document.querySelector(".status-strip").innerText.includes("Входы на паузе")')
-            worker = self.server.worker
             archive = Archive(self.root / 'publications.sqlite3')
             with worker.lock, closing(archive.db), archive.db:
                 worker.state = 'running'

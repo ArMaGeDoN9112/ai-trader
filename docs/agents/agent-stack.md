@@ -37,6 +37,9 @@ or permission to trade.
   LangChain integration. The current application uses the tested
   [ticket 03 compatibility path](openrouter-compatibility.md) to retain
   OpenRouter provider metadata.
+- Groq chat roles use the same LangChain Chat Completions interface, with a
+  dedicated endpoint and credential. The operator chooses the chat aggregator
+  for the event matcher, analyst and critic. The Decisions API stays on OpenRouter.
 - Request the required structured schema explicitly, including the appropriate
   `json_schema` method and provider parameter support. Validate the result locally;
   errors or incompatible models produce no executable proposal. A free-text

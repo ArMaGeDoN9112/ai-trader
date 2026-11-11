@@ -15,11 +15,12 @@ from news_futures.trading.broker import BrokerReader, SandboxBroker
 from news_futures.trading.account import BrokerAccount
 from news_futures.common.credentials import load_token
 from news_futures.agents.company import OpenPosition, Snapshot
+from news_futures.agents.contracts import Aggregator
 from news_futures.agents.events import EventArchive
 from news_futures.common.artifacts import replace_json
 from news_futures.application.workflow import Shutdown, analyze_news
 from news_futures.news.publications import Archive, utc_now
-from news_futures.application.config import RuntimeSettings, cycle_inputs, load_settings
+from news_futures.application.config import GROQ_MODELS, RuntimeSettings, cycle_inputs, load_settings, role_models
 from news_futures.application.operator_state import OperatorState
 from news_futures.common.errors import RuntimeErrorInfo, error_code
 from news_futures.application.records import pending_revisions, review_path, runtime_tables, save_broker_status, save_result
@@ -200,8 +201,14 @@ class Runtime:
             result['legacy'] = True
         if not result.get('inputs_saved'):
             saved = self.operator.saved() if self.on_controls is not None else {}
-            models = saved.get('models') if saved.get('account_id') == settings.account_id else None
-            inputs = cycle_inputs(settings, models)
+            if saved.get('account_id') != settings.account_id:
+                saved = {}
+            models = saved.get('models')
+            aggregator: Aggregator = 'openrouter'
+            if saved.get('aggregator') == 'groq':
+                aggregator = 'groq'
+                models = (models or {}) | saved.get('groq_models', GROQ_MODELS)
+            inputs = cycle_inputs(settings, models, aggregator=aggregator if self.on_controls is not None else None)
             result['entry_pause_version'] = self._pause()['changed_at']
             directory.mkdir(parents=True, exist_ok=True)
             replace_json(directory / 'runtime.json', settings.model_dump(mode='json'))
@@ -210,8 +217,8 @@ class Runtime:
                 (directory / f'{field}.json').write_bytes(content)
             result['inputs_saved'] = True
             save_result(archive, result)
-            if models is not None and self.on_controls is not None:
-                self.on_controls(models=models)
+            if self.on_controls is not None:
+                self.on_controls(models=role_models(inputs), aggregator=aggregator)
         catalog = (directory / 'catalog.json').read_bytes()
 
         def read_snapshot(events: EventArchive) -> Snapshot:

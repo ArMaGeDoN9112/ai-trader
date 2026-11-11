@@ -17,6 +17,7 @@ from news_futures.application.operator_state import OperatorState
 from news_futures.application.records import runtime_tables
 from news_futures.application.runtime import Runtime
 from news_futures.common.artifacts import write_json
+from news_futures.common.credentials import CredentialsError
 from news_futures.news.publications import Archive
 from news_futures.operator.news import trace_view
 from news_futures.operator.settings import Preferences, profile_view
@@ -83,6 +84,31 @@ class PreferencesTest(unittest.TestCase):
             self.preferences.save(update, stopped=True)
         self.assertEqual(self.preferences.active['mode'], 'sandbox')
         self.assertEqual(Preferences(self.settings, ['example'], self.state).prepare()[0]['mode'], 'sandbox')
+
+    def test_groq_preferences_preserve_openrouter_models_and_reject_missing_key(self) -> None:
+        original = self.preferences.saved()
+        self.state.save_settings({'account_id': self.settings.account_id, 'models': original['models']})
+        self.assertEqual(self.preferences.saved(), original)
+        with self.assertRaisesRegex(ValueError, 'invalid_aggregator'):
+            self.preferences.save(self.form(aggregator='other'), stopped=False)
+        with self.assertRaisesRegex(ValueError, 'invalid_models'):
+            self.preferences.save(self.form(aggregator='groq', groq_models=original['groq_models'] | {
+                'critic': 'test/model:free',
+            }), stopped=False)
+        with patch('news_futures.operator.settings.load_token', side_effect=CredentialsError):
+            with self.assertRaisesRegex(ValueError, 'invalid_groq_credentials'):
+                self.preferences.save(self.form(aggregator='groq'), stopped=False)
+        self.assertEqual(self.preferences.saved(), original)
+
+        with patch('news_futures.operator.settings.load_token', return_value='test-key'):
+            self.preferences.save(self.form(aggregator='groq', groq_models=original['groq_models'] | {
+                'critic': 'openai/gpt-oss-20b',
+            }), stopped=False)
+        self.assertEqual(self.preferences.saved()['aggregator'], 'groq')
+        self.assertEqual(self.preferences.active['aggregator'], 'openrouter')
+        self.preferences.save(self.form(aggregator='openrouter'), stopped=False)
+        self.assertEqual(self.preferences.saved()['models'], original['models'])
+        self.assertEqual(self.preferences.saved()['groq_models']['critic'], 'openai/gpt-oss-20b')
 
 
 class ControlledBroker(ControlBroker):

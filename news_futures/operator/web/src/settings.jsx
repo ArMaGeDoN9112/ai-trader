@@ -3,7 +3,8 @@ import { Bot, Radio, Save, SlidersHorizontal } from 'lucide-react';
 import { label, time } from './api';
 import { Empty, Facts, Notice, Panel } from './ui';
 
-const roles = [['jev', 'Привязка к компаниям'], ['matcher', 'Сопоставление событий'], ['analyst', 'Аналитик'], ['critic', 'Критик']];
+const roles = [['jev', 'Привязка к компаниям · OpenRouter'], ['matcher', 'Сопоставление событий'], ['analyst', 'Аналитик'], ['critic', 'Критик']];
+const aggregators = { openrouter: 'OpenRouter', groq: 'Groq' };
 const lines = value => value.split('\n').map(line => line.trim()).filter(Boolean);
 
 export function Settings({ settings, status, online, busy, command, error }) {
@@ -11,7 +12,8 @@ export function Settings({ settings, status, online, busy, command, error }) {
   if (!settings) return <Panel title="Конфигурация" icon={SlidersHorizontal}><Empty>Загрузка настроек…</Empty></Panel>;
   const { saved, active, changed_at, models_at, profile_at } = settings;
   const values = draft || { mode: saved.mode, channels: saved.channels.join('\n'),
-    contracts: Object.entries(saved.contracts).map(item => item.join(' = ')).join('\n'), models: saved.models };
+    contracts: Object.entries(saved.contracts).map(item => item.join(' = ')).join('\n'),
+    aggregator: saved.aggregator, models: saved.models, groq_models: saved.groq_models };
   const set = (field, value) => setDraft({ ...values, base: draft?.base || saved, [field]: value });
   const restart = ['channels', 'contracts'].some(key => JSON.stringify(active[key]) !== JSON.stringify(saved[key]));
   const activeModels = roles.map(([id, name]) => [name, <span className="mono">{active.models[id]}</span>]);
@@ -19,7 +21,7 @@ export function Settings({ settings, status, online, busy, command, error }) {
     event.preventDefault();
     const contracts = lines(values.contracts).map(line => line.split('=').map(item => item.trim()));
     const result = await command('settings', { base: draft?.base || saved, mode: values.mode, channels: lines(values.channels),
-      contracts, models: values.models });
+      contracts, aggregator: values.aggregator, models: values.models, groq_models: values.groq_models });
     if (result) setDraft(null);
   }}>
     <div className="settings-grid">
@@ -44,13 +46,26 @@ export function Settings({ settings, status, online, busy, command, error }) {
         {restart && <Notice>Настройки профиля сохранены. Для применения перезапустите обработчик.</Notice>}
       </Panel>
     </div>
-    <Panel title="Модели ролей" icon={Bot} hint="Новая модель применяется при обработке следующей редакции">
+    <Panel title="Модели ролей" icon={Bot} hint="Агрегатор и модели применяются со следующей редакции без перезапуска">
       <div className="settings-grid">
-        <div><h3 className="subheading">Применённые модели</h3><Facts rows={[...activeModels, ['Применено', time(models_at)]]} /></div>
-        <div className="stack compact">{roles.map(([id, name]) => <label className="field" key={id}>{name}
-          <input spellCheck={false} value={values.models[id]} required aria-invalid={error === 'invalid_models'} onChange={event =>
-            set('models', { ...values.models, [id]: event.target.value.trim() })} />
-        </label>)}</div>
+        <div><h3 className="subheading">Применённые модели</h3><Facts rows={[
+          ['Агрегатор чат-моделей', models_at ? aggregators[active.aggregator] : '—'],
+          ...activeModels, ['Применено', time(models_at)],
+        ]} /></div>
+        <div className="stack compact">
+          <label className="field">Агрегатор чат-моделей<select id="chat-aggregator" value={values.aggregator}
+            aria-invalid={['invalid_aggregator', 'invalid_groq_credentials'].includes(error)}
+            onChange={event => set('aggregator', event.target.value)}>
+            {Object.entries(aggregators).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+          </select></label>
+          {roles.map(([id, name]) => {
+            const field = id !== 'jev' && values.aggregator === 'groq' ? 'groq_models' : 'models';
+            return <label className="field" key={id}>{name}
+              <input spellCheck={false} value={values[field][id]} required aria-invalid={error === 'invalid_models'} onChange={event =>
+                set(field, { ...values[field], [id]: event.target.value.trim() })} />
+            </label>;
+          })}
+        </div>
       </div>
     </Panel>
     <div className="save-bar"><small>Последнее сохранение · {time(changed_at)}</small>

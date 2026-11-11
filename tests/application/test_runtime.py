@@ -25,6 +25,7 @@ from tests.support.broker import ControlBroker
 from tests.support.telegram import ControlledTransport
 
 from news_futures.cli import main
+from news_futures.adapters.groq import GroqChat
 from news_futures.agents.company import CompanyContext, CompanyProposal
 from news_futures.agents.contracts import Review
 from news_futures.agents.events import EventArchive
@@ -34,6 +35,7 @@ from news_futures.trading.broker import Fill
 from news_futures.agents.routing import assess_batch
 from news_futures.common.artifacts import replace_json, write_json
 from news_futures.operator.news import news_view, trace_view
+from news_futures.operator.settings import Preferences
 from news_futures.news.publications import Archive, Publication, utc_now
 from news_futures.application.runtime import Runtime
 from news_futures.application.config import load_settings
@@ -281,10 +283,12 @@ class RuntimeAcceptance(RiskFixture):
         runtime.broker_ready = True
         first = self.news(self.market, 'SBER raised its forecast.')
         second = self.news(self.market, 'SBER raised its dividend.')
+        third = self.news(self.market, 'SBER published its results.')
         observed = []
 
         def analyze(settings: object, directory: Path, *args: Any, **kwargs: Any) -> dict[str, Any]:
-            observed.append(json.loads((directory / 'review.json').read_bytes())['analyst']['model'])
+            analyst = json.loads((directory / 'review.json').read_bytes())['analyst']
+            observed.append((analyst.get('aggregator', 'openrouter'), analyst['model']))
             if len(observed) == 1:
                 raise Shutdown
             return {'stage': 'review', 'status': 'no_action'}
@@ -297,14 +301,74 @@ class RuntimeAcceptance(RiskFixture):
             with self.assertRaises(Shutdown):
                 runtime.process_revision(archive, events, first.record(), first_result)
             frozen = self.root / 'decisions' / first.revision_key()
-            controls.save_settings({'account_id': self.account_id, 'models': {
+            models = {
                 'jev': json.loads((frozen / 'jev.json').read_bytes())['model'], 'matcher': 'test/matcher',
                 'analyst': 'test/new-analyst', 'critic': 'test/critic',
-            }})
+            }
+            controls.save_settings({'account_id': self.account_id, 'aggregator': 'groq', 'models': models})
             runtime.process_revision(archive, events, first.record(), first_result)
             runtime.process_revision(archive, events, second.record(),
                                      {'revision': second.revision_key(), 'mode': 'observation', 'inputs_saved': False})
-        self.assertEqual(observed, ['test/analyst', 'test/analyst', 'test/new-analyst'])
+            controls.save_settings({'account_id': self.account_id, 'aggregator': 'openrouter', 'models': models})
+            runtime.process_revision(archive, events, third.record(),
+                                     {'revision': third.revision_key(), 'mode': 'observation', 'inputs_saved': False})
+        self.assertEqual(observed, [('openrouter', 'test/analyst'), ('openrouter', 'test/analyst'),
+                                    ('groq', 'openai/gpt-oss-120b'), ('openrouter', 'test/new-analyst')])
+
+    def test_panel_groq_switch_routes_chat_roles_to_groq_and_keeps_openrouter_decisions(self) -> None:
+        settings = load_settings(self.profile)
+        controls = OperatorState(self.root)
+        preferences = Preferences(settings, ['markettwits'], controls)
+        saved = preferences.saved()
+        form = saved | {'base': saved, 'aggregator': 'groq',
+                        'contracts': [list(item) for item in saved['contracts'].items()]}
+        with patch('news_futures.operator.settings.load_token', return_value='groq-test-key') as token:
+            preferences.save(form, stopped=False)
+            token.assert_called_once_with('groq', 'api_key')
+
+        first = self.news(self.market, 'SBER raised its profit forecast.')
+        second = self.news(self.market, 'SBER raised its dividend.')
+        endpoint = ScriptedEndpoint([
+            self.proposal('skip', first), review(),
+            {'match': 'different', 'event_id': None, 'change': None, 'reason': 'Different.', 'evidence': None},
+            self.proposal('skip', second), review(),
+        ])
+
+        def respond(request: httpx.Request) -> httpx.Response:
+            self.assertEqual(str(request.url), 'https://api.groq.com/openai/v1/chat/completions')
+            self.assertEqual(request.headers['Authorization'], 'Bearer groq-test-key')
+            body = json.loads(request.content)
+            self.assertNotIn('provider', body)
+            self.assertEqual(body['response_format']['type'], 'json_schema')
+            self.assertTrue(body['response_format']['json_schema']['strict'])
+            self.assertNotIn('tools', body)
+            return endpoint.respond(request)
+
+        applied: list[dict[str, Any]] = []
+        runtime = Runtime(settings, lambda _: self.broker, None, on_controls=lambda **event: applied.append(event),
+                          started_at=self.started_at)
+        runtime.broker_ready = True
+        archive = Archive(settings.publications)
+        with closing(archive.db):
+            runtime_tables(archive)
+            archive.save_batch(first.source, self.market.pts, [first, second])
+        with (httpx.Client(transport=httpx.MockTransport(respond)) as client,
+              patch('news_futures.agents.review.GroqChat', side_effect=lambda **kw: GroqChat(http_client=client, **kw)),
+              patch('news_futures.agents.review.load_token', return_value='groq-test-key') as token,
+              patch('builtins.print')):
+            runtime.process()
+        self.assertEqual(token.call_count, 5)
+        token.assert_called_with('groq', 'api_key')
+        self.assertEqual([request['model'] for request in endpoint.requests], [
+            'openai/gpt-oss-120b', 'openai/gpt-oss-120b', 'openai/gpt-oss-20b',
+            'openai/gpt-oss-120b', 'openai/gpt-oss-120b',
+        ])
+        self.assertEqual([request['model'] for request in self.jev_requests], [saved['models']['jev']] * 2)
+        decision = self.report(second)
+        self.assertEqual(decision['result']['status'], 'no_action')
+        self.assertEqual([call['provider'] for call in decision['review']['calls']], ['Groq', 'Groq'])
+        self.assertEqual(applied[-1]['aggregator'], 'groq')
+        self.assertEqual(applied[-1]['models']['jev'], saved['models']['jev'])
 
     def test_failed_reconciliation_keeps_the_last_confirmed_broker_state(self) -> None:
         self.sandbox()

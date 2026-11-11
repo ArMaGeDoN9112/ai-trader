@@ -81,7 +81,8 @@ def source_url(value: object) -> str | None:
 
 
 def response(record: dict[str, Any]) -> dict[str, Any]:
-    output = fields(record, 'output', 'raw_output', 'refusal', 'requested_model', 'actual_model', 'provider', 'error')
+    output = fields(record, 'output', 'raw_output', 'refusal', 'requested_model', 'actual_model',
+                    'aggregator', 'provider', 'error')
     raw = output.get('raw_output')
     if isinstance(raw, str):
         try:

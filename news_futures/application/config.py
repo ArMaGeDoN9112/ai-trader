@@ -7,10 +7,13 @@ from typing import Literal
 from pydantic import Field
 
 from news_futures.agents.company import Nonempty
-from news_futures.agents.contracts import Contract, RoleSettings, Settings
+from news_futures.agents.contracts import Aggregator, Contract, RoleSettings, Settings
 from news_futures.agents.routing import JevSettings, catalog_rows, load_catalog
 from news_futures.common.errors import RuntimeErrorInfo
 from news_futures.common.paths import EVENT_SETTINGS, JEV_SETTINGS, REVIEW_SETTINGS, TELEGRAM_SOURCES, config_path
+
+
+GROQ_MODELS = {'matcher': 'openai/gpt-oss-20b', 'analyst': 'openai/gpt-oss-120b', 'critic': 'openai/gpt-oss-120b'}
 
 
 class RuntimeSettings(Contract):
@@ -50,7 +53,14 @@ def load_settings(config: Path) -> RuntimeSettings:
     return settings.model_copy(update=paths)
 
 
-def cycle_inputs(settings: RuntimeSettings, models: dict[str, str] | None = None) -> dict[str, bytes]:
+def role_models(inputs: dict[str, bytes]) -> dict[str, str]:
+    review = json.loads(inputs['review'])
+    return {'jev': json.loads(inputs['jev'])['model'], 'matcher': json.loads(inputs['matcher'])['model'],
+            **{role: review[role]['model'] for role in ('analyst', 'critic')}}
+
+
+def cycle_inputs(settings: RuntimeSettings, models: dict[str, str] | None = None, *,
+                 aggregator: Aggregator | None = None) -> dict[str, bytes]:
     inputs = {}
     for field, validate in (
         ('catalog', load_catalog), ('jev', JevSettings.model_validate_json),
@@ -64,15 +74,21 @@ def cycle_inputs(settings: RuntimeSettings, models: dict[str, str] | None = None
         inputs[field] = content
     if set(settings.contracts.values()) - {row.company_id for row in catalog_rows(inputs['catalog']) if row.share_id}:
         raise RuntimeErrorInfo('Сопоставьте contracts с компаниями из catalog.')
-    if models is not None:
-        for field in ('jev', 'matcher', 'review'):
-            options = json.loads(inputs[field])
-            if field == 'review':
-                for role in ('analyst', 'critic'):
-                    options[role]['model'] = models[role]
-                Settings.model_validate(options)
-            else:
-                options['model'] = models[field]
-                (JevSettings if field == 'jev' else RoleSettings).model_validate(options)
-            inputs[field] = json.dumps(options).encode()
+    if models is None and aggregator is None:
+        return inputs
+    models = models or {}
+    aggregator = aggregator or 'openrouter'
+    for field in ('jev', 'matcher', 'review'):
+        options = json.loads(inputs[field])
+        if field == 'review':
+            for role in ('analyst', 'critic'):
+                options[role].update(model=models.get(role, options[role]['model']), aggregator=aggregator)
+            Settings.model_validate(options)
+        elif field == 'matcher':
+            options.update(model=models.get(field, options['model']), aggregator=aggregator)
+            RoleSettings.model_validate(options)
+        else:
+            options['model'] = models.get(field, options['model'])
+            JevSettings.model_validate(options)
+        inputs[field] = json.dumps(options).encode()
     return inputs

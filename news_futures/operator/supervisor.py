@@ -257,6 +257,8 @@ class Worker:
                 self.pause_applied = (version, utc_now().isoformat())
             if self.preferences is not None and isinstance(models := event.get('models'), dict):
                 self.preferences.active['models'] = models
+                if event.get('aggregator') in ('openrouter', 'groq'):
+                    self.preferences.active['aggregator'] = event['aggregator']
                 self.preferences.models_at = utc_now().isoformat()
         failure = event.get('failure')
         return failure if isinstance(failure, str) and failure in FAILURES else reason

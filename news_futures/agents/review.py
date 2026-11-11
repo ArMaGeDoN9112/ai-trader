@@ -16,6 +16,7 @@ from langgraph.graph import END, START, StateGraph
 from langsmith import tracing_context
 from pydantic import BaseModel, SecretStr
 
+from news_futures.adapters.groq import GroqChat
 from news_futures.adapters.openrouter import OpenRouterChat
 from news_futures.agents.contracts import (
     AnalysisContext, Proposal, ProposalTerms, Review, ReviewContext, RoleSettings, Settings, validate_levels,
@@ -48,13 +49,15 @@ Otherwise refuse with nonempty objections. Return only the required JSON schema.
 """
 
 
-def chat_model(settings: RoleSettings) -> OpenRouterChat:
-    return OpenRouterChat(
+def chat_model(settings: RoleSettings) -> GroqChat | OpenRouterChat:
+    groq = settings.aggregator == 'groq'
+    client = GroqChat if groq else OpenRouterChat
+    return client(
         model=settings.model, max_completion_tokens=settings.max_tokens,
-        api_key=SecretStr(load_token('openrouter', 'api_key')),
+        api_key=SecretStr(load_token(settings.aggregator, 'api_key')),
         temperature=settings.temperature, timeout=settings.timeout_ms / 1000,
-        max_retries=0, base_url='https://openrouter.ai/api/v1',
-        use_responses_api=False, extra_body={'provider': {'require_parameters': True}},
+        max_retries=0, base_url='https://api.groq.com/openai/v1' if groq else 'https://openrouter.ai/api/v1',
+        use_responses_api=False, extra_body=None if groq else {'provider': {'require_parameters': True}},
     )
 
 
@@ -124,7 +127,10 @@ def review_cycle(
 ) -> dict[str, Any]:
     """Read settings once; persist each result; return only reviewed proposals."""
     settings = Settings.model_validate_json(config_path.read_bytes())
-    snapshot = settings.model_dump(mode='json')
+    # Keep existing OpenRouter settings hashes stable when resuming a review.
+    snapshot = settings.model_dump(mode='json', exclude={
+        role: {'aggregator'} for role in ('analyst', 'critic') if getattr(settings, role).aggregator == 'openrouter'
+    })
     version = sha256(json.dumps(snapshot, sort_keys=True).encode()).hexdigest()
     cycle_id = thread_id or str(uuid4())
     directory.mkdir(parents=True, exist_ok=checkpointer is not None)
@@ -134,7 +140,7 @@ def review_cycle(
                proposal_id: str | None = None) -> ModelResult:
         role_settings = getattr(settings, role)
         record: dict[str, Any] = {
-            'role': role, 'mode': mode, 'requested_model': role_settings.model,
+            'role': role, 'mode': mode, 'requested_model': role_settings.model, 'aggregator': role_settings.aggregator,
             'actual_model': None, 'provider': None, 'settings_version': version,
             'input': data, 'output': None, 'error': None, 'usage': None, 'cost': None,
             'started_at': utc_now().isoformat(),

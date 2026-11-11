@@ -102,6 +102,8 @@ const labels = {
   account_has_operations: 'На счёте есть незавершённая операция.',
   invalid_channels: 'Каналы: укажите уникальные имена Telegram без ссылки, по одному на строку.',
   invalid_models: 'Модели: проверьте идентификаторы моделей указанных ролей.',
+  invalid_aggregator: 'Выберите OpenRouter или Groq.',
+  invalid_groq_credentials: 'Заполните groq.api_key в .local/credentials.toml и сохраните настройки ещё раз.',
   invalid_contracts: 'Контракты: проверьте пары UID и идентификатор компании.',
   invalid_mode: 'Выберите допустимый режим.',
   invalid_request: 'Сервер отклонил данные команды.',
