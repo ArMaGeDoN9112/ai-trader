@@ -3,6 +3,7 @@ from copy import deepcopy
 from dataclasses import replace
 from datetime import datetime, timedelta
 from decimal import Decimal
+from itertools import chain
 import json
 import os
 from pathlib import Path
@@ -107,6 +108,7 @@ class LiveControlBroker(ControlBroker):
 class RuntimeAcceptance(RiskFixture):
     def setUp(self) -> None:
         super().setUp()
+        self.started_at = utc_now()
         self.broker = LiveControlBroker(self)
         self.market = ControlledTransport()
         self.market.source = Source(123, 'markettwits')
@@ -194,7 +196,7 @@ class RuntimeAcceptance(RiskFixture):
                              'evidence': [{'revision': publication.revision_key(), 'quote': publication.text}]}],
         }
 
-    def serve(self, *answers: Any, code: int = 0) -> ScriptedEndpoint:
+    def serve(self, *answers: Any, code: int = 0, started_at: datetime | None = None) -> ScriptedEndpoint:
         endpoint = ScriptedEndpoint(list(answers))
 
         def model(**kwargs: Any) -> Any:
@@ -202,6 +204,8 @@ class RuntimeAcceptance(RiskFixture):
             return endpoint.model(RoleSettings(model=kwargs['model']))
 
         with (patch('news_futures.agents.review.OpenRouterChat', side_effect=model),
+              patch('news_futures.application.runtime.utc_now',
+                    side_effect=chain((started_at or self.started_at,), iter(utc_now, None))),
               patch('sys.argv', ['news_futures', 'serve', str(self.profile), '--once']),
               patch('builtins.print') as output):
             self.assertEqual(main(), code, str(output.call_args_list))
@@ -218,7 +222,7 @@ class RuntimeAcceptance(RiskFixture):
     def sandbox(self) -> None:
         self.profile.write_text(json.dumps(self.profile_data | {'mode': 'sandbox'}), encoding='utf-8')
 
-    def test_restart_during_critic_resumes_the_saved_proposal(self) -> None:
+    def test_restart_during_critic_skips_the_old_proposal_without_more_model_calls(self) -> None:
         self.sandbox()
         incoming = self.news(self.market, 'SBER raised its forecast.')
 
@@ -232,21 +236,27 @@ class RuntimeAcceptance(RiskFixture):
         ):
             self.serve(self.proposal('enter', incoming), interrupt)
         self.market.differences.append(Difference(self.market.pts, [incoming]))
-        self.assertEqual(len(self.serve(review()).requests), 1)
+        self.assertEqual(self.serve(started_at=utc_now()).requests, [])
         self.assertEqual(len(self.jev_requests), 1)
-        self.assertEqual(self.broker.calls, ['enter', 'sl', 'tp'])
-        self.assertEqual(self.report(incoming)['result']['status'], 'protected')
+        self.assertEqual(self.broker.calls, [])
+        self.assertEqual(self.report(incoming)['result']['reason'], 'publication_before_start')
 
-    def test_restart_consumes_a_saved_publication_once_after_transport_replay(self) -> None:
+    def test_restart_skips_saved_news_and_older_edits_and_processes_fresh_news(self) -> None:
         self.sandbox()
         incoming = self.news(self.market, 'SBER raised its forecast.')
         with patch.object(Runtime, 'process', side_effect=Interrupted):
             with self.assertRaises(Interrupted):
                 self.serve()
-        self.market.differences.append(Difference(self.market.pts, [incoming]))
-        self.serve(self.proposal('enter', incoming), review())
-        self.serve()
+        restarted_at = utc_now()
+        edited = replace(incoming, edited_at=utc_now(), change='edit', text='SBER updated its forecast.')
+        fresh = self.news(self.market, 'SBER raised its dividend.')
+        self.market.differences[-1] = Difference(self.market.pts, [incoming, edited, fresh])
+        self.serve(self.proposal('enter', fresh), review(), started_at=restarted_at)
         self.assertEqual(len(self.jev_requests), 1)
+        self.assertEqual(self.jev_requests[0]['state']['publication'], fresh.text)
+        self.assertEqual(self.report(incoming)['result']['reason'], 'publication_before_start')
+        self.assertEqual(self.report(edited)['result']['reason'], 'publication_before_start')
+        self.assertEqual(self.report(fresh)['result']['status'], 'protected')
         self.assertEqual(self.broker.calls, ['enter', 'sl', 'tp'])
 
     def test_paused_entry_remains_skipped_after_restart_and_resume(self) -> None:
@@ -344,12 +354,12 @@ class RuntimeAcceptance(RiskFixture):
         with patch.object(self.broker, 'enter', side_effect=interrupt), self.assertRaises(Interrupted):
             self.serve(self.proposal('enter', incoming), review())
         self.broker.state = replace(self.broker.state, settled=False)
-        self.serve()
+        self.serve(started_at=utc_now())
         self.assertEqual(self.broker.calls, ['enter'])
         self.assertEqual(self.report()['broker']['broker'], 'blocked')
         self.assertEqual(self.report(incoming)['result']['status'], 'processing')
         self.broker.state = replace(self.broker.state, settled=True)
-        self.serve()
+        self.serve(started_at=utc_now())
         self.assertEqual(self.report(incoming)['result']['status'], 'protected')
         self.assertEqual(self.broker.calls, ['enter', 'sl', 'tp'])
         self.assertEqual(len(self.jev_requests), 1)
@@ -454,20 +464,19 @@ class RuntimeAcceptance(RiskFixture):
         ])
         self.assertEqual(self.broker.calls, ['enter', 'sl', 'tp', 'cancel_protection', 'close'])
 
-    def test_old_gap_publication_reassesses_position_without_lifting_entry_age_limit(self) -> None:
+    def test_old_gap_publication_does_not_trigger_models_even_with_an_open_position(self) -> None:
         self.sandbox()
         old_time = utc_now() - timedelta(minutes=20)
         entry = self.news(self.market, 'SBER raised its forecast.')
         with patch('news_futures.adapters.telegram.utc_now', return_value=old_time - timedelta(minutes=1)):
             self.serve(self.proposal('enter', entry), review())
-        original = self.report(entry)['event']['event_id']
         incoming = replace(self.news(self.rbc, 'SBER gave updated guidance.'), published_at=old_time)
         self.rbc.messages = [incoming]
         self.rbc.differences[-1] = Difference(self.rbc.pts, [], too_long=True)
-        self.serve({'match': 'same', 'event_id': original, 'change': 'new_facts', 'reason': 'Update.',
-                    'evidence': None}, self.proposal('hold', incoming), review())
+        self.assertEqual(self.serve().requests, [])
         self.assertEqual(self.report(incoming)['publication']['published_at'], old_time.isoformat())
-        self.assertEqual(self.report(incoming)['result']['status'], 'no_action')
+        self.assertEqual(self.report(incoming)['result']['reason'], 'publication_before_start')
+        self.assertEqual(len(self.jev_requests), 1)
         self.assertEqual(self.broker.calls, ['enter', 'sl', 'tp'])
 
     def test_initial_history_and_old_gap_publications_cannot_open_a_position(self) -> None:
@@ -482,16 +491,28 @@ class RuntimeAcceptance(RiskFixture):
         self.market.messages.append(incoming)
         self.market.differences[-1] = Difference(self.market.pts, [], too_long=True)
         self.assertEqual(self.serve().requests, [])
-        self.assertEqual(self.report(incoming)['result']['reason'], 'publication_context_only')
+        self.assertEqual(self.report(incoming)['result']['reason'], 'publication_before_start')
+        self.assertEqual(self.jev_requests, [])
         self.assertEqual(self.broker.calls, [])
 
-    def test_shutdown_keeps_protection_and_leaves_reviewed_close_for_restart(self) -> None:
+    def test_news_published_during_startup_is_processed_from_initial_history(self) -> None:
+        fresh = self.news(self.market, 'SBER published new results during startup.')
+        self.market.messages.append(fresh)
+        self.market.differences.clear()
+
+        self.serve(self.proposal('enter', fresh), review())
+
+        self.assertEqual([request['state']['publication'] for request in self.jev_requests], [fresh.text])
+        self.assertEqual(self.report(fresh)['result']['status'], 'approved_for_checks')
+
+    def test_restart_skips_a_reviewed_close_when_broker_execution_never_started(self) -> None:
         self.sandbox()
         entry = self.news(self.market, 'SBER raised its forecast.')
         self.serve(self.proposal('enter', entry), review())
         original = self.report(entry)['event']['event_id']
         incoming = self.news(self.rbc, 'SBER withdrew its forecast.')
-        runtime = Runtime(load_settings(self.profile), lambda _: self.broker, lambda _: self.broker)
+        runtime = Runtime(load_settings(self.profile), lambda _: self.broker, lambda _: self.broker,
+                          started_at=self.started_at)
 
         def stop(body: dict[str, Any]) -> dict[str, Any]:
             runtime.stop.set()
@@ -503,8 +524,9 @@ class RuntimeAcceptance(RiskFixture):
         self.assertEqual(self.report(incoming)['result']['reason'], 'shutdown_before_execution')
         self.assertEqual(self.report()['broker']['protection']['status'], 'confirmed')
         self.assertEqual(self.broker.calls, ['enter', 'sl', 'tp'])
-        self.serve()
-        self.assertEqual(self.report(incoming)['result']['status'], 'closed')
+        self.serve(started_at=utc_now())
+        self.assertEqual(self.report(incoming)['result']['reason'], 'publication_before_start')
+        self.assertEqual(self.broker.calls, ['enter', 'sl', 'tp'])
 
     def test_observation_never_writes_and_mode_switch_does_not_replay_approval(self) -> None:
         item = self.news(self.market, 'SBER raised its forecast.', media=True)

@@ -60,15 +60,16 @@ def validate_channels(channels: object) -> list[str]:
     return names
 
 
-async def collect(transport: Transport, archive: Archive, source: Source) -> int:
+async def collect(transport: Transport, archive: Archive, source: Source, *,
+                  live_since: datetime | None = None) -> int:
     state = archive.cursor(source.id)
     if state is None:
         pts = await transport.current_pts(source)
         until = utc_now()
         since = until - timedelta(days=7)
         history = await transport.history(source, since, until)
-        archive.save_batch(source.id, pts, history, historical=True, checked_at=until,
-                           history_since=since, notices=(
+        archive.save_batch(source.id, pts, history, historical=live_since is None, checked_at=until,
+                           history_since=since, history_before=live_since, notices=(
             'initial_history_available_only_7_days',
             'prior_and_intermediate_editions_unavailable',
         ))
@@ -103,7 +104,8 @@ async def collect(transport: Transport, archive: Archive, source: Source) -> int
 
 async def watch_channel(transport: Transport, archive: Archive, username: str, once: bool, *,
                         first_poll: asyncio.Event | None = None,
-                        on_source: Callable[[str, bool], None] | None = None) -> bool:
+                        on_source: Callable[[str, bool, int], None] | None = None,
+                        live_since: datetime | None = None) -> bool:
     source: Source | None = None
     while True:
         delay = 5
@@ -111,7 +113,7 @@ async def watch_channel(transport: Transport, archive: Archive, username: str, o
         try:
             if source is None:
                 source = await transport.resolve(username)
-            delay = await collect(transport, archive, source)
+            delay = await collect(transport, archive, source, live_since=live_since)
             ok = True
             print(json.dumps({'source': source.id, 'status': 'received'}, ensure_ascii=False), flush=True)
         except Exception as error:
@@ -125,7 +127,7 @@ async def watch_channel(transport: Transport, archive: Archive, username: str, o
             print(json.dumps({'source': identity, 'error': code}), file=sys.stderr, flush=True)
             delay = max(5, int(getattr(error, 'seconds', 5)))
         if on_source is not None:
-            on_source(username, ok)
+            on_source(username, ok, delay)
         if once:
             return ok
         if first_poll is not None:
@@ -277,7 +279,8 @@ async def open_client(path: Path, login: bool) -> Any:
 async def run_telegram(
     config: Path | list[str], database: Path, path: Path, once: bool, *,
     process: Callable[[], Awaitable[None]] | None = None,
-    on_source: Callable[[str, bool], None] | None = None,
+    on_source: Callable[[str, bool, int], None] | None = None,
+    live_since: datetime | None = None,
 ) -> int:
     channels = configured_channels(config) if isinstance(config, Path) else config
     path = session_path(path)
@@ -303,7 +306,7 @@ async def run_telegram(
         ready = [asyncio.Event() for _ in channels]
         async with asyncio.TaskGroup() as tasks:
             watchers = [tasks.create_task(watch_channel(transport, archive, name, once, first_poll=polled,
-                                                        on_source=on_source))
+                                                        on_source=on_source, live_since=live_since))
                         for name, polled in zip(channels, ready)]
             if not once:
                 await asyncio.gather(*(polled.wait() for polled in ready))

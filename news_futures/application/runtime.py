@@ -34,9 +34,10 @@ class Runtime:
     def __init__(
         self, settings: RuntimeSettings, reader: Callable[[str], BrokerReader],
         broker: Callable[[str], SandboxBroker] | None, *, run_id: str | None = None,
-        on_controls: Callable[..., None] | None = None,
+        on_controls: Callable[..., None] | None = None, started_at: datetime | None = None,
     ):
         self.settings = settings
+        self.started_at = started_at if started_at is not None else utc_now()
         self.account = BrokerAccount(settings.account_id, settings.contracts, reader)
         self.broker = broker
         self.run_id = run_id
@@ -181,6 +182,9 @@ class Runtime:
             approval = review_path(directory, result.get('review_attempt'))
             if self._recover_execution(events, approval, result):
                 return
+        if datetime.fromisoformat(publication['published_at']) < self.started_at:
+            result.update(status='skipped', stage='source', reason='publication_before_start')
+            return
         if not self.broker_ready:
             return
         frozen = (original if legacy else directory) / 'runtime.json'
@@ -304,9 +308,10 @@ async def run_runtime(
     config: Path | RuntimeSettings, once: bool, *,
     run_id: str | None = None, channels: list[str] | None = None,
     on_phase: Callable[[str], None] | None = None,
-    on_source: Callable[[str, bool], None] | None = None,
+    on_source: Callable[[str, bool, int], None] | None = None,
     on_controls: Callable[..., None] | None = None,
 ) -> int:
+    started_at = utc_now()
     settings = load_settings(config) if isinstance(config, Path) else config
     inputs = cycle_inputs(settings)
     try:
@@ -339,7 +344,7 @@ async def run_runtime(
             return TBankSandbox(client, settings.account_id, contract, settings.contracts[contract])
 
         runtime = Runtime(settings, reader, broker if settings.mode == 'sandbox' else None,
-                          run_id=run_id, on_controls=on_controls)
+                          run_id=run_id, on_controls=on_controls, started_at=started_at)
         archive = Archive(settings.publications)
         with closing(archive.db):
             runtime_tables(archive)
@@ -390,7 +395,7 @@ async def run_runtime(
             if on_phase is not None:
                 on_phase('sources')
             source_code = await run_telegram(channels, settings.publications, session, once, process=process,
-                                             on_source=on_source)
+                                             on_source=on_source, live_since=started_at)
             if once:
                 await in_worker(runtime.refresh)
             return source_code or int(runtime.failed)

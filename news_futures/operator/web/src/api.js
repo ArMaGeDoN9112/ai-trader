@@ -68,6 +68,7 @@ const labels = {
   repeat: 'Повтор', update: 'Обновление', uncertain_update: 'Спорное обновление',
   uncertain_match: 'Возможное совпадение', unmatched: 'Отдельное событие', model_error: 'Ошибка модели',
   event_model_error: 'Ошибка модели сопоставления события', runtime_profile_changed: 'Рабочий профиль изменился',
+  publication_before_start: 'Публикация вышла до запуска обработчика',
   skip: 'Предложено пропустить', hold: 'Предложено удерживать', enter: 'Вход', close: 'Выход',
   closed: 'Закрыт', open: 'Открыт', reserved: 'Зарезервирован', no_fill: 'Без исполнения',
   intent: 'Намерение записано', response_received: 'Ответ брокера получен', response_rejected: 'Брокер отказал',

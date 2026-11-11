@@ -21,7 +21,7 @@ from news_futures.trading.terms import CloseIntent
 
 
 FRESH_FOR = timedelta(seconds=45)
-SOURCE_FRESH_FOR = timedelta(seconds=60)
+SOURCE_CHECK_GRACE = timedelta(seconds=60)
 CYCLE_ID = re.compile(r'[0-9a-f]{32}')
 REQUEST_ID = re.compile(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}')
 BLOCKS = {
@@ -246,7 +246,11 @@ class Worker:
                 if self.preferences is not None:
                     self.preferences.profile_at = utc_now().isoformat()
             if isinstance(event.get('source'), str) and type(event.get('ok')) is bool:
-                self.sources[event['source']] = (event['ok'], utc_now())
+                delay = event.get('next_poll_in', 0)
+                if type(delay) is not int or not 0 <= delay < 2**31:
+                    delay = 0
+                expires = utc_now() + timedelta(seconds=delay) + SOURCE_CHECK_GRACE
+                self.sources[event['source']] = (event['ok'], expires)
             if isinstance(version := event.get('pause_version'), str) and (
                 self.pause_applied is None or version > self.pause_applied[0]
             ):
@@ -264,7 +268,7 @@ class Worker:
             sources = {}
             for name in self.channels:
                 seen = self.sources.get(name)
-                sources[name] = ('unknown' if not active or seen is None or now - seen[1] > SOURCE_FRESH_FOR
+                sources[name] = ('unknown' if not active or seen is None or now > seen[1]
                                  else 'connected' if seen[0] else 'unavailable')
             broker = broker_status(self.directory / 'publications.sqlite3', self.profile,
                                    self.run_id if active else None)

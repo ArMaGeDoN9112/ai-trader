@@ -159,6 +159,18 @@ class OperatorTest(unittest.TestCase):
         self.assertEqual(self.overview()['worker'], 'stopped')
         self.assertFalse((self.root / 'operator-commands.jsonl').exists())
 
+    def test_source_status_expires_after_the_next_expected_poll_and_grace(self) -> None:
+        worker = self.server.worker
+        checked_at = utc_now()
+        event = b'{"source":"example","ok":true,"ready":true,"next_poll_in":120}'
+        worker.state = 'starting'
+        with patch('news_futures.operator.supervisor.utc_now', return_value=checked_at) as clock:
+            worker._update(event, 'worker')
+            clock.return_value = checked_at + timedelta(seconds=119)
+            self.assertEqual(self.overview()['sources'], {'example': 'connected'})
+            clock.return_value = checked_at + timedelta(seconds=181)
+            self.assertEqual(self.overview()['sources'], {'example': 'unknown'})
+
     def test_mutating_controls_require_session_and_pause_is_durable(self) -> None:
         for action in ('pause', 'settings', 'close'):
             self.assertEqual(self.request('POST', '/api/' + action, body={}, Origin=self.origin)[0], 403)
