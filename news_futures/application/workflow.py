@@ -23,7 +23,7 @@ from news_futures.agents.routing import route_publication
 from news_futures.agents.tool_agent import run_tool_agent, VERSION
 from news_futures.application.checkpoints import checkpoint_serializer
 from news_futures.common.artifacts import move_artifact, replace_json
-from news_futures.news.publications import Archive, utc_now
+from news_futures.news.publications import Archive, TEST_SOURCE, utc_now
 from news_futures.trading.risk import MAX_NEWS_AGE
 from news_futures.trading.terms import ContractSnapshot
 from news_futures.application.config import RuntimeSettings
@@ -54,6 +54,7 @@ def analyze_news(
     stop: Event, read_market: Callable[[EventArchive, str, float], tuple[Snapshot, ContractSnapshot]] | None = None,
 ) -> NewsState:
     tool_agent = settings.analysis_strategy == 'tool_agent'
+    testing_revision = revision if publication['source'] == TEST_SOURCE else None
 
     def route(_: NewsState) -> NewsState:
         route_dir = directory / 'route'
@@ -72,7 +73,7 @@ def analyze_news(
         return {'status': 'continue'}
 
     def record_route(_: NewsState) -> NewsState:
-        with EventArchive(settings.events) as events:
+        with EventArchive(settings.events, testing_revision=testing_revision) as events:
             event = match_route(events, directory / 'route')
         replace_json(directory / 'event.json', event)
         affected = (event['analysis_company_ids'] if tool_agent
@@ -90,7 +91,7 @@ def analyze_news(
             latest = archive.latest_revision(publication['id'])
             if latest is None or latest['revision'] != revision:
                 return {'status': 'skipped', 'reason': 'publication_revision_superseded'}
-            if archive.db.execute("""
+            if testing_revision is None and archive.db.execute("""
                 SELECT 1 FROM revisions
                 WHERE historical = 1 AND trim(json_extract(publication, '$.text')) = trim(?)
                   AND coalesce(json_extract(publication, '$.edited_at'),
@@ -116,7 +117,7 @@ def analyze_news(
         event = json.loads((directory / 'event.json').read_bytes())
         contracts = {uid: company for uid, company in settings.contracts.items() if company in state['affected']}
         archive = Archive(settings.publications)
-        with EventArchive(settings.events) as events, closing(archive.db):
+        with EventArchive(settings.events, testing_revision=testing_revision) as events, closing(archive.db):
             def check_current() -> str | None:
                 latest = archive.latest_revision(publication['id'])
                 if latest is None or latest['revision'] != revision:
@@ -145,7 +146,7 @@ def analyze_news(
         content = snapshot_path.read_bytes()
         snapshot = Snapshot.model_validate_json(content)
         attempt = sha256(content).hexdigest()
-        with EventArchive(settings.events) as events:
+        with EventArchive(settings.events, testing_revision=testing_revision) as events:
             trace = analyze_event(events, state['decision_id'], snapshot_path,
                                   directory / 'review.json', review_path(directory, attempt), mode=settings.mode,
                                   checkpointer=checkpointer, thread_id=f'{revision}:review:{attempt}')

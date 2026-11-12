@@ -17,7 +17,9 @@ import httpx
 from news_futures.adapters.tbank.futures_catalog import active_futures
 from news_futures.adapters.tbank.rest import sandbox_client
 from news_futures.news.publications import utc_now
-from news_futures.operator.news import artifact, catalog_series, fields, news_view, trace_view, visible
+from news_futures.operator.news import (
+    artifact, catalog_series, enqueue_test_news, fields, news_view, testing_view, trace_view, visible,
+)
 from news_futures.operator.settings import Preferences
 from news_futures.operator.supervisor import Worker
 from news_futures.operator.trades import trades_view
@@ -69,7 +71,7 @@ class OperatorHandler(BaseHTTPRequestHandler):
                 self.reply(404, {'result': 'not_found'})
             else:
                 self.reply(200, body, mime={'js': 'text/javascript', 'css': 'text/css'}[asset[2]])
-        elif path in ('/api/overview', '/api/news', '/api/trace', '/api/trades', '/api/controls', '/api/tickers'):
+        elif path in ('/api/overview', '/api/news', '/api/trace', '/api/trades', '/api/controls', '/api/tickers', '/api/testing'):
             if not self.authorized():
                 self.reply(403, {'result': 'forbidden'})
                 return
@@ -88,6 +90,8 @@ class OperatorHandler(BaseHTTPRequestHandler):
                     value = trace_view(worker.directory, worker.profile['account_id'], query.get('revision', [''])[0])
                 elif path == '/api/trades':
                     value = trades_view(worker.directory, worker.profile['account_id'], query.get('cycle', [''])[0])
+                elif path == '/api/testing':
+                    value = visible(testing_view(worker.directory))
                 else:
                     value = worker.controls()
             except (sqlite3.Error, httpx.HTTPError, OSError, ValueError, KeyError, TypeError):
@@ -107,7 +111,7 @@ class OperatorHandler(BaseHTTPRequestHandler):
         elif self.path in ('/api/start', '/api/stop', '/api/restart'):
             code, result = self.server.worker.request(self.path.removeprefix('/api/'))
             self.reply(code, {'result': result})
-        elif self.path in ('/api/pause', '/api/close', '/api/settings'):
+        elif self.path in ('/api/pause', '/api/close', '/api/settings', '/api/testing'):
             try:
                 lengths = self.headers.get_all('Content-Length', [])
                 if (len(lengths) != 1 or not 0 < int(lengths[0]) <= 32768
@@ -117,11 +121,15 @@ class OperatorHandler(BaseHTTPRequestHandler):
                 body = json.loads(self.rfile.read(int(lengths[0])))
                 if not isinstance(body, dict):
                     raise ValueError
+                if self.path == '/api/testing':
+                    revision = enqueue_test_news(self.server.worker.directory, body)
+                    self.reply(202, {'result': 'test_news_queued', 'revision': revision})
+                    return
                 code, result = self.server.worker.configure(self.path.removeprefix('/api/'), body)
             except (ValueError, TimeoutError):
-                code, result = 400, 'invalid_request'
+                code, result = 400, 'invalid_test_news' if self.path == '/api/testing' else 'invalid_request'
             except (OSError, sqlite3.Error):
-                code, result = 503, 'settings_unavailable'
+                code, result = 503, 'archive_unavailable' if self.path == '/api/testing' else 'settings_unavailable'
             self.reply(code, {'result': result})
         else:
             self.reply(404, {'result': 'not_found'})

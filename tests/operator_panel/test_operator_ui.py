@@ -204,6 +204,10 @@ class OperatorTest(unittest.TestCase):
         self.assertEqual(self.request('POST', '/api/start', Origin=self.origin)[0], 403)
         self.assertEqual(self.request('POST', '/api/start', Origin='https://example.org', **session)[0], 403)
         self.assertEqual(self.request('POST', '/api/start', **session)[0], 403)
+        self.assertEqual(self.request('POST', '/api/testing', Origin=self.origin, body={'text': 'Новость'})[0], 403)
+        self.assertEqual(self.request('POST', '/api/testing', Origin='https://example.org',
+                                      body={'text': 'Новость'}, **session)[0], 403)
+        self.assertEqual(self.request('POST', '/api/testing', Origin=self.origin, body={'text': ' '}, **session)[0], 400)
         self.assertEqual(self.request('GET', '/', Host='example.org')[0], 403)
         self.assertEqual(self.request('GET', '/api/start', **session)[0], 404)
         self.assertEqual(self.overview()['worker'], 'stopped')
@@ -541,7 +545,7 @@ class OperatorTest(unittest.TestCase):
             expect('!document.querySelector("#recent-telegram")')
             expect('window.innerWidth === 1440 && document.documentElement.scrollWidth === document.documentElement.clientWidth')
             cdp('Emulation.setDeviceMetricsOverride', width=375, height=720, deviceScaleFactor=1, mobile=False)
-            expect('window.innerWidth === 375 && document.querySelectorAll("nav a").length === 5 && '
+            expect('window.innerWidth === 375 && document.querySelectorAll("nav a").length === 6 && '
                    'document.documentElement.scrollWidth === document.documentElement.clientWidth')
             search('xyz')
             expect('document.querySelector("#company-name")?.textContent === "Компания Б"')
@@ -637,6 +641,16 @@ class OperatorTest(unittest.TestCase):
             worker._update(json.dumps({'aggregator': 'groq', 'models': saved['models'] | saved['groq_models']}).encode(), '')
             expect('Array.from(document.querySelectorAll(".facts dt")).some(term => '
                    'term.textContent === "Агрегатор чат-моделей" && term.nextElementSibling.textContent === "Groq")')
+            evaluate('location.hash = "#testing"')
+            expect('document.querySelector("#test-news-text") !== null')
+            evaluate('((field) => { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set'
+                     '.call(field, "Тестовая новость из браузера"); field.dispatchEvent(new Event("input", {bubbles:true})); })'
+                     '(document.querySelector("#test-news-text"))')
+            evaluate('document.querySelector("#test-news-text").form.querySelector("button").click()')
+            expect('document.querySelector("#test-news-list a")?.innerText.includes("Тестовая новость из браузера")')
+            evaluate('document.querySelector("#test-news-list a").click()')
+            expect('document.querySelector(".detail-nav a")?.getAttribute("href") === "#testing" && '
+                   'document.querySelector(".agent-trace-summary")?.innerText.includes("Тестовая новость")')
             evaluate('location.hash = "#overview"')
             expect('Array.from(document.querySelectorAll(".hero button")).some(button => '
                    'button.innerText === "Пауза новых входов" && !button.disabled)')

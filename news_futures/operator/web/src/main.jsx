@@ -7,6 +7,7 @@ import { Overview } from './overview';
 import { Decisions, Tickers, Trace } from './news';
 import { Trades } from './trades';
 import { Settings } from './settings';
+import { Testing } from './testing';
 import './style.css';
 
 const pages = {
@@ -14,6 +15,7 @@ const pages = {
   tickers: ['Тикеры', 'Доступные фьючерсы, последние цены и даты экспирации.', Boxes],
   decisions: ['Решения', 'Путь от публикации до вывода агентов и проверки риска.', GitBranch],
   trades: ['Сделки', 'История торговых циклов и подтверждённые данные брокера.', ChartNoAxesCombined],
+  testing: ['Тестирование', 'Добавьте новость вручную и откройте трассу её обработки.', FlaskConical],
   settings: ['Настройки', 'Рабочий профиль, источники Telegram и модели ролей.', Settings2],
   trace: ['Трасса решения', 'Хронология обработки и сохранённые материалы.', GitBranch],
 };
@@ -47,7 +49,7 @@ function App() {
 
   const overview = useResource('/api/overview', refresh, 1500);
   const controls = useResource(screen === 'overview' || screen === 'settings' ? '/api/controls' : null, refresh, 1500);
-  const news = useResource(screen === 'settings' ? null : screen === 'tickers' && selection
+  const news = useResource(['settings', 'testing'].includes(screen) ? null : screen === 'tickers' && selection
     ? query('/api/news', { company: selection }) : '/api/news', refresh, screen === 'trades' || screen === 'trace' ? 0 : 2000);
   const status = overview.data || {};
   const online = Boolean(overview.data && !overview.error);
@@ -74,7 +76,7 @@ function App() {
   }
 
   const [title, description] = pages[screen];
-  const activeScreen = screen === 'trace' ? 'decisions' : screen;
+  const activeScreen = screen === 'trace' ? (detail === 'testing' ? 'testing' : 'decisions') : screen;
   return <div className="shell">
     <a href="#main-content" className="skip" onClick={event => { event.preventDefault(); heading.current?.focus(); }}>К содержимому</a>
     <aside className="sidebar">
@@ -120,6 +122,7 @@ function App() {
         {screen === 'decisions' && <Decisions news={data} />}
         {screen === 'trace' && <Trace key={selection} revision={selection} from={detail} news={data} refresh={refresh} />}
         {screen === 'trades' && <Trades key={selection} cycle={selection} news={data} refresh={refresh} />}
+        {screen === 'testing' && <Testing online={online} busy={busy} command={command} refresh={refresh} worker={status.worker} />}
         {screen === 'settings' && <Settings settings={controls.data?.settings} status={status} online={online && !controls.error}
           busy={busy} command={command} error={notice?.code} />}
         <footer className="workspace-footer"><span>NEWS FUTURES</span><span>Локальная панель оператора</span></footer>

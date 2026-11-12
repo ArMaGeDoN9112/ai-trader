@@ -17,7 +17,7 @@ from pydantic import Field, TypeAdapter, ValidationError
 from news_futures.agents.contracts import Contract, RoleSettings
 from news_futures.agents.review import chat_model
 from news_futures.common.artifacts import publication_digest
-from news_futures.news.publications import Publication, utc_now
+from news_futures.news.publications import Publication, TEST_SOURCE, utc_now
 
 
 class EventAssessment(Contract):
@@ -185,7 +185,8 @@ def word_prefixes(text: str) -> set[str]:
 
 
 class EventArchive:
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, *, testing_revision: str | None = None):
+        self.testing_revision = testing_revision
         path.parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(path)
         self.db.row_factory = sqlite3.Row
@@ -213,11 +214,13 @@ class EventArchive:
         self.db.close()
 
     def history(self, *, current_only: bool = False) -> list[dict[str, Any]]:
-        current = 'WHERE d.id IN (SELECT MAX(id) FROM event_decisions GROUP BY revision)' if current_only else ''
+        current = 'AND d.id IN (SELECT MAX(id) FROM event_decisions GROUP BY revision)' if current_only else ''
         rows = self.db.execute(f'''
             SELECT d.id, d.revision, d.details, r.publication, r.links
-            FROM event_decisions d JOIN event_revisions r USING (revision) {current} ORDER BY d.id
-        ''')
+            FROM event_decisions d JOIN event_revisions r USING (revision)
+            WHERE (json_extract(r.publication, '$.source') IS NOT ? OR d.revision = ?) {current}
+            ORDER BY d.id
+        ''', (TEST_SOURCE, self.testing_revision))
         return [json.loads(row['details']) | {
             'decision_id': row['id'], 'revision': row['revision'],
             'publication': json.loads(row['publication']), 'links': json.loads(row['links']),

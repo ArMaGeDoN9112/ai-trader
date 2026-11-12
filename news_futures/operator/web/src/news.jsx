@@ -302,12 +302,13 @@ export function Trace({ revision, from, news, refresh }) {
   const eventError = data?.reason === 'event_model_error' && data.steps.find(step => step.id === 'event')?.output?.error;
   return <div className="stack">
     <div className="detail-nav"><a href={from?.startsWith('#tickers/') || from?.startsWith('#trades/') ? from :
-      from === 'overview' ? '#overview' : '#decisions'}><ArrowLeft size={17} /> Назад</a>
+      from === 'testing' ? '#testing' : from === 'overview' ? '#overview' : '#decisions'}><ArrowLeft size={17} /> Назад</a>
       {data?.cycle_id && <a href={route('trades', data.cycle_id)}>Торговый цикл <ChevronRight size={17} /></a>}
     </div>
     {error && <Notice error>{error === 'not_found' ? 'Трасса не найдена.' : label(error)}</Notice>}
     <Panel title={data?.title || 'Ход обработки публикации'} icon={Workflow} actions={data && <Badge value={data.status} />}
       hint={data && [...data.companies.map(id => companyName(news, id)), time(data.at)].join(' · ')}>
+      {data?.testing && <div className="agent-trace-summary"><Badge value="testing_publication" tone="purple" /></div>}
       {data?.analysis_strategy === 'tool_agent' && <div className="agent-trace-summary">
         <Badge value="tool_agent" tone="purple" />
         {data.critic_status && <span>Критик · {label(data.critic_status)}</span>}

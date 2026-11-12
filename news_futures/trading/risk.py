@@ -15,7 +15,7 @@ from news_futures.agents.contracts import validate_levels
 from news_futures.agents.company import CompanyProposal
 from news_futures.agents.events import EventArchive, model_publication
 from news_futures.common.errors import Rejected
-from news_futures.news.publications import Archive, utc_now
+from news_futures.news.publications import Archive, TEST_SOURCE, utc_now
 from news_futures.trading.terms import EntryReservation, RiskSnapshot
 
 
@@ -45,6 +45,8 @@ def check_publication(
     if latest is None or latest['revision'] != event['revision']:
         raise Rejected('publication_revision_unconfirmed')
     publication = latest['publication']
+    if publication['source'] == TEST_SOURCE:
+        raise Rejected('testing_publication')
     if latest['historical'] != 0 or publication['change'] == 'delete' or not publication['text'].strip():
         raise Rejected('publication_context_only')
     current = events.history(current_only=True)

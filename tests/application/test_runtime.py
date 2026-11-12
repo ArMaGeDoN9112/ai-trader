@@ -245,6 +245,36 @@ class RuntimeAcceptance(RiskFixture):
             'coordinator': {'model': 'test/coordinator'},
         }), encoding='utf-8')
 
+    def test_manual_news_runs_in_sandbox_and_is_ineligible_for_execution(self) -> None:
+        from news_futures.application.records import review_path
+        from news_futures.operator.news import enqueue_test_news, testing_view
+        from news_futures.trading.risk import reserve_entry
+
+        self.sandbox()
+        revision = enqueue_test_news(self.root, {'text': 'SBER опубликовал повышенный прогноз.'})
+        archive = Archive(self.publications_db)
+        self.addCleanup(archive.db.close)
+        saved = json.loads(archive.db.execute('SELECT publication FROM revisions WHERE revision = ?',
+                                              (revision,)).fetchone()[0])
+        at = datetime.fromisoformat(saved['published_at'])
+        incoming = Publication(saved['source'], saved['external_id'], saved['url'], saved['text'], at, at)
+        self.serve(self.proposal('enter', incoming), review(), started_at=at + timedelta(microseconds=1))
+        result = self.report(incoming)['result']
+        self.assertEqual(result['status'], 'approved_for_checks')
+        self.write_broker.assert_not_called()
+        self.assertEqual(testing_view(self.root)['decisions'][0]['revision'], revision)
+        view = trace_view(self.root, self.account_id, revision)
+        self.assertTrue(view and view['testing'])
+        self.assertNotIn(revision, {row['revision'] for row in news_view(
+            self.root, self.profile_data, {}, {}, '',
+        )['decisions']})
+        directory = review_path(self.root / 'decisions' / revision, result['review_attempt'])
+        with EventArchive(self.events_db) as events:
+            self.assertNotIn(revision, {row['revision'] for row in events.history(current_only=True)})
+            admission = reserve_entry(events, archive, directory, account_id=self.account_id,
+                                      allowed_contracts={self.contract_id}, read_snapshot=self.broker.read_risk)
+        self.assertEqual(admission.reason, 'testing_publication')
+
     def test_tool_agent_delegates_and_publishes_a_reviewed_candidate_without_execution(self) -> None:
         from news_futures.agents.approval import read_approval
         from news_futures.agents.tool_agent import VERSION

@@ -21,7 +21,7 @@ from news_futures.agents.contracts import Aggregator
 from news_futures.agents.events import EventArchive
 from news_futures.common.artifacts import replace_json
 from news_futures.application.workflow import Shutdown, analyze_news
-from news_futures.news.publications import Archive, utc_now
+from news_futures.news.publications import Archive, TEST_SOURCE, utc_now
 from news_futures.application.config import GROQ_MODELS, RuntimeSettings, cycle_inputs, load_settings, role_models
 from news_futures.application.operator_state import OperatorState
 from news_futures.common.errors import RuntimeErrorInfo, error_code
@@ -169,10 +169,12 @@ class Runtime:
                 except Exception as error:
                     status = 'processing' if result.get('stage') == 'execution' else 'failed'
                     result.update(status=status, reason=error_code(error))
-                    self.failed = True
-                self.failed |= result['status'] == 'failed' or (
-                    result['status'] == 'rejected' and result.get('stage') == 'review'
-                )
+                    if publication['source'] != TEST_SOURCE:
+                        self.failed = True
+                if publication['source'] != TEST_SOURCE:
+                    self.failed |= result['status'] == 'failed' or (
+                        result['status'] == 'rejected' and result.get('stage') == 'review'
+                    )
                 result['latency_ms'] = round((utc_now() - datetime.fromisoformat(
                     publication['received_at'],
                 )) / timedelta(milliseconds=1))
@@ -182,16 +184,17 @@ class Runtime:
     def process_revision(self, archive: Archive, events: EventArchive, publication: dict[str, Any],
                          result: dict[str, Any]) -> None:
         settings = self.settings
+        testing = publication['source'] == TEST_SOURCE
         directory = settings.data_dir / 'decisions' / result['revision']
         legacy = 'inputs_saved' not in result and directory.exists()
         original = directory
         if result.get('legacy'):
             directory = directory / 'resumed'
-        if result['mode'] == 'sandbox' and (legacy or result.get('stage') == 'execution'):
+        if not testing and result['mode'] == 'sandbox' and (legacy or result.get('stage') == 'execution'):
             approval = review_path(directory, result.get('review_attempt'))
             if self._recover_execution(events, approval, result):
                 return
-        if datetime.fromisoformat(publication['published_at']) < self.started_at:
+        if not testing and datetime.fromisoformat(publication['published_at']) < self.started_at:
             result.update(status='skipped', stage='source', reason='publication_before_start')
             return
         tool_agent = settings.analysis_strategy == 'tool_agent'
@@ -266,7 +269,7 @@ class Runtime:
         if attempt := state.get('review_attempt'):
             result['review_attempt'] = attempt
         result.pop('reconcile_pending', None)
-        if state['status'] != 'approved_for_checks':
+        if testing or state['status'] != 'approved_for_checks':
             return
         proposal = state['proposal']
         assert proposal is not None

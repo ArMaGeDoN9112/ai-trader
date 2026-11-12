@@ -11,6 +11,8 @@ from urllib.parse import parse_qsl, urlsplit
 
 from news_futures.common.artifacts import publication_digest
 from news_futures.agents.tool_agent import VERSION
+from news_futures.application.records import runtime_tables
+from news_futures.news.publications import Archive, TEST_SOURCE
 from news_futures.trading.journal import journal_events
 
 
@@ -141,15 +143,19 @@ def runtime_rows(db: sqlite3.Connection | None, revision: str | None) -> dict[st
             for row in db.execute('''
                 SELECT revision, publication, result FROM runtime_decisions JOIN revisions USING (revision)
                 WHERE (? IS NULL OR revision = ?)
-            ''', (revision, revision))}
+                  AND (? IS NOT NULL OR json_extract(publication, '$.source') IS NOT ?)
+            ''', (revision, revision, revision, TEST_SOURCE))}
 
 
 def telegram_rows(db: sqlite3.Connection | None, revision: str | None = None) -> Iterator[sqlite3.Row]:
     if db is not None and has_table(db, 'revisions'):
         yield from db.execute("""
             SELECT revision, publication, status FROM revisions
-            WHERE historical = 0 AND json_extract(publication, '$.source') LIKE 'telegram:%'
-        """ + (' AND revision = ?' if revision else ''), (revision,) if revision else ())
+            WHERE historical = 0
+              AND (json_extract(publication, '$.source') LIKE 'telegram:%'
+                   OR (? IS NOT NULL AND json_extract(publication, '$.source') = ?))
+              AND (? IS NULL OR revision = ?)
+        """, (revision, TEST_SOURCE, revision, revision))
 
 
 def event_rows(db: sqlite3.Connection | None, revision: str | None, *,
@@ -164,9 +170,10 @@ def event_rows(db: sqlite3.Connection | None, revision: str | None, *,
                    CASE WHEN ? OR json_array_length(links) > 0 THEN publication END AS publication,
                    CASE WHEN ? OR json_array_length(links) > 0 THEN links END AS links
             FROM event_revisions WHERE (? IS NULL OR revision = ?)
+              AND (? IS NOT NULL OR json_extract(publication, '$.source') IS NOT ?)
         ) r JOIN event_decisions d USING (revision)
         ORDER BY d.id
-    ''', (include_unlinked, include_unlinked, revision, revision)):
+    ''', (include_unlinked, include_unlinked, revision, revision, revision, TEST_SOURCE)):
         history = events.setdefault(row['revision'], [])
         if row['linked'] or include_unlinked:
             history.append(json.loads(row['details']) | {
@@ -209,9 +216,36 @@ def summary(key: str, event: dict[str, Any], result: dict[str, Any], contracts: 
             or publication.get('published_at'),
             'status': result.get('status', event.get('kind', 'processing')), 'reason': result.get('reason'),
             'analysis_strategy': result.get('analysis_strategy'), 'critic_status': result.get('critic_status'),
+            'testing': publication.get('source') == TEST_SOURCE,
             'companies': sorted({link['company_id'] for link in event['links']}), 'contracts': sorted(contracts),
             'title': publication.get('text', '').strip()[:160]
             or ('Пост удалён' if publication.get('change') == 'delete' else 'Публикация без текста')}
+
+
+def enqueue_test_news(root: Path, body: dict[str, Any]) -> str:
+    if set(body) != {'text'}:
+        raise ValueError('invalid_test_news')
+    archive = Archive(root / 'publications.sqlite3')
+    with closing(archive.db):
+        runtime_tables(archive)
+        return archive.enqueue_test(body['text']).revision_key()
+
+
+def testing_view(root: Path) -> dict[str, Any]:
+    decisions = []
+    with read_archive(root / 'publications.sqlite3') as db:
+        if db is not None and has_table(db, 'runtime_decisions'):
+            for row in db.execute("""
+                SELECT revision, publication, revisions.status, result
+                FROM revisions LEFT JOIN runtime_decisions USING (revision)
+                WHERE json_extract(publication, '$.source') = ?
+                ORDER BY revisions.rowid DESC LIMIT 20
+            """, (TEST_SOURCE,)):
+                publication = json.loads(row['publication'])
+                result = json.loads(row['result']) if row['result'] else {'status': row['status']}
+                result.setdefault('at', publication['received_at'])
+                decisions.append(summary(row['revision'], {'publication': publication, 'links': []}, result, set()))
+    return {'decisions': decisions}
 
 
 def company_edition(row: dict[str, Any], event: dict[str, Any], binding: dict[str, Any] | None,

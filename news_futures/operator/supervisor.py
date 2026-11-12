@@ -12,7 +12,7 @@ from threading import Lock, Thread
 from typing import Any
 from uuid import uuid4
 
-from news_futures.news.publications import utc_now
+from news_futures.news.publications import TEST_SOURCE, utc_now
 from news_futures.application.operator_state import OperatorState
 from news_futures.operator.news import has_table, read_archive, visible
 from news_futures.operator.settings import Preferences, profile_view
@@ -90,8 +90,12 @@ def processing_error(path: Path) -> dict[str, Any] | None:
                 row = db.execute("""
                     SELECT json_extract(result, '$.stage') AS stage, json_extract(result, '$.at') AS at,
                            json_extract(result, '$.reason') AS reason FROM runtime_decisions
-                    WHERE json_extract(result, '$.status') = 'failed' ORDER BY at DESC LIMIT 1
-                """).fetchone()
+                    WHERE json_extract(result, '$.status') = 'failed' AND NOT EXISTS (
+                        SELECT 1 FROM revisions WHERE revisions.revision = runtime_decisions.revision
+                        AND json_extract(publication, '$.source') = ?
+                    )
+                    ORDER BY at DESC LIMIT 1
+                """, (TEST_SOURCE,)).fetchone()
                 if row:
                     return {key: visible(row[key]) for key in ('stage', 'at', 'reason')}
     except (OSError, sqlite3.Error):

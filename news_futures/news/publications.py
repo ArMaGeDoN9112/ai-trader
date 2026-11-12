@@ -7,8 +7,13 @@ import json
 from pathlib import Path
 import sqlite3
 from typing import Any, cast
+from uuid import uuid4
 
 from news_futures.simulation.scenario import process_publication
+
+
+TEST_SOURCE = 'manual:test'
+TEST_TEXT_LIMIT = 4000
 
 
 def utc_now() -> datetime:
@@ -129,6 +134,18 @@ class Archive:
         with self.db:
             self.db.execute('INSERT INTO notices(source, observed_at, code) VALUES (?, ?, ?)',
                             (source, utc_now().isoformat(), code))
+
+    def enqueue_test(self, text: object) -> Publication:
+        if not isinstance(text, str) or not 0 < len(text.strip()) <= TEST_TEXT_LIMIT:
+            raise ValueError('invalid_test_news')
+        now = utc_now()
+        identity = uuid4().hex
+        item = Publication(TEST_SOURCE, identity, f'urn:news-futures:test:{identity}', text.strip(), now, now)
+        with self.db:
+            self.db.execute("INSERT INTO revisions VALUES (?, ?, 0, 'pending', NULL)", (
+                item.revision_key(), json.dumps(item.record(), ensure_ascii=False),
+            ))
+        return item
 
     def latest_revision(self, publication_id: str) -> dict[str, Any] | None:
         row = self.db.execute("""
