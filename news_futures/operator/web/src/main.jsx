@@ -11,7 +11,7 @@ import './style.css';
 
 const pages = {
   overview: ['Обзор', 'Текущее состояние, контроль рисков и последние решения.', Gauge],
-  tickers: ['Тикеры', 'Компании, серии фьючерсов и связанный новостной контекст.', Boxes],
+  tickers: ['Тикеры', 'Доступные фьючерсы, последние цены и даты экспирации.', Boxes],
   decisions: ['Решения', 'Путь от публикации до вывода агентов и проверки риска.', GitBranch],
   trades: ['Сделки', 'История торговых циклов и подтверждённые данные брокера.', ChartNoAxesCombined],
   settings: ['Настройки', 'Рабочий профиль, источники Telegram и модели ролей.', Settings2],
@@ -115,7 +115,7 @@ function App() {
         {notice && <Notice error={notice.error}>{notice.text}</Notice>}
         {screen === 'overview' && <Overview status={status} news={data} online={online} busy={busy} command={command}
           controls={controls.error ? undefined : controls.data} />}
-        {screen === 'tickers' && <Tickers news={data} company={selection} contract={detail} loading={!news.data}
+        {screen === 'tickers' && <Tickers news={data} company={selection} contract={detail} refresh={refresh}
           broker={online ? status.broker : { last_confirmed: status.broker?.last_confirmed }} />}
         {screen === 'decisions' && <Decisions news={data} />}
         {screen === 'trace' && <Trace key={selection} revision={selection} from={detail} news={data} refresh={refresh} />}

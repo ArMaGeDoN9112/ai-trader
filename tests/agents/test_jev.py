@@ -14,6 +14,56 @@ from tests.support.routing import answer
 
 
 class JevTests(unittest.TestCase):
+    def test_category_limits_company_requests_and_keeps_mentions_and_the_position(self) -> None:
+        with TemporaryDirectory() as temp:
+            root = Path(temp)
+            publication, catalog, config = self.inputs(root, 4)
+            post = json.loads(publication.read_bytes())
+            publication.write_text(json.dumps(post | {'text': 'Проверка связи с T2.'}), encoding='utf-8')
+            report = json.loads(catalog.read_bytes())
+            for row in report['operations']['catalog']['data']:
+                row['share_id'] = row['company_id']
+            catalog.write_text(json.dumps(report), encoding='utf-8')
+            futures = root / 'futures.json'
+            futures.write_text(json.dumps({
+                'categories': {'oil': 'Oil', 'finance': 'Finance'},
+                'assets': [{'categories': ['oil' if index == 0 else 'finance'],
+                            'underlying_position_uid': f'asset-{index}'} for index in range(4)],
+            }), encoding='utf-8')
+            requests: list[dict[str, object]] = []
+
+            def respond(request: httpx.Request) -> httpx.Response:
+                body = json.loads(request.content)
+                requests.append(body)
+                if len(requests) == 1:
+                    self.assertEqual(list(body['questions']), ['category_oil', 'category_finance'])
+                    answers = {key: {'type': 'choice', 'choice': choice, 'confidence': 1.0,
+                                     'probabilities': {'related': float(choice == 'related'),
+                                                       'unrelated': float(choice == 'unrelated')}}
+                               for key, choice in [('category_oil', 'related'), ('category_finance', 'unrelated')]}
+                else:
+                    self.assertEqual([body['state'][key]['tickers'][0] for key in body['questions']],
+                                     ['T0', 'T2', 'T3'])
+                    answers = {key: answer('none') for key in body['questions']}
+                return httpx.Response(200, json={'model': body['model'], 'id': 'decision', 'answers': answers})
+
+            with httpx.Client(transport=httpx.MockTransport(respond)) as client:
+                trace = route_publication(config, publication, catalog, root / 'run', client=client, token='secret',
+                                          futures_catalog=futures, position_company='asset-3')
+            self.assertEqual(len(requests), 2)
+            self.assertEqual(trace['candidate_count'], 3)
+            self.assertEqual(trace['links'], [])
+            category = json.loads((root / 'run' / 'category.json').read_bytes())
+            self.assertEqual(category['selected'], ['oil'])
+            self.assertEqual(category['candidates'], ['asset-0', 'asset-2', 'asset-3'])
+
+            with httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(502))) as client:
+                failed = route_publication(config, publication, catalog, root / 'failed', client=client, token='secret',
+                                           futures_catalog=futures)
+            self.assertEqual(failed['error'], 'http_502')
+            self.assertEqual(failed['batches'], [])
+            self.assertEqual(json.loads((root / 'failed' / 'category.json').read_bytes())['status'], 'failed')
+
     def test_full_catalog_uses_one_question_per_company_and_freezes_the_model(self) -> None:
         with TemporaryDirectory() as temp:
             root = Path(temp)

@@ -7,13 +7,13 @@ from typing import Literal
 from pydantic import Field
 
 from news_futures.agents.company import Nonempty
-from news_futures.agents.contracts import Aggregator, Contract, RoleSettings, Settings
+from news_futures.agents.contracts import Aggregator, Contract, Settings
 from news_futures.agents.routing import JevSettings, catalog_rows, load_catalog
 from news_futures.common.errors import RuntimeErrorInfo
 from news_futures.common.paths import EVENT_SETTINGS, JEV_SETTINGS, REVIEW_SETTINGS, TELEGRAM_SOURCES, config_path
 
 
-GROQ_MODELS = {'matcher': 'openai/gpt-oss-20b', 'analyst': 'openai/gpt-oss-120b', 'critic': 'openai/gpt-oss-120b'}
+GROQ_MODELS = {'analyst': 'openai/gpt-oss-120b', 'critic': 'openai/gpt-oss-120b'}
 
 
 class RuntimeSettings(Contract):
@@ -37,6 +37,10 @@ class RuntimeSettings(Contract):
     def events(self) -> Path:
         return self.data_dir / 'events.sqlite3'
 
+    @property
+    def futures_catalog(self) -> Path:
+        return self.data_dir / 'futures-catalog' / 'catalog.json'
+
 
 def load_settings(config: Path) -> RuntimeSettings:
     try:
@@ -55,7 +59,7 @@ def load_settings(config: Path) -> RuntimeSettings:
 
 def role_models(inputs: dict[str, bytes]) -> dict[str, str]:
     review = json.loads(inputs['review'])
-    return {'jev': json.loads(inputs['jev'])['model'], 'matcher': json.loads(inputs['matcher'])['model'],
+    return {'jev': json.loads(inputs['jev'])['model'],
             **{role: review[role]['model'] for role in ('analyst', 'critic')}}
 
 
@@ -64,7 +68,7 @@ def cycle_inputs(settings: RuntimeSettings, models: dict[str, str] | None = None
     inputs = {}
     for field, validate in (
         ('catalog', load_catalog), ('jev', JevSettings.model_validate_json),
-        ('matcher', RoleSettings.model_validate_json), ('review', Settings.model_validate_json),
+        ('review', Settings.model_validate_json),
     ):
         try:
             content = getattr(settings, field).read_bytes()
@@ -78,15 +82,12 @@ def cycle_inputs(settings: RuntimeSettings, models: dict[str, str] | None = None
         return inputs
     models = models or {}
     aggregator = aggregator or 'openrouter'
-    for field in ('jev', 'matcher', 'review'):
+    for field in ('jev', 'review'):
         options = json.loads(inputs[field])
         if field == 'review':
             for role in ('analyst', 'critic'):
                 options[role].update(model=models.get(role, options[role]['model']), aggregator=aggregator)
             Settings.model_validate(options)
-        elif field == 'matcher':
-            options.update(model=models.get(field, options['model']), aggregator=aggregator)
-            RoleSettings.model_validate(options)
         else:
             options['model'] = models.get(field, options['model'])
             JevSettings.model_validate(options)

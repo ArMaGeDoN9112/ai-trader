@@ -3,7 +3,7 @@ import { Bot, Radio, Save, SlidersHorizontal } from 'lucide-react';
 import { label, time } from './api';
 import { Empty, Facts, Notice, Panel } from './ui';
 
-const roles = [['jev', 'Привязка к компаниям · OpenRouter'], ['matcher', 'Сопоставление событий'], ['analyst', 'Аналитик'], ['critic', 'Критик']];
+const roles = [['jev', 'Привязка к компаниям · OpenRouter'], ['analyst', 'Аналитик'], ['critic', 'Критик']];
 const aggregators = { openrouter: 'OpenRouter', groq: 'Groq' };
 const lines = value => value.split('\n').map(line => line.trim()).filter(Boolean);
 

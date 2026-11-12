@@ -103,8 +103,10 @@ def runtime_report(config: Path, decision: str | None) -> dict[str, Any]:
         review = review_path(directory, result.get('review_attempt'))
         report = {'result': result, 'publication': json.loads(row['publication'])}
         for name, file in (
-            ('settings', directory / 'runtime.json'), ('route', directory / 'route' / 'trace.json'),
-            ('event', directory / 'event.json'), ('context', review / 'context.json'),
+            ('settings', directory / 'runtime.json'), ('category', directory / 'route' / 'category.json'),
+            ('route', directory / 'route' / 'trace.json'),
+            ('event', directory / 'event.json'), ('position_check', directory / 'position-status.json'),
+            ('context', review / 'context.json'),
             ('review', review / 'trace.json'),
         ):
             if file.is_file():

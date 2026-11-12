@@ -143,6 +143,14 @@ def runtime_rows(db: sqlite3.Connection | None, revision: str | None) -> dict[st
             ''', (revision, revision))}
 
 
+def telegram_rows(db: sqlite3.Connection | None, revision: str | None = None) -> Iterator[sqlite3.Row]:
+    if db is not None and has_table(db, 'revisions'):
+        yield from db.execute("""
+            SELECT revision, publication, status FROM revisions
+            WHERE historical = 0 AND json_extract(publication, '$.source') LIKE 'telegram:%'
+        """ + (' AND revision = ?' if revision else ''), (revision,) if revision else ())
+
+
 def event_rows(db: sqlite3.Connection | None, revision: str | None, *,
                include_unlinked: bool = False) -> dict[str, list[dict[str, Any]]]:
     if db is None or not has_table(db, 'event_decisions'):
@@ -194,12 +202,14 @@ def archive_news(root: Path, runtime: dict[str, tuple[dict[str, Any], Any]],
 
 
 def summary(key: str, event: dict[str, Any], result: dict[str, Any], contracts: set[str]) -> dict[str, Any]:
+    publication = event['publication']
     return {'revision': key, 'event_id': event.get('event_id'),
-            'at': result.get('at') or event.get('recorded_at') or event['publication'].get('edited_at')
-            or event['publication'].get('published_at'),
+            'at': result.get('at') or event.get('recorded_at') or publication.get('edited_at')
+            or publication.get('published_at'),
             'status': result.get('status', event.get('kind', 'processing')), 'reason': result.get('reason'),
             'companies': sorted({link['company_id'] for link in event['links']}), 'contracts': sorted(contracts),
-            'title': event['publication'].get('text', '').strip()[:160]}
+            'title': publication.get('text', '').strip()[:160]
+            or ('Пост удалён' if publication.get('change') == 'delete' else 'Публикация без текста')}
 
 
 def company_edition(row: dict[str, Any], event: dict[str, Any], binding: dict[str, Any] | None,
@@ -256,7 +266,8 @@ def news_view(root: Path, profile: dict[str, Any], catalog: dict[str, Any],
         cycles = cycle_rows(events, profile['account_id'])
         cycle_contracts = {cycle['id']: cycle['terms']['contract_id'] for cycle in cycles}
         history_by_revision = event_rows(events, None, include_unlinked=bool(company))
-        for key, history, result in archive_news(root, runtime_rows(db, None), history_by_revision):
+        runtime = runtime_rows(db, None)
+        for key, history, result in archive_news(root, runtime, history_by_revision):
             current = history[-1]
             bindings = {link['company_id']: link for link in current['links']}
             linked_companies.update(bindings)
@@ -304,6 +315,14 @@ def news_view(root: Path, profile: dict[str, Any], catalog: dict[str, Any],
             if company in bindings:
                 binding = fields(bindings[company], 'kind', 'basis', 'score', 'confidence')
                 publications.append(company_edition(row, current, binding, list(assessments.values())))
+        if not company:
+            linked = {row['revision'] for row in decisions}
+            for row in telegram_rows(db):
+                key = row['revision']
+                if key not in linked:
+                    publication, result = runtime.get(key) or (json.loads(row['publication']), {})
+                    decisions.append(summary(key, {'publication': publication, 'links': []},
+                                             {'status': row['status']} | result, set()))
         if publications:
             event_ids = {row['event_id'] for row in publications if row['event_id']}
             revisions = {row['revision'] for row in publications}
@@ -344,10 +363,17 @@ def trace_view(root: Path, account: str, key: str) -> dict[str, Any] | None:
     if not REVISION.fullmatch(key):
         return None
     with (read_archive(root / 'publications.sqlite3') as db, read_archive(root / 'events.sqlite3') as events):
-        news = next(archive_news(root, runtime_rows(db, key), event_rows(events, key)), None)
-        if news is None:
-            return None
-        _, history, result = news
+        runtime = runtime_rows(db, key)
+        history_by_revision = event_rows(events, key, include_unlinked=True)
+        news = next(archive_news(root, runtime, history_by_revision), None)
+        if news is not None:
+            _, history, result = news
+        else:
+            row = next(telegram_rows(db, key), None)
+            if row is None:
+                return None
+            history = history_by_revision.get(key) or [{'publication': json.loads(row['publication']), 'links': []}]
+            result = {'status': row['status']} | runtime.get(key, ({}, {}))[1]
         event = next((row for row in history if row.get('decision_id') == result.get('decision_id')), history[0])
         publication = edition(event['publication'])
         steps: list[dict[str, Any]] = []
@@ -363,10 +389,18 @@ def trace_view(root: Path, account: str, key: str) -> dict[str, Any] | None:
         approved_risk = set()
         for index, directory in enumerate(decision_dirs(root, key)):
             for route in route_attempts(directory):
+                category_path = route / 'category.json'
+                category = artifact(category_path)
+                if category:
+                    step(f'{index}/{route.name}-category', 'category', category['status'],
+                         at=category.get('at'), saved_at=when(category_path, {}) or None,
+                         output=category)
+                    if category['status'] != 'completed' or not category.get('candidates'):
+                        continue
                 path = route / 'trace.json'
                 record = artifact(path)
                 routed |= bool(record.get('links'))
-                batches = [artifact(path) for path in sorted(route.glob('batch-*.json'))]
+                batches = [artifact(path) for path in sorted(route.glob('batch-*.json'))] or record.get('batches', [])
                 catalog = artifact(route / 'catalog.json')
                 step(f'{index}/{route.name}', 'route', record.get('status', 'processing'),
                      at=record.get('at'), saved_at=when(path, {}) or None,
@@ -374,15 +408,15 @@ def trace_view(root: Path, account: str, key: str) -> dict[str, Any] | None:
                          company: catalog[company] for batch in batches for company in batch.get('company_ids', [])
                          if company in catalog
                      }}, output=fields(record, 'error', 'links', 'requested_model', 'actual_model') | {'batches': batches})
-            for name in ('event', 'snapshot', 'review'):
+            for name in ('event', 'position', 'snapshot', 'review'):
                 status_path = directory / f'{name}-status.json'
                 if stage_record := artifact(status_path):
-                    if name == 'snapshot' or stage_record['status'] == 'processing' or (
+                    if name in ('position', 'snapshot') or stage_record['status'] == 'processing' or (
                         name == 'event' and stage_record['status'] != 'continue'
                     ):
                         step(f'{index}/{name}-status', name, stage_record['status'], at=stage_record.get('at'),
                              input={'publication': publication} if name == 'snapshot' else None,
-                             output=fields(stage_record, 'reason', 'started_at') | (
+                             output=fields(stage_record, 'reason', 'started_at', 'held_contract_id') | (
                                  artifact(directory / 'snapshot.json') if name == 'snapshot' else {}
                              ))
             for review in reviews(directory):
@@ -412,13 +446,15 @@ def trace_view(root: Path, account: str, key: str) -> dict[str, Any] | None:
                              saved_at=when(risk_path, {}) or None,
                              input=(risk.get('input') or {}) | {'context': artifact(review / 'context.json') or None},
                              output=risk.get('output'))
-        if not routed:
+        if not routed and event['links']:
             step('bindings', 'route', 'saved', at=event.get('recorded_at'), output={'links': event['links']})
-        if event.get('event_id'):
+        if event.get('kind') != 'saved' and (event.get('event_id') or event.get('call')):
             call = event.get('call') or {}
             step('event', 'event', event['kind'], at=event.get('recorded_at'),
                  input=call.get('input') or {'publication': publication, 'search': event.get('search')},
-                 output=fields(event, 'event_id', 'assessment', 'search', 'correction') | response(call))
+                 output=fields(event, 'event_id', 'assessment', 'search', 'correction') | response(call) | {
+                     'settings': fields(call.get('settings') or {}, 'aggregator', 'model', 'timeout_ms'),
+                 })
         cycle_id = (result.get('execution') or {}).get('cycle_id')
         linked_cycle = None
         if events is not None and (cycle_id or approvals):

@@ -7,10 +7,17 @@ import re
 from secrets import compare_digest, token_urlsafe
 import sqlite3
 import sys
+from threading import Lock
+from time import monotonic
 from typing import Any
 from urllib.parse import parse_qs
 
-from news_futures.operator.news import catalog_series, news_view, trace_view, visible
+import httpx
+
+from news_futures.adapters.tbank.futures_catalog import active_futures
+from news_futures.adapters.tbank.rest import sandbox_client
+from news_futures.news.publications import utc_now
+from news_futures.operator.news import artifact, catalog_series, fields, news_view, trace_view, visible
 from news_futures.operator.settings import Preferences
 from news_futures.operator.supervisor import Worker
 from news_futures.operator.trades import trades_view
@@ -62,7 +69,7 @@ class OperatorHandler(BaseHTTPRequestHandler):
                 self.reply(404, {'result': 'not_found'})
             else:
                 self.reply(200, body, mime={'js': 'text/javascript', 'css': 'text/css'}[asset[2]])
-        elif path in ('/api/overview', '/api/news', '/api/trace', '/api/trades', '/api/controls'):
+        elif path in ('/api/overview', '/api/news', '/api/trace', '/api/trades', '/api/controls', '/api/tickers'):
             if not self.authorized():
                 self.reply(403, {'result': 'forbidden'})
                 return
@@ -72,6 +79,8 @@ class OperatorHandler(BaseHTTPRequestHandler):
             try:
                 if path == '/api/overview':
                     value = worker.overview()
+                elif path == '/api/tickers':
+                    value = self.server.market_tickers()
                 elif path == '/api/news':
                     value = visible(news_view(worker.directory, worker.profile, self.server.catalog,
                                               self.server.series, query.get('company', [''])[0]))
@@ -81,8 +90,8 @@ class OperatorHandler(BaseHTTPRequestHandler):
                     value = trades_view(worker.directory, worker.profile['account_id'], query.get('cycle', [''])[0])
                 else:
                     value = worker.controls()
-            except (sqlite3.Error, OSError, ValueError, KeyError, TypeError):
-                self.reply(503, {'result': 'archive_unavailable'})
+            except (sqlite3.Error, httpx.HTTPError, OSError, ValueError, KeyError, TypeError):
+                self.reply(503, {'result': 'market_unavailable' if path == '/api/tickers' else 'archive_unavailable'})
             else:
                 if value is None:
                     self.reply(404, {'result': 'not_found'})
@@ -120,11 +129,17 @@ class OperatorHandler(BaseHTTPRequestHandler):
 
 class OperatorServer(ThreadingHTTPServer):
     def __init__(self, worker: Worker, channels: list[str], port: int, catalog: dict[str, Any] | None = None,
-                 series: dict[str, Any] | None = None, *, web: Path = WEB):
+                 series: dict[str, Any] | None = None, *, web: Path = WEB,
+                 share_companies: dict[str, str] | None = None, ca_file: Path | None = None):
         self.worker = worker
         self.worker.channels = channels
         self.catalog = catalog or {}
         self.series = series or {}
+        self.share_companies = share_companies or {}
+        self.ca_file = ca_file
+        self.market_lock = Lock()
+        self.market_cache: dict[str, Any] = {}
+        self.market_until = 0.0
         self.session = token_urlsafe(32)
         self.page = (web / 'index.html').read_text(encoding='utf-8').replace('__SESSION__', self.session)
         self.assets = {file.name: file.read_bytes() for file in (web / 'assets').iterdir()
@@ -132,12 +147,30 @@ class OperatorServer(ThreadingHTTPServer):
         super().__init__(('127.0.0.1', port), OperatorHandler)
         self.host = f'127.0.0.1:{self.server_port}'
 
+    def market_tickers(self) -> dict[str, Any]:
+        with self.market_lock:
+            if monotonic() < self.market_until:
+                return self.market_cache
+            catalog = artifact(self.worker.directory / 'futures-catalog' / 'catalog.json')
+            if not catalog:
+                return {'checked_at': None, 'tickers': []}
+            with sandbox_client(self.ca_file, read_only=True) as client:
+                tickers = active_futures(client, catalog)
+            owners = self.worker.profile['contracts']
+            self.market_cache = {'checked_at': utc_now().isoformat(), 'tickers': [
+                fields(item, 'uid', 'ticker', 'asset', 'expiration', 'price', 'quote_at') | {
+                    'company_id': self.share_companies.get(item['share_id']) or owners.get(item['uid']),
+                } for item in tickers
+            ]}
+            self.market_until = monotonic() + 25
+            return self.market_cache
+
     def handle_error(self, request: Any, client_address: Any) -> None:
         pass
 
 
 def serve_operator(config: Path, port: int) -> int:
-    from news_futures.agents.routing import load_catalog
+    from news_futures.agents.routing import catalog_rows, load_catalog
     from news_futures.application.config import load_settings
     from news_futures.application.operator_state import OperatorState
     from news_futures.adapters.telegram import configured_channels
@@ -154,14 +187,17 @@ def serve_operator(config: Path, port: int) -> int:
                     payload, preferences)
     catalog: dict[str, Any] = {}
     series: dict[str, Any] = {}
+    share_companies: dict[str, str] = {}
     try:
         content = settings.catalog.read_bytes()
         catalog = dict(load_catalog(content))
         series = catalog_series(json.loads(content))
+        share_companies = {row.share_id: row.company_id for row in catalog_rows(content) if row.share_id}
     except (OSError, ValueError, KeyError, TypeError):
         pass
     try:
-        with OperatorServer(worker, channels, port, catalog, series) as server:
+        with OperatorServer(worker, channels, port, catalog, series, share_companies=share_companies,
+                            ca_file=settings.ca_file) as server:
             print(f'Панель оператора: http://{server.host}/', flush=True)
             server.serve_forever()
     except KeyboardInterrupt:

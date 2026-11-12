@@ -159,10 +159,14 @@ a.list-row:hover { color: var(--text); background: var(--raised); }
 .step-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .step-label small { display: block; margin-top: 3px; }
 .step-arrow { color: var(--faint); }
-details[open] .step-arrow { transform: rotate(90deg); }
+.step > details[open] > summary .step-arrow { transform: rotate(90deg); }
 .step-content { padding: 12px; border-top: 1px solid var(--border); }
 .step-content > * + * { margin-top: 8px; }
 .step-content h3 { font-size: .89rem; }
+.step .trace-technical > summary { display: list-item; list-style: revert; color: var(--muted); }
+.step .trace-technical > summary::-webkit-details-marker { display: revert; }
+.step-content .facts dd { overflow-wrap: anywhere; }
+.routing-links { margin: 8px 0; padding-left: 20px; }
 pre, .preserve { white-space: pre-wrap; overflow-wrap: anywhere; }
 pre { font: .82rem/1.6 var(--mono); padding: 10px; background: #10151f; border-radius: 7px; color: #cdd7ee; }
 .assessment { color: var(--amber); }

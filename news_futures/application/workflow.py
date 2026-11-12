@@ -38,6 +38,7 @@ class NewsState(TypedDict, total=False):
     reason: str | None
     decision_id: int
     affected: list[str]
+    held_contract_id: str
     position_id: str | None
     proposal: dict[str, Any] | None
     review_attempt: str | None
@@ -53,23 +54,26 @@ def analyze_news(
         route_dir = directory / 'route'
         if route_dir.exists():
             move_artifact(route_dir, directory / f'route-interrupted-{uuid4().hex}')
+        position = current_position()
         routed = route_publication(directory / 'jev.json', directory / 'publication.json',
-                                   directory / 'catalog.json', route_dir)
+                                   directory / 'catalog.json', route_dir,
+                                   futures_catalog=directory / 'futures-catalog.json',
+                                   position_company=settings.contracts.get(position.contract_id) if position else None)
         if routed['status'] != 'completed':
-            return {'status': 'failed', 'reason': routed['error']}
+            return {'status': 'failed', 'reason': routed['error'],
+                    'stage': 'category' if routed['candidate_count'] is None else 'route'}
+        if routed['candidate_count'] == 0:
+            return {'status': 'skipped', 'reason': 'no_category_candidates', 'stage': 'category'}
         return {'status': 'continue'}
 
-    def match(_: NewsState) -> NewsState:
+    def record_route(_: NewsState) -> NewsState:
         with EventArchive(settings.events) as events:
-            event = match_route(events, directory / 'route', directory / 'matcher.json')
+            event = match_route(events, directory / 'route')
         replace_json(directory / 'event.json', event)
-        affected = event['analysis_company_ids']
+        affected = sorted({link['company_id'] for link in event['links']})
         result: NewsState = {'decision_id': event['decision_id'], 'affected': affected}
-        if event['kind'] == 'model_error':
-            return result | {'status': 'failed', 'reason': 'event_model_error'}
         if not set(affected).intersection(settings.contracts.values()):
-            return result | {'status': 'skipped',
-                             'reason': 'repeat' if event['kind'] == 'repeat' else 'no_allowed_company'}
+            return result | {'status': 'skipped', 'reason': 'no_allowed_company'}
         return result
 
     def prepare(state: NewsState) -> NewsState:
@@ -87,9 +91,12 @@ def analyze_news(
             """, (publication['text'], publication['published_at'])).fetchone():
                 return {'status': 'skipped', 'reason': 'historical_reprint'}
             snapshot = read_snapshot(events)
-        if snapshot.position and settings.contracts[snapshot.position.contract_id] not in state['affected']:
-            return {'status': 'skipped', 'reason': 'unrelated_to_position'}
-        if not snapshot.position and utc_now() - datetime.fromisoformat(publication['published_at']) > MAX_NEWS_AGE:
+        if snapshot.position:
+            contract = snapshot.position.contract_id
+            reason = ('position_already_open' if settings.contracts[contract] in state['affected']
+                      else 'account_position_limit')
+            return {'status': 'skipped', 'reason': reason, 'held_contract_id': contract}
+        if utc_now() - datetime.fromisoformat(publication['published_at']) > MAX_NEWS_AGE:
             return {'status': 'skipped', 'reason': 'publication_context_only'}
         replace_json(directory / 'snapshot.json', snapshot.model_dump(mode='json'))
         return {}
@@ -124,16 +131,18 @@ def analyze_news(
                 updates = node(state)
             except Exception as error:
                 updates = {'status': 'failed', 'reason': error_code(error)}
-            updates['stage'] = stage
+            updates.setdefault('stage', stage)
             note({'at': utc_now().isoformat(), 'started_at': started,
-                  'status': updates.get('status', 'completed'), 'reason': updates.get('reason')})
+                  'status': updates.get('status', 'completed'), 'reason': updates.get('reason'),
+                  **({'held_contract_id': updates['held_contract_id']} if 'held_contract_id' in updates else {})})
             return dict(updates)
         return RunnableLambda(invoke)
 
     graph: StateGraph[NewsState, None, NewsState, NewsState] = StateGraph(NewsState)
     graph.add_node('route', audited('route', route))
-    graph.add_node('event', audited('event', match))
-    graph.add_node('snapshot', audited('snapshot', prepare))
+    # Keep checkpoint node names so revisions interrupted before the upgrade can resume.
+    graph.add_node('event', audited('route', record_route))
+    graph.add_node('snapshot', audited('position', prepare))
     graph.add_node('review', audited('review', review))
     graph.add_edge(START, 'route')
     graph.add_conditional_edges('route', lambda state: 'event' if state['status'] == 'continue' else END)
@@ -149,7 +158,8 @@ def analyze_news(
             if saved.created_at and ('review' in saved.next or saved.values.get('stage') == 'review'):
                 snapshot = Snapshot.model_validate_json((directory / 'snapshot.json').read_bytes())
                 timestamps = [snapshot.account.observed_at, *(item.market.observed_at for item in snapshot.instruments)]
-                if snapshot.position != current_position() or (saved.next and utc_now() - min(timestamps) > MAX_SNAPSHOT_AGE):
+                if (snapshot.position is not None or current_position() is not None
+                        or (saved.next and utc_now() - min(timestamps) > MAX_SNAPSHOT_AGE)):
                     compiled.update_state(config, {'status': 'continue', 'reason': None, 'proposal': None,
                                                    'review_attempt': None}, as_node='event')
                     saved = compiled.get_state(config)

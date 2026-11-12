@@ -5,7 +5,7 @@ export function Badge({ value, children, tone }) {
   const color = tone || ({
     connected: 'green', running: 'green', confirmed: 'green', open: 'green', approved: 'green',
     protected: 'green', sandbox: 'purple', observation: 'purple', failed: 'red', rejected: 'red',
-    unavailable: 'red', blocked: 'amber', paused: 'amber', processing: 'amber', starting: 'amber',
+    unavailable: 'red', blocked: 'amber', paused: 'amber', pending: 'amber', processing: 'amber', starting: 'amber',
     stopping: 'amber', unconfirmed: 'amber',
   })[value] || 'neutral';
   return <span className={'badge ' + color}><i />{children || label(value)}</span>;
@@ -51,7 +51,7 @@ export function DecisionList({ id, rows, news, from }) {
     {rows.length === 0 && <Empty icon={FileText}>Нет решений по выбранным условиям.</Empty>}
     {rows.map(row => <a key={row.revision} className="list-row" href={route('trace', row.revision, from)}>
       <span className="row-icon"><FileText size={17} /></span>
-      <span className="row-body"><strong>{row.title || 'Открыть трассу'}</strong>
+      <span className="row-body"><strong>{row.title}</strong>
         <small>{[...row.companies.map(item => companyName(news, item)),
           ...row.contracts.map(item => contractName(news, item)), time(row.at)].join(' · ')}</small>
         {row.reason && <small>{label(row.reason)}</small>}

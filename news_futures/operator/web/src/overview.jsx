@@ -121,7 +121,7 @@ export function Overview({ status, news, online, busy, command, controls }) {
         </Notice>}
       </Panel>
     </div>
-    <Panel title="Последние решения" hint="Последние публикации, связанные с компаниями" icon={Workflow}
+    <Panel title="Последние решения" icon={Workflow}
       actions={<a className="text-link" href="#decisions">Все решения <ArrowRight size={16} /></a>}>
       <DecisionList id="recent" rows={news.decisions.slice(0, 5)} news={news} from="overview" />
     </Panel>

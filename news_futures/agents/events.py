@@ -75,9 +75,9 @@ FIRSTHAND = re.compile(
 )
 
 
-def match_route(archive: 'EventArchive', directory: Path, config: Path) -> dict[str, Any]:
+def match_route(archive: 'EventArchive', directory: Path, config: Path | None = None) -> dict[str, Any]:
     try:
-        settings = RoleSettings.model_validate_json(config.read_bytes())
+        settings = RoleSettings.model_validate_json(config.read_bytes()) if config is not None else None
     except ValidationError as error:
         raise ValueError('Проверьте поля модели в конфигурации event-match') from error
     publication = json.loads((directory / 'publication.json').read_bytes())
@@ -254,8 +254,15 @@ class EventArchive:
         return details | {'decision_id': cursor.lastrowid, 'revision': revision,
                           'publication': publication, 'links': links}
 
+    def _save_revision(self, revision: str, details: dict[str, Any],
+                       publication: dict[str, Any], links: list[dict[str, Any]]) -> dict[str, Any]:
+        self.db.execute('INSERT INTO event_revisions VALUES (?, ?, ?)', (
+            revision, json.dumps(publication, ensure_ascii=False), json.dumps(links, ensure_ascii=False),
+        ))
+        return self.append(revision, details, publication, links)
+
     def match(
-        self, publication: dict[str, Any], links: list[dict[str, Any]], settings: RoleSettings, *,
+        self, publication: dict[str, Any], links: list[dict[str, Any]], settings: RoleSettings | None, *,
         model_factory: Callable[[RoleSettings], BaseChatModel] = chat_model,
     ) -> dict[str, Any]:
         revision = revision_key(publication)
@@ -266,6 +273,25 @@ class EventArchive:
                        or link.publication_revision_sha256 != digest
                        or link.requires_analyst_review != (link.kind != 'direct') for link in routed)):
             raise ValueError('Привязки дублируются, противоречат друг другу или относятся к другой редакции')
+        if settings is None:
+            with self.db:
+                self.db.execute('BEGIN IMMEDIATE')
+                row = self.db.execute("""
+                    SELECT id, details, publication, links
+                    FROM event_decisions JOIN event_revisions USING (revision)
+                    WHERE revision = ? ORDER BY id DESC LIMIT 1
+                """, (revision,)).fetchone()
+                if row is not None:
+                    details: dict[str, Any] = json.loads(row['details'])
+                    return details | {
+                        'decision_id': row['id'], 'revision': revision,
+                        'publication': json.loads(row['publication']), 'links': json.loads(row['links']),
+                    }
+                return self._save_revision(revision, {
+                    'recorded_at': utc_now().isoformat(), 'event_id': uuid4().hex, 'kind': 'saved',
+                    'basis_at': publication['published_at'], 'assessment': None, 'call': None,
+                    'analysis_company_ids': sorted(link.company_id for link in routed),
+                }, publication, links)
         current = self.history(current_only=True)
         for row in current:
             if row['revision'] == revision:
@@ -331,10 +357,7 @@ class EventArchive:
                     if row['revision'] == revision:
                         return row
                 raise ValueError('Архив изменился во время сопоставления. Повторите команду.')
-            self.db.execute('INSERT INTO event_revisions VALUES (?, ?, ?)', (
-                revision, json.dumps(publication, ensure_ascii=False), json.dumps(links, ensure_ascii=False),
-            ))
-            return self.append(revision, details, publication, links)
+            return self._save_revision(revision, details, publication, links)
 
     def correct(self, revision: str, kind: str, event_id: str | None, reason: str) -> dict[str, Any]:
         reason = reason.strip()

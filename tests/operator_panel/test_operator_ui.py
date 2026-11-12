@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import os
 import re
+import sqlite3
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
@@ -17,6 +18,7 @@ from unittest.mock import patch
 from urllib.request import urlopen
 from uuid import uuid4
 
+import httpx
 from websockets.sync.client import connect
 
 from news_futures.operator.server import WEB, OperatorServer
@@ -112,6 +114,54 @@ class OperatorTest(unittest.TestCase):
         status, page = self.request('GET', '/')
         self.assertEqual(status, 200)
         self.session = re.findall(r'<meta name="operator-session" content="([^"]+)"', page)[0]
+
+    def mock_market(self) -> None:
+        self.server.share_companies = {'share-a': 'company', 'share-b': 'other'}
+        folder = self.root / 'futures-catalog'
+        folder.mkdir()
+        now = utc_now()
+        future = (now + timedelta(days=30)).isoformat()
+        assets = []
+        for uid, ticker, asset, share in [
+            ('future', 'ABCZ6', 'ABC', 'share-a'), ('other-future', 'XYZZ6', 'XYZ', 'share-b'),
+            ('old-future', 'ABCZ5', 'ABC', 'share-a'), ('paused-future', 'PAUSED', 'ABC', 'share-a'),
+            ('gold', 'GOLDZ6', 'Золото', None),
+        ]:
+            assets.append({'name': asset, 'underlying_position_uid': share, 'contracts': [{
+                'uid': uid, 'ticker': ticker, 'expiration': future, 'api_trade_available': True,
+                'last_trade': (now - timedelta(days=1)).isoformat() if uid == 'old-future' else future,
+            }]})
+        replace_json(folder / 'catalog.json', {'assets': assets})
+
+        def respond(request: httpx.Request) -> httpx.Response:
+            ids = json.loads(request.content)['instrumentId']
+            self.assertNotIn('old-future', ids)
+            if request.url.path.endswith('/GetTradingStatuses'):
+                return httpx.Response(200, json={'tradingStatuses': [
+                    {'instrumentUid': uid, 'apiTradeAvailableFlag': True, 'limitOrderAvailableFlag': uid != 'paused-future'}
+                    for uid in ids
+                ]})
+            self.assertTrue(request.url.path.endswith('/GetLastPrices'))
+            self.assertNotIn('paused-future', ids)
+            return httpx.Response(200, json={'lastPrices': [
+                {'instrumentUid': uid} if uid == 'gold' else {
+                    'instrumentUid': uid, 'price': {'units': '123', 'nano': 450000000}, 'time': now.isoformat(),
+                } for uid in ids
+            ]})
+
+        self.enterContext(patch('news_futures.operator.server.sandbox_client', side_effect=lambda *args, **kwargs:
+                                httpx.Client(transport=httpx.MockTransport(respond))))
+
+    def test_tickers_only_include_open_futures_and_attach_last_prices(self) -> None:
+        self.mock_market()
+        self.assertEqual(self.request('GET', '/api/tickers')[0], 403)
+        code, body = self.request('GET', '/api/tickers', **{'X-Operator-Session': self.session})
+        self.assertEqual(code, 200)
+        rows = {row['uid']: row for row in json.loads(body)['tickers']}
+        self.assertEqual(set(rows), {'future', 'other-future', 'gold'})
+        self.assertEqual(rows['future']['company_id'], 'company')
+        self.assertEqual(rows['future']['price'], '123.450000000')
+        self.assertNotIn('price', rows['gold'])
 
     def request(self, method: str, path: str, *, body: object = None, **headers: str) -> tuple[int, str]:
         connection = HTTPConnection('127.0.0.1', self.port, timeout=3)
@@ -273,7 +323,8 @@ class OperatorTest(unittest.TestCase):
         with closing(archive.db):
             runtime_tables(archive)
             save_result(archive, {'revision': revision, 'stage': 'review', 'status': 'rejected', 'decision_id': 1})
-            save_result(archive, {'revision': unlinked.revision_key(), 'stage': 'event', 'status': 'skipped'})
+            save_result(archive, {'revision': unlinked.revision_key(), 'stage': 'event', 'status': 'skipped',
+                                  'reason': 'no_allowed_company'})
         directory = self.root / 'decisions' / revision
         review = directory / 'review'
         review.mkdir(parents=True)
@@ -299,6 +350,36 @@ class OperatorTest(unittest.TestCase):
                      'output': {'approved': False, 'objections': ['Нет подтверждения']}})
         return revision, unlinked.revision_key(), review
 
+    def test_decisions_include_telegram_posts_before_and_after_processing(self) -> None:
+        revision, unlinked, _ = self.save_news()
+        source, now = 'telegram:42', utc_now()
+        pending = Publication(source, '3', 'https://t.me/source/3', 'Свежий пост', now, now)
+        archived = Publication(source, '4', 'https://t.me/source/4', 'Начальная история', now, now)
+        archive = Archive(self.root / 'publications.sqlite3')
+        with closing(archive.db):
+            archive.save_batch(source, 1, [archived], historical=True)
+            archive.save_batch(source, 2, [pending])
+            for status in ('pending', 'failed'):
+                if status == 'failed':
+                    save_result(archive, {'revision': pending.revision_key(), 'status': status,
+                                          'reason': 'event_model_error'})
+                code, body = self.request('GET', '/api/news', **{'X-Operator-Session': self.session})
+                self.assertEqual(code, 200)
+                news = json.loads(body)
+                self.assertNotIn('recent_telegram', news)
+                self.assertEqual(len(news['decisions']), 3)
+                rows = {row['revision']: row for row in news['decisions']}
+                self.assertEqual(rows[pending.revision_key()]['status'], status)
+                self.assertEqual(rows[unlinked]['status'], 'skipped')
+                self.assertEqual(rows[unlinked]['reason'], 'no_allowed_company')
+                self.assertEqual(rows[revision]['status'], 'rejected')
+                code, body = self.request('GET', '/api/trace?revision=' + pending.revision_key(),
+                                          **{'X-Operator-Session': self.session})
+                self.assertEqual(code, 200)
+                trace = json.loads(body)
+                self.assertEqual(trace['status'], status)
+                self.assertEqual(trace['steps'][0]['kind'], 'publication')
+
     def test_only_saved_bindings_reach_the_company_and_decision_views(self) -> None:
         revision, unlinked, _ = self.save_news()
         session = {'X-Operator-Session': self.session}
@@ -314,7 +395,12 @@ class OperatorTest(unittest.TestCase):
             self.assertIn('old-future', news['decisions'][0]['contracts'])
             if kind == 'inferred':
                 self.assertEqual(news['publications'][0]['assessments'][0]['impact'], 'unverified')
-        self.assertEqual(self.request('GET', '/api/trace?revision=' + unlinked, **session)[0], 404)
+        code, body = self.request('GET', '/api/trace?revision=' + unlinked, **session)
+        self.assertEqual(code, 200)
+        trace = json.loads(body)
+        self.assertEqual(trace['status'], 'skipped')
+        self.assertEqual(trace['reason'], 'no_allowed_company')
+        self.assertEqual([step['id'] for step in trace['steps']], ['publication', 'event', 'outcome'])
         self.assertEqual(self.request('GET', '/api/trace?revision=../runtime.json', **session)[0], 404)
         code, body = self.request('GET', '/api/trace?revision=' + revision, **session)
         self.assertEqual(code, 200)
@@ -326,7 +412,37 @@ class OperatorTest(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get('OPERATOR_TEST_CHROME'), 'Set OPERATOR_TEST_CHROME to a Chromium executable')
     def test_ticker_to_rejected_trace_keeps_expansion_and_scroll_during_refresh(self) -> None:
-        revision, _, review = self.save_news()
+        self.mock_market()
+        revision, unlinked, review = self.save_news()
+        with closing(sqlite3.connect(self.root / 'events.sqlite3')) as db, db:
+            saved, = db.execute('SELECT details FROM event_decisions WHERE revision = ?', (unlinked,)).fetchone()
+            candidates = [{'event_id': f'candidate-{index}'} for index in range(8)]
+            event = json.loads(saved) | {
+                'kind': 'model_error',
+                'search': {'events_examined': 19, 'events_ranked': 17, 'candidates': candidates},
+                'call': {'error': 'OpenAITimeoutError', 'input': {'candidates': candidates},
+                         'settings': {'aggregator': 'groq', 'model': 'openai/gpt-oss-20b', 'timeout_ms': 60000}},
+            }
+            db.execute('UPDATE event_decisions SET details = ? WHERE revision = ?', (json.dumps(event), unlinked))
+        archive = Archive(self.root / 'publications.sqlite3')
+        with closing(archive.db):
+            save_result(archive, {'revision': unlinked, 'stage': 'event', 'status': 'failed',
+                                  'reason': 'event_model_error'})
+        decision_dir = self.root / 'decisions' / unlinked
+        interrupted = decision_dir / 'route-interrupted-test'
+        completed = decision_dir / 'route'
+        interrupted.mkdir(parents=True)
+        completed.mkdir()
+        replace_json(interrupted / 'catalog.json', {'example-id': {'names': ['Технический каталог']}})
+        replace_json(interrupted / 'batch-001.json', {'company_ids': ['example-id'], 'answers': {}, 'error': None})
+        replace_json(interrupted / 'batch-002.json', {'company_ids': ['another-id'], 'error': 'http_502'})
+        replace_json(interrupted / 'trace.json', {'status': 'failed', 'error': 'http_502', 'links': None,
+                                                  'actual_model': 'parallel/decisions-fast-20261106'})
+        replace_json(completed / 'category.json', {
+            'status': 'completed', 'categories': {'financial': 'Финансы'}, 'selected': ['financial'],
+            'candidates': ['company'],
+        })
+        replace_json(completed / 'trace.json', {'status': 'completed', 'links': []})
         catalog = self.root / 'catalog.json'
         replace_json(catalog, {'operations': {'catalog': {'availability': 'available', 'data': [{
             'company_id': 'company', 'company_name': 'Компания А', 'ticker': 'ABC', 'share_id': 'share',
@@ -341,12 +457,12 @@ class OperatorTest(unittest.TestCase):
             f'--user-data-dir={profile}', '--no-first-run', '--disable-background-networking', 'about:blank',
         ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) as browser:
             try:
-                self.exercise_browser(profile, revision, review)
+                self.exercise_browser(profile, revision, unlinked, review)
             finally:
                 if browser.poll() is None:
                     browser.terminate()
 
-    def exercise_browser(self, profile: Path, revision: str, review: Path) -> None:
+    def exercise_browser(self, profile: Path, revision: str, unlinked: str, review: Path) -> None:
         def until(check: Callable[[], object]) -> None:
             deadline = time.monotonic() + 8
             while not check():
@@ -391,8 +507,38 @@ class OperatorTest(unittest.TestCase):
 
             cdp('Emulation.setDeviceMetricsOverride', width=1440, height=1024, deviceScaleFactor=1, mobile=False)
             cdp('Page.navigate', url=self.origin)
-            expect('document.querySelectorAll("#recent a").length === 1')
-            expect('!document.querySelector("#recent").innerText.includes("Без привязки")')
+            expect('document.querySelectorAll("#recent a").length === 2')
+            expect(f'document.querySelector("#recent a[href^=\'#trace/{unlinked}\']")?.innerText.includes("Ошибка")')
+            expect(f'document.querySelector("#recent a[href^=\'#trace/{revision}\']")?.innerText.includes("Отклонено")')
+            evaluate(f'document.querySelector("#recent a[href^=\'#trace/{unlinked}\']").click()')
+            expect(f'location.hash.startsWith("#trace/{unlinked}") && '
+                   'document.querySelector("#trace-steps")?.innerText.includes("Сопоставление события")')
+            event_step = 'document.querySelector(\'[data-id="event"]\')'
+            evaluate(f'{event_step}.querySelector("summary").click()')
+            counts = f'Array.from({event_step}.querySelectorAll(".facts dd")).slice(0,3).map(x => x.innerText)'
+            expect(f'{event_step}.innerText.includes("Сервис модели не ответил") && '
+                   f'{event_step}.innerText.includes("Groq") && {event_step}.innerText.includes("60 с") && '
+                   f'{counts}.join(",") === "19,17,8" && '
+                   f'!{event_step}.querySelector("pre")')
+            evaluate(f'{event_step}.querySelector(".trace-technical summary").click()')
+            expect(f'{event_step}.querySelector("pre")?.innerText.includes("candidate-0")')
+            category = 'document.querySelector(\'[data-id="0/route-category"]\')'
+            evaluate(f'{category}.querySelector("summary").click()')
+            expect(f'{category}.innerText.includes("Категория новости") && {category}.innerText.includes("Финансы")')
+            failed_route = 'document.querySelector(\'[data-id="0/route-interrupted-test"]\')'
+            evaluate(f'{failed_route}.querySelector("summary").click()')
+            expect(f'{failed_route}.innerText.includes("HTTP 502") && '
+                   f'{failed_route}.innerText.includes("1 из 2 отправленных") && '
+                   f'!{failed_route}.innerText.includes("Связей с компаниями не найдено") && '
+                   f'!{failed_route}.querySelector("pre")')
+            evaluate(f'{failed_route}.querySelector(".trace-technical summary").click()')
+            expect(f'{failed_route}.querySelector("pre")?.innerText.includes("Технический каталог")')
+            empty_route = 'document.querySelector(\'[data-id="0/route"]\')'
+            evaluate(f'{empty_route}.querySelector("summary").click()')
+            expect(f'{empty_route}.innerText.includes("Связей с компаниями не найдено")')
+            evaluate('document.querySelector(".detail-nav a").click()')
+            expect('document.querySelector("#recent a") !== null')
+            expect('!document.querySelector("#recent-telegram")')
             expect('window.innerWidth === 1440 && document.documentElement.scrollWidth === document.documentElement.clientWidth')
             cdp('Emulation.setDeviceMetricsOverride', width=375, height=720, deviceScaleFactor=1, mobile=False)
             expect('window.innerWidth === 375 && document.querySelectorAll("nav a").length === 5 && '
@@ -408,11 +554,13 @@ class OperatorTest(unittest.TestCase):
             expect('document.querySelector("#company-name")?.textContent === "Компания А"')
             expect('document.querySelector("#company-events").innerText.includes("Прямая связь")')
             search('abcz5')
-            expect('document.querySelector("#company-contract")?.value === "old-future"')
-            expect('document.querySelectorAll("#company-decisions a").length === 1')
-            expect('document.querySelector("#company-events").innerText.includes("Прямая связь")')
+            expect('document.body.innerText.includes("Среди активных фьючерсов совпадений нет.")')
+            search('abcz6')
+            expect('document.querySelector("#company-contract")?.value === "future"')
+            expect('document.querySelector("#active-tickers")?.innerText.includes("123,45 п.") && '
+                   'document.querySelector("#active-tickers")?.innerText.includes("Экспирация")')
             evaluate('location.hash = "#decisions"')
-            expect('document.querySelectorAll("#decisions a").length === 1')
+            expect('document.querySelectorAll("#decisions a").length === 2')
             for name, value in (('company', 'company'), ('contract', 'old-future'), ('result', 'rejected')):
                 evaluate(f'{{ const field = document.getElementById("decision-{name}"); field.value = "{value}";'
                          'field.dispatchEvent(new Event("change", {bubbles:true})); }')

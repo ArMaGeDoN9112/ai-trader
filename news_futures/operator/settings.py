@@ -41,7 +41,10 @@ class Preferences:
             values = self.state.saved()
         if values.get('account_id') != self.base.account_id:
             values = {}
-        return {key: values.get(key, default) for key, default in self.default.items()}
+        saved = {key: values.get(key, default) for key, default in self.default.items()}
+        for key in ('models', 'groq_models'):
+            saved[key] = {role: saved[key].get(role, model) for role, model in self.default[key].items()}
+        return saved
 
     def view(self) -> dict[str, Any]:
         stored = self.state.saved()

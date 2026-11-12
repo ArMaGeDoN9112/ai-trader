@@ -11,6 +11,8 @@ from threading import Event
 from typing import Any
 from uuid import uuid4
 
+import httpx
+
 from news_futures.trading.broker import BrokerReader, SandboxBroker
 from news_futures.trading.account import BrokerAccount
 from news_futures.common.credentials import load_token
@@ -25,10 +27,14 @@ from news_futures.application.operator_state import OperatorState
 from news_futures.common.errors import RuntimeErrorInfo, error_code
 from news_futures.application.records import pending_revisions, review_path, runtime_tables, save_broker_status, save_result
 from news_futures.trading.executor import AUTONOMOUS_PROTECTION_UNAVAILABLE, SandboxExecutor
+from news_futures.adapters.tbank.futures_catalog import fetch_catalog, save_catalog
 from news_futures.adapters.tbank.rest import TBankReader, TBankSandbox, sandbox_client
 from news_futures.adapters.telegram import configured_channels, default_session, run_telegram, session_path
 from news_futures.trading.journal import trade_journal
 from news_futures.trading.terms import CloseIntent
+
+
+FUTURES_REFRESH_SECONDS = 24 * 60 * 60
 
 
 class Runtime:
@@ -215,6 +221,12 @@ class Runtime:
             replace_json(directory / 'publication.json', publication)
             for field, content in inputs.items():
                 (directory / f'{field}.json').write_bytes(content)
+            try:
+                futures_catalog = settings.futures_catalog.read_bytes()
+            except FileNotFoundError:
+                pass
+            else:
+                (directory / 'futures-catalog.json').write_bytes(futures_catalog)
             result['inputs_saved'] = True
             save_result(archive, result)
             if self.on_controls is not None:
@@ -396,7 +408,20 @@ async def run_runtime(
                     print(json.dumps({'broker_monitor_error': error_code(error)}), flush=True)
                 await asyncio.sleep(1 if on_controls is not None else 15)
 
+        def refresh_futures_catalog() -> None:
+            try:
+                save_catalog(settings.futures_catalog.parent, fetch_catalog(client))
+            except (httpx.HTTPError, OSError, ValueError, KeyError, TypeError) as error:
+                print(json.dumps({'futures_catalog_error': error_code(error)}), flush=True)
+
+        async def refresh_catalog_daily() -> None:
+            while not runtime.stop.is_set():
+                await asyncio.sleep(FUTURES_REFRESH_SECONDS)
+                await in_worker(refresh_futures_catalog)
+
         await in_worker(runtime.refresh)
+        await in_worker(refresh_futures_catalog)
+        catalog_task = None if once else asyncio.create_task(refresh_catalog_daily())
         observer = None if once else asyncio.create_task(monitor())
         try:
             if on_phase is not None:
@@ -408,6 +433,7 @@ async def run_runtime(
             return source_code or int(runtime.failed)
         finally:
             runtime.stop.set()
-            if observer is not None:
-                observer.cancel()
-                await asyncio.gather(observer, return_exceptions=True)
+            background_tasks = [task for task in (observer, catalog_task) if task is not None]
+            for task in background_tasks:
+                task.cancel()
+            await asyncio.gather(*background_tasks, return_exceptions=True)
