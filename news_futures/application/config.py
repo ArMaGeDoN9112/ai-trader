@@ -23,6 +23,7 @@ class RuntimeSettings(Contract):
     contracts: dict[Nonempty, Nonempty] = Field(min_length=1)  # contract UID -> company ID
     mode: Literal['observation', 'sandbox'] = 'observation'
     analysis_strategy: Literal['fixed', 'tool_agent'] = 'fixed'
+    order_transport: Literal['rest', 'mcp'] = 'rest'
     coordinator: RoleSettings | None = None
     sources: Path = TELEGRAM_SOURCES
     session: Path | None = None

@@ -11,9 +11,52 @@ from news_futures.common.artifacts import publication_digest
 from news_futures.common.errors import Rejected
 
 
+def read_agent_approval(directory: Path, trace: dict[str, Any]) -> tuple[CompanyProposal, str, datetime, dict[str, Any]]:
+    from news_futures.agents.decisions import validate_company_proposal
+
+    outcome = trace['outcome']
+    if outcome['status'] != 'candidate' or outcome['critic_status'] != 'approved':
+        raise Rejected('proposal_not_reviewed')
+    payload = outcome['proposal']
+    proposal_id = payload['id']
+    proposal = CompanyProposal.model_validate({key: value for key, value in payload.items() if key != 'id'})
+    if proposal.action != 'enter':
+        raise Rejected('entry_proposal_required')
+    calls = trace['calls']
+    analyst = next((call for call in reversed(calls) if call['kind'] == 'ask_analyst'
+                    and call['status'] == 'completed' and call['output'] == payload), None)
+    critic = next((call for call in reversed(calls) if call['kind'] == 'ask_critic'
+                   and call['status'] == 'completed' and call['input']['proposal'].get('id') == proposal_id), None)
+    if analyst is None or critic is None:
+        raise Rejected('proposal_not_reviewed')
+    review = Review.model_validate(critic['output'])
+    context = analyst['input']['context']
+    if (critic['input']['proposal'] != payload or critic['input']['context'] != context
+            or not review.approved or review.objections or review.proposal_id != proposal_id
+            or context['event']['revision'] != trace['revision']
+            or publication_digest({'revision': trace['revision'], 'account_id': trace['account_id'], 'context': context,
+                                   'proposal': proposal.model_dump(mode='json')}) != proposal_id):
+        raise Rejected('proposal_not_reviewed')
+    validate_company_proposal(proposal.model_dump(mode='json'), context)
+    runtime = json.loads((directory.parent / 'runtime.json').read_bytes())
+    account = runtime['account_id']
+    if (runtime['mode'] != 'observation' or runtime['analysis_strategy'] != 'tool_agent'
+            or not isinstance(account, str) or not account
+            or account != trace['account_id']
+            or runtime['contracts'].get(proposal.contract_id) != proposal.company_id):
+        raise Rejected('invalid_approval_record')
+    return proposal, proposal_id, datetime.fromisoformat(analyst['at']), context | {
+        'account': context['account'] | {'id': account},
+    }
+
+
 def read_approval(directory: Path) -> tuple[CompanyProposal, str, datetime, dict[str, Any]]:
     try:
         trace = json.loads((directory / 'trace.json').read_bytes())
+        if not isinstance(trace, dict):
+            raise Rejected('invalid_approval_record')
+        if trace.get('strategy') == 'tool_agent':
+            return read_agent_approval(directory, trace)
         if trace['mode'] != 'sandbox' or trace['status'] != 'approved_for_checks' or trace['error'] is not None:
             raise Rejected('sandbox_approval_required')
         payload = trace['approved_proposal']

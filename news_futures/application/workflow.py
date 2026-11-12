@@ -135,7 +135,8 @@ def analyze_news(
                     raise Shutdown
 
             return cast(NewsState, run_tool_agent(
-                directory, revision, event, contracts, events, lambda uid, seconds: read_market(events, uid, seconds),
+                directory, revision, event, settings.account_id, contracts, events,
+                lambda uid, seconds: read_market(events, uid, seconds),
                 check_current, check_stop, checkpointer, settings.coordinator,
             ))
 

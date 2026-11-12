@@ -106,7 +106,7 @@ def encoded(value: Any) -> str:
 
 
 def run_tool_agent(
-    directory: Path, revision: str, event: dict[str, Any], contracts: dict[str, str],
+    directory: Path, revision: str, event: dict[str, Any], account_id: str, contracts: dict[str, str],
     events: EventArchive, read_market: Callable[[str, float], tuple[Snapshot, ContractSnapshot]],
     check_current: Callable[[], str | None], check_stop: Callable[[], None],
     checkpointer: BaseCheckpointSaver, coordinator: RoleSettings | None,
@@ -122,7 +122,7 @@ def run_tool_agent(
 
     def trace(state: AgentState) -> None:
         replace_json(directory / 'trace.json', {
-            'revision': revision, 'strategy': 'tool_agent', 'version': version,
+            'revision': revision, 'strategy': 'tool_agent', 'version': version, 'account_id': account_id,
             'outcome': state['outcome'], 'calls': state['calls'],
         })
 
@@ -281,7 +281,8 @@ def run_tool_agent(
         availability = 'limit_buy_available' if proposal['side'] == 'long' else 'limit_sell_available'
         if not any(item[availability] and item['instrument']['contract_id'] == proposal['contract_id'] for item in market):
             raise RuntimeErrorInfo('market_not_available')
-        identity = publication_digest({'revision': revision, 'context': context, 'proposal': proposal})
+        identity = publication_digest({'revision': revision, 'account_id': account_id,
+                                       'context': context, 'proposal': proposal})
         saved = state['proposals'].setdefault(identity, {
             'company_id': args.company_id, 'proposal': proposal | {'id': identity}, 'context': context,
         })

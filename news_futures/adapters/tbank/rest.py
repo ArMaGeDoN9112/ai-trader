@@ -87,7 +87,7 @@ def rows(payload: dict[str, Any], field: str) -> list[dict[str, Any]]:
 
 
 class TBankReader:
-    source: Literal['sandbox'] = 'sandbox'
+    source: Literal['sandbox', 'sandbox_mcp'] = 'sandbox'
 
     def __init__(self, client: httpx.Client, account_id: str, contract_id: str, company_id: str | None):
         self.client = client

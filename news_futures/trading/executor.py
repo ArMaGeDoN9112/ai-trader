@@ -28,6 +28,7 @@ from news_futures.trading.journal import active_cycles, append_event, close_requ
 
 
 AUTONOMOUS_PROTECTION_UNAVAILABLE = 'autonomous_protection_unavailable'
+SANDBOX_SOURCES = ('sandbox', 'sandbox_mcp')
 
 
 class SandboxExecutor:
@@ -57,9 +58,9 @@ class SandboxExecutor:
         record_risk: Callable[[str, dict[str, Any], object], None] | None = None,
         entry_block: Callable[[], str | None] | None = None,
     ) -> dict[str, str]:
-        if self.broker.source not in ('control', 'sandbox'):
+        if self.broker.source not in ('control', *SANDBOX_SOURCES):
             return {'status': 'rejected', 'reason': 'unsupported_broker_source'}
-        if self.broker.source == 'sandbox' and allow_independent_stops is not True:
+        if self.broker.source in SANDBOX_SOURCES and allow_independent_stops is not True:
             return {'status': 'rejected', 'reason': 'independent_stops_require_opt_in'}
 
         def record(entry: EntryReservation, proposal: CompanyProposal, context: dict[str, Any]) -> None:
@@ -142,7 +143,7 @@ class SandboxExecutor:
                     """, (entry.id, manual.request_id)).fetchone()
                 if saved:
                     return self._advance(entry, operations, close=True) | {'manual': 'accepted'}
-                if (self.broker.source != 'sandbox' or manual.cycle_id != entry.id
+                if (self.broker.source not in SANDBOX_SOURCES or manual.cycle_id != entry.id
                         or manual.contract_id != entry.contract_id or manual.side != entry.side
                         or row['status'] != 'protected' or row['close_requested']
                         or close_requests(operations) or 'cancel_protection' in operations):
@@ -314,6 +315,10 @@ class SandboxExecutor:
             else:
                 state, observation = observation, None
             self._log(entry, 'reconciliation', state=asdict(state))
+            if self.broker.source == 'sandbox_mcp' and any(
+                action not in receipts for action in ('enter', *(key for key, _ in close_requests(operations)))
+            ):
+                return self._finish(entry, 'blocked', 'mcp_order_submission_unconfirmed')
             active = tuple(stop for stop in state.protection if stop.status == 'active')
             if ((active and not operations.keys() & {'sl', 'tp', 'protect'})
                     or len({stop.id for stop in state.protection}) != len(state.protection)):

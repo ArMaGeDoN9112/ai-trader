@@ -59,9 +59,9 @@ ID относится к позиции, которую оценивали ан�
 
 ## Контрольная сделка в песочнице Т‑Инвестиций
 
-Исполнитель 09 обращается к официальному Sandbox REST API. REST принимает
+По умолчанию исполнитель обращается к Sandbox REST API. REST принимает
 ключ операции для входа и стопов и позволяет искать обычную заявку по ключу.
-В проверенной схеме MCP этих полей нет. Счёт должен быть отдельным
+Счёт должен быть отдельным
 sandbox-счётом с тестовым капиталом. Для входа нужны свежая котировка,
 действующая торговая сессия и сохранённое согласие критика в режиме `sandbox`.
 Для SRZ6 подтверждена лотность 1 и численное равенство цены в пунктах и рублях.
@@ -100,3 +100,30 @@ ID счёта, контракта и компании берутся из диа
 [Документация T‑Invest MCP](https://developer.tbank.ru/invest/mcp) ·
 [Адрес песочницы REST](https://developer.tbank.ru/invest/intro/developer/protocols/) ·
 [PostSandboxStopOrder](https://developer.tbank.ru/invest/api/sandbox-service-post-sandbox-stop-order)
+
+## Отправка через MCP песочницы
+
+Передайте `--transport mcp` в каждую команду цикла. Вход, защитные заявки,
+отмена и рыночный выход отправляются на официальный sandbox MCP Т‑Банка.
+Допуск, чтение счёта и сверка используют Sandbox REST с запретом записи.
+Для просмотра и сопровождения этого цикла в обработчике укажите
+`"order_transport": "mcp"` в локальном профиле и перезапустите обработчик.
+Продолжать уже открытый цикл нужно через тот же транспорт и базу.
+
+Из экспериментального маршрута можно передать каталог
+`.local/runtime/decisions/<revision>/tool-agent-v1` с кандидатом,
+который одобрил критик. Укажите фактический `data_dir`, если он отличается.
+Исполнитель проверяет точную версию предложения, счёт, свежесть и лимиты
+заново. Срок допуска предложения — 60 секунд с момента анализа.
+
+```powershell
+.venv\Scripts\python -m news_futures sandbox-trade start --transport mcp --allow-independent-stops --account $accountId --contract $contractUid --company $companyId --approval $approvalDirectory --database .local/runtime/events.sqlite3 --publications .local/runtime/publications.sqlite3 --ca-file $sandboxCA
+.venv\Scripts\python -m news_futures sandbox-trade reconcile --transport mcp --account $accountId --contract $contractUid --database .local/runtime/events.sqlite3 --ca-file $sandboxCA
+.venv\Scripts\python -m news_futures sandbox-trade close --transport mcp --account $accountId --contract $contractUid --database .local/runtime/events.sqlite3 --ca-file $sandboxCA
+```
+
+В проверенной схеме `invest_create_order` и `invest_create_stoporder` нет
+клиентского ключа операции. При получении ответа журнал сохраняет ID заявки.
+Если квитанция потеряна, исполнитель не повторяет отправку и сохраняет
+блокировку цикла. Сверьте заявку и позицию в песочнице вручную. Простое
+отсутствие заявки в списке активных не доказывает, что её не исполнили.

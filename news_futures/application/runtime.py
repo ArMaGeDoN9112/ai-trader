@@ -203,6 +203,7 @@ class Runtime:
         previous = (RuntimeSettings.model_validate_json(frozen.read_bytes())
                     if result.get('inputs_saved') or (legacy and frozen.is_file()) else settings)
         if (result.get('analysis_strategy', 'fixed') != settings.analysis_strategy
+                or previous.order_transport != settings.order_transport
                 or result['mode'] != settings.mode or previous.account_id != settings.account_id
                 or previous.contracts != settings.contracts):
             result.update(status='skipped', reason='runtime_profile_changed')
@@ -362,6 +363,9 @@ async def run_runtime(
     if on_phase is not None:
         on_phase('directory')
     settings.data_dir.mkdir(parents=True, exist_ok=True)
+    use_mcp = settings.order_transport == 'mcp'
+    if use_mcp:
+        from news_futures.adapters.tbank.mcp_orders import TBankMCPReader, TBankMCPSandbox
     with ExitStack() as stack:
         lock = stack.enter_context(closing(sqlite3.connect(settings.data_dir / 'runtime-lock.sqlite3', timeout=0)))
         try:
@@ -374,11 +378,14 @@ async def run_runtime(
             raise RuntimeErrorInfo('serve уже работает с этим каталогом данных.') from error
         if on_phase is not None:
             on_phase('broker')
-        client = stack.enter_context(sandbox_client(settings.ca_file, read_only=settings.mode == 'observation'))
+        client = stack.enter_context(sandbox_client(settings.ca_file, read_only=use_mcp or settings.mode == 'observation'))
         def reader(contract: str) -> BrokerReader:
-            return TBankReader(client, settings.account_id, contract, settings.contracts[contract])
+            adapter = TBankMCPReader if use_mcp else TBankReader
+            return adapter(client, settings.account_id, contract, settings.contracts[contract])
 
         def broker(contract: str) -> SandboxBroker:
+            if use_mcp:
+                return TBankMCPSandbox(client, settings.account_id, contract, settings.contracts[contract], settings.ca_file)
             return TBankSandbox(client, settings.account_id, contract, settings.contracts[contract])
 
         runtime = Runtime(settings, reader, broker if settings.mode == 'sandbox' else None,

@@ -245,6 +245,9 @@ class RuntimeAcceptance(RiskFixture):
         }), encoding='utf-8')
 
     def test_tool_agent_delegates_and_publishes_a_reviewed_candidate_without_execution(self) -> None:
+        from news_futures.agents.approval import read_approval
+        from news_futures.agents.tool_agent import VERSION
+        from news_futures.common.errors import Rejected
         from news_futures.operator.news import trace_view
 
         def call(name: str, **args: Any) -> dict[str, Any]:
@@ -295,6 +298,16 @@ class RuntimeAcceptance(RiskFixture):
         self.assertEqual(view['critic_status'], 'approved')
         self.assertIn('ask_analyst', {step['kind'] for step in view['steps']})
         self.write_broker.assert_not_called()
+        directory = self.root / 'decisions' / incoming.revision_key() / VERSION
+        proposal, identity, _, context = read_approval(directory)
+        self.assertEqual((identity, proposal.entry_price, context['account']['id']),
+                         (proposals[1]['id'], 301, self.account_id))
+        trace_path = directory / 'trace.json'
+        trace = json.loads(trace_path.read_bytes())
+        trace['outcome']['proposal'] = proposals[0]
+        trace_path.write_text(json.dumps(trace), encoding='utf-8')
+        with self.assertRaisesRegex(Rejected, 'proposal_not_reviewed'):
+            read_approval(directory)
 
     def test_tool_agent_skips_without_broker_data_or_specialists(self) -> None:
         self.tool_agent()

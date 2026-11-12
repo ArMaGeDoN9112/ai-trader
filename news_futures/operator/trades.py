@@ -117,7 +117,7 @@ def trades_view(root: Path, account: str, cycle: str) -> dict[str, Any] | None:
         if db is None or not has_table(db, 'sandbox_cycles'):
             return None if cycle else {'trades': []}
         rows = db.execute("""
-            SELECT * FROM sandbox_cycles WHERE account_id = ? AND source = 'sandbox' AND (? = '' OR id = ?)
+            SELECT * FROM sandbox_cycles WHERE account_id = ? AND source IN ('sandbox', 'sandbox_mcp') AND (? = '' OR id = ?)
             ORDER BY rowid DESC
         """, (account, cycle, cycle))
         results = [trade(root, db, row, publications, detail=bool(cycle)) for row in rows]

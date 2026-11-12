@@ -116,6 +116,8 @@ const labels = {
   protection_unconfirmed: 'Платформа не подтвердила защиту позиции.',
   broker_check_failed: 'Сверка с брокером не подтверждена.',
   broker_reconciliation_required: 'Брокер ещё не подтвердил результат операции.',
+  mcp_order_submission_unconfirmed: 'MCP не вернул ID заявки. Проверьте заявку и позицию в песочнице.',
+  broker_source_mismatch: 'Для сверки выберите транспорт, которым начат торговый цикл.',
   broker_position_mismatch: 'Объём позиции расходится с подтверждёнными исполнениями.',
   executor_busy: 'Исполнитель сверяет другую операцию по счёту.',
   autonomous_protection_unavailable: 'Автономный вход заблокирован. Безопасная связка стопов в песочнице не подтверждена.',

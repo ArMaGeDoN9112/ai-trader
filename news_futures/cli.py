@@ -80,6 +80,7 @@ def main() -> int:
     trade_command.add_argument('--publications', type=Path, default=Path('.local/telegram/archive.sqlite3'))
     trade_command.add_argument('--ca-file', type=Path)
     trade_command.add_argument('--allow-independent-stops', action='store_true')
+    trade_command.add_argument('--transport', choices=('rest', 'mcp'), default='rest')
     for command in (match_command, events_command, correct_command, decision_command, reason_command,
                     trades_command, trade_command):
         command.add_argument('--database', type=Path, default=Path('.local/events.sqlite3'))
@@ -259,6 +260,7 @@ def main() -> int:
                     database=args.database, ca_file=args.ca_file, approval=args.approval,
                     publications=args.publications, close=args.action == 'close',
                     allow_independent_stops=args.allow_independent_stops,
+                    transport=args.transport,
                 )
             except CredentialsError:
                 raise

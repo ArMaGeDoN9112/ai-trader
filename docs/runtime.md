@@ -154,6 +154,9 @@ $report.operations.catalog.data | Where-Object { $_.share_id -eq $future.underly
 Результаты видны в **Решения → трасса публикации** и в разделе `agent` ответа
 `runtime-status --decision`. Кандидат на вход содержит предложение аналитика
 и статус проверки критиком. В этом маршруте брокер подключается для чтения.
+Для ручного запуска по одобренному кандидату используйте
+[`sandbox-trade start --transport mcp`](sandbox-execution.md#отправка-через-mcp-песочницы).
+Для сверки MCP-цикла в обработчике установите `"order_transport": "mcp"`.
 
 Приложение блокирует автономный вход в Т‑Банке с причиной
 `autonomous_protection_unavailable`. Адаптер использует два независимых

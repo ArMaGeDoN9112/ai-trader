@@ -2,6 +2,7 @@
 
 from contextlib import closing
 from pathlib import Path
+from typing import Literal
 
 from news_futures.adapters.tbank.rest import TBankSandbox, sandbox_client
 from news_futures.agents.events import EventArchive
@@ -13,9 +14,16 @@ def run_sandbox_trade(
     *, account_id: str, contract_id: str, company_id: str | None, database: Path,
     ca_file: Path | None, approval: Path | None, publications: Path, close: bool,
     allow_independent_stops: bool,
+    transport: Literal['rest', 'mcp'] = 'rest',
 ) -> dict[str, str]:
-    with sandbox_client(ca_file) as client:
-        broker = TBankSandbox(client, account_id, contract_id, company_id)
+    with sandbox_client(ca_file, read_only=transport == 'mcp') as client:
+        if transport == 'mcp':
+            from news_futures.adapters.tbank.mcp_orders import TBankMCPSandbox
+            broker = TBankMCPSandbox(client, account_id, contract_id, company_id, ca_file)
+            if approval is not None:
+                broker.prepare()
+        else:
+            broker = TBankSandbox(client, account_id, contract_id, company_id)
         with EventArchive(database) as events:
             executor = SandboxExecutor(events, broker)
             if approval is None:
