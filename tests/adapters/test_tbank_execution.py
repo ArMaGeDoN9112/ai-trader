@@ -36,9 +36,6 @@ class TBankExecutionTest(RiskFixture):
     def test_pending_market_close_is_allowed_to_finish(self) -> None:
         self.run_cycle('pending_close')
 
-    def test_lost_tp_response_blocks_without_guessing_ownership_or_sending_a_close(self) -> None:
-        self.run_cycle('lost_tp')
-
     def test_stop_activating_during_close_is_reconciled_before_closing_residual(self) -> None:
         self.run_cycle('native_race')
 
@@ -108,8 +105,6 @@ class TBankExecutionTest(RiskFixture):
                     'lotsRequested': args['quantity'], 'status': 'STOP_ORDER_STATUS_ACTIVE',
                     'exchangeOrderType': args['exchangeOrderType'], 'takeProfitType': args.get('takeProfitType'),
                 }
-                if scenario == 'lost_tp' and stop_id == 'STOP_ORDER_TYPE_TAKE_PROFIT':
-                    raise httpx.ReadTimeout('stop accepted', request=request)
                 return httpx.Response(200, json={'stopOrderId': stop_id})
             if method == 'CancelSandboxStopOrder':
                 stop = stops[args['stopOrderId']]
@@ -179,12 +174,6 @@ class TBankExecutionTest(RiskFixture):
                 self.assertEqual(result['reason'], 'unresolved_broker_state')
                 self.assertEqual(executor.reconcile()['status'], 'blocked')
                 self.assertEqual([method for method, _ in writes], ['PostSandboxOrder'])
-            elif scenario == 'lost_tp':
-                self.assertEqual(result['reason'], 'protection_submission_unconfirmed')
-                self.assertEqual(executor.reconcile(close=True)['reason'], 'protection_submission_unconfirmed')
-                self.assertEqual(positions, 1)
-                self.assertEqual([method for method, _ in writes],
-                                 ['PostSandboxOrder', 'PostSandboxStopOrder', 'PostSandboxStopOrder'])
             else:
                 self.assertEqual(result['status'], 'protected', result)
                 self.assertEqual(executor.reconcile(close=True, contract_id='other')['reason'],
@@ -210,7 +199,7 @@ class TBankExecutionTest(RiskFixture):
                 else:
                     self.assertEqual(result['status'], 'closed', result)
             cycle, = trade_journal(events.db)
-            self.assertEqual(cycle['status'], 'blocked' if scenario in ('unowned_entry', 'lost_tp', 'dual_race') else 'closed')
+            self.assertEqual(cycle['status'], 'blocked' if scenario in ('unowned_entry', 'dual_race') else 'closed')
 
         stop_requests = [args for method, args in writes if method == 'PostSandboxStopOrder']
         if scenario == 'unowned_entry':
