@@ -9,7 +9,7 @@ import tempfile
 from types import SimpleNamespace
 from typing import Any
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from news_futures.news.publications import Archive, utc_now
 from news_futures.adapters.telegram import (
@@ -200,9 +200,55 @@ class TelethonAdapterTest(unittest.IsolatedAsyncioTestCase):
             finally:
                 archive.db.close()
 
+    async def test_channel_push_collects_from_the_saved_cursor_before_the_poll_timeout(self) -> None:
+        from telethon import types
+
+        transport = ControlledTransport()
+        transport.differences = [Difference(10, [], timeout=300)]
+        client = AsyncMock(return_value=SimpleNamespace(pts=1, qts=2, seq=3, date=utc_now()))
+        client.get_me.return_value = SimpleNamespace(id=42)
+        client.add_event_handler = Mock()
+        first_poll, second_poll = asyncio.Event(), asyncio.Event()
+
+        def on_source(name: str, ok: bool, delay: int) -> None:
+            (second_poll if first_poll.is_set() else first_poll).set()
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            database = root / 'archive.sqlite3'
+            with (patch('news_futures.adapters.telegram.open_client', return_value=client),
+                  patch('news_futures.adapters.telegram.TelethonTransport', return_value=transport),
+                  patch('sys.stdout', new_callable=StringIO)):
+                task = asyncio.create_task(run_telegram(
+                    ['example'], database, root / 'user.session', False, on_source=on_source,
+                ))
+                try:
+                    await asyncio.wait_for(first_poll.wait(), 2)
+                    client.set_receive_updates.assert_awaited_once_with(True)
+                    handler = client.add_event_handler.call_args.args[0]
+                    post = replace(transport.original, external_id='2', published_at=utc_now())
+                    transport.differences = [Difference(11, [post], timeout=300)]
+                    await handler(types.UpdateDeleteChannelMessages(999, [1], 11, 1))
+                    with self.assertRaises(TimeoutError):
+                        await asyncio.wait_for(second_poll.wait(), 0.05)
+                    message = types.Message(2, types.PeerChannel(123), date=post.published_at)
+                    await handler(types.UpdateNewChannelMessage(message, 11, 1))
+                    await asyncio.wait_for(second_poll.wait(), 2)
+                    self.assertEqual(transport.requests, [10, 10])
+                    archive = Archive(database)
+                    try:
+                        self.assertIsNotNone(archive.latest_revision(post.record()['id']))
+                    finally:
+                        archive.db.close()
+                finally:
+                    task.cancel()
+                    with self.assertRaises(asyncio.CancelledError):
+                        await task
+
     async def test_stop_waits_for_the_queue_consumer_to_finish_draining(self) -> None:
         client = AsyncMock(return_value=SimpleNamespace(pts=1, qts=2, seq=3, date=utc_now()))
         client.get_me.return_value = SimpleNamespace(id=42)
+        client.add_event_handler = Mock()
         started, draining, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
 
         async def process() -> None:

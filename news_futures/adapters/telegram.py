@@ -1,4 +1,4 @@
-"""Pull channel differences from application-owned pts, not SDK event acknowledgements."""
+"""Pull channel differences from application-owned pts, with push notifications as wakeups."""
 
 import asyncio
 from collections.abc import Awaitable, Callable
@@ -105,14 +105,20 @@ async def collect(transport: Transport, archive: Archive, source: Source, *,
 async def watch_channel(transport: Transport, archive: Archive, username: str, once: bool, *,
                         first_poll: asyncio.Event | None = None,
                         on_source: Callable[[str, bool, int], None] | None = None,
-                        live_since: datetime | None = None) -> bool:
+                        live_since: datetime | None = None,
+                        wakeups: dict[int, asyncio.Event] | None = None) -> bool:
     source: Source | None = None
+    wake: asyncio.Event | None = None
     while True:
         delay = 5
         ok = False
         try:
             if source is None:
                 source = await transport.resolve(username)
+                if wakeups is not None:
+                    wake = wakeups.setdefault(source.channel_id, asyncio.Event())
+            if wake is not None:
+                wake.clear()
             delay = await collect(transport, archive, source, live_since=live_since)
             ok = True
             print(json.dumps({'source': source.id, 'status': 'received'}, ensure_ascii=False), flush=True)
@@ -132,7 +138,13 @@ async def watch_channel(transport: Transport, archive: Archive, username: str, o
             return ok
         if first_poll is not None:
             first_poll.set()
-        await asyncio.sleep(delay)
+        if ok and wake is not None:
+            try:
+                await asyncio.wait_for(wake.wait(), timeout=delay)
+            except TimeoutError:
+                pass
+        else:
+            await asyncio.sleep(delay)
 
 
 async def process_queue(process: Callable[[], Awaitable[None]]) -> None:
@@ -287,7 +299,7 @@ async def run_telegram(
     client = await open_client(path, login=False)
     archive: Archive | None = None
     try:
-        from telethon import functions
+        from telethon import events, functions, types
         identity_path = path.with_suffix('.identity')
         if not identity_path.exists():
             with identity_path.open('x', encoding='utf-8') as identity:
@@ -298,6 +310,22 @@ async def run_telegram(
             'pts': state.pts, 'qts': state.qts, 'seq': state.seq, 'date': state.date.isoformat(),
         })
         transport = TelethonTransport(client)
+        wakeups: dict[int, asyncio.Event] = {}
+
+        async def channel_update(update: Any) -> None:
+            channel_id = (getattr(update.message.peer_id, 'channel_id', None)
+                          if isinstance(update, (types.UpdateNewChannelMessage, types.UpdateEditChannelMessage))
+                          else update.channel_id)
+            if channel_id in wakeups:
+                wakeups[channel_id].set()
+
+        if not once:
+            client.add_event_handler(channel_update, events.Raw(types=(
+                types.UpdateNewChannelMessage, types.UpdateEditChannelMessage,
+                types.UpdateDeleteChannelMessages, types.UpdateChannelTooLong,
+            )))
+            await client.set_receive_updates(True)
+
         async def simulate() -> None:
             assert archive is not None
             archive.process_pending()
@@ -306,7 +334,7 @@ async def run_telegram(
         ready = [asyncio.Event() for _ in channels]
         async with asyncio.TaskGroup() as tasks:
             watchers = [tasks.create_task(watch_channel(transport, archive, name, once, first_poll=polled,
-                                                        on_source=on_source, live_since=live_since))
+                                                        on_source=on_source, live_since=live_since, wakeups=wakeups))
                         for name, polled in zip(channels, ready)]
             if not once:
                 await asyncio.gather(*(polled.wait() for polled in ready))
