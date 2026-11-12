@@ -23,6 +23,7 @@ from news_futures.agents.contracts import (
 )
 from news_futures.common.artifacts import move_artifact, replace_json, write_json
 from news_futures.common.credentials import load_token
+from news_futures.common.errors import error_code
 from news_futures.common.paths import CONTROL_CASE
 from news_futures.news.publications import utc_now
 
@@ -186,6 +187,7 @@ def review_cycle(
                 previous = data['proposal']
                 if previous and output == {key: value for key, value in previous.items() if key != 'id'}:
                     raise ValueError('unchanged_revision')
+                result = schema.model_validate(output)
                 output['id'] = proposal_id
                 record['formed_at'] = utc_now().isoformat()
             else:
@@ -198,7 +200,7 @@ def review_cycle(
             return result
         except Exception as error:
             # Exception text can contain request headers, keys or model content.
-            record['error'] = type(error).__name__
+            record['error'] = error_code(error)
             raise
         finally:
             record['at'] = utc_now().isoformat()
@@ -218,7 +220,7 @@ def review_cycle(
             return {'proposal': proposal, 'proposal_id': proposal_id, 'calls': calls, 'review': None,
                     'previous_review': review, 'revisions': state['revisions'] + int(review is not None)}
         except Exception as error:
-            return {'error': type(error).__name__, 'calls': calls, 'proposal': None, 'review': None}
+            return {'error': error_code(error), 'calls': calls, 'proposal': None, 'review': None}
 
     def critic(state: CycleState) -> dict[str, Any]:
         calls = list(state['calls'])
@@ -230,7 +232,7 @@ def review_cycle(
             }, calls)
             return {'review': review, 'calls': calls}
         except Exception as error:
-            return {'error': type(error).__name__, 'calls': calls, 'review': None}
+            return {'error': error_code(error), 'calls': calls, 'review': None}
 
     graph: StateGraph[CycleState, None, CycleState, CycleState] = StateGraph(CycleState)
     graph.add_node('analyst', analyst)

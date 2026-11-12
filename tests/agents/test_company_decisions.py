@@ -150,6 +150,7 @@ class CompanyDecisionTest(unittest.TestCase):
         code, rejected = self.analyze(event, [{**enter, 'assessments': [forged]}])
         self.assertEqual(code, 1)
         self.assertIsNone(rejected['approved_proposal'])
+        self.assertEqual(rejected['error'], 'unverifiable_source_quote')
         # A genuine quote can still fail to establish company exposure.
         enter['assessments'] = [self.assessment('sber', event)]
         code, trace = self.analyze(event, [enter, review(False), skip, review()])
@@ -160,6 +161,22 @@ class CompanyDecisionTest(unittest.TestCase):
         context = trace['calls'][1]['input']['context']
         self.assertTrue(context['event']['links'][0]['requires_analyst_review'])
         self.assertEqual(trace['calls'][2]['input']['review']['approved'], False)
+
+    def test_skip_keeps_only_verifiable_evidence_for_unverified_impact(self) -> None:
+        event = self.archive('ЕС согласовал санкции. Перечень опубликуют позже.', 'sber', inferred=True)
+        valid = {'revision': event['revision'], 'quote': 'ЕС согласовал санкции.'}
+        invalid = {'revision': event['links'][0]['publication_revision_sha256'],
+                   'quote': 'ЕС согласовал санкции... опубликуют позже.'}
+        assessment = self.assessment('sber', None) | {'evidence': [invalid, valid]}
+        skip = self.proposal(event, 'skip', None, [assessment])
+        code, trace = self.analyze(event, [skip, review()])
+        self.assertEqual(code, 0)
+        self.assertEqual(trace['status'], 'no_action')
+        self.assertIsNone(trace['approved_proposal'])
+        analyst, critic = trace['calls']
+        self.assertEqual(json.loads(analyst['raw_output'])['assessments'][0]['evidence'], [invalid, valid])
+        self.assertEqual(analyst['output']['assessments'][0]['evidence'], [valid])
+        self.assertEqual(critic['input']['proposal']['assessments'][0]['evidence'], [valid])
 
     def test_refutation_can_close_but_cannot_rewrite_the_original_entry_reason(self) -> None:
         thesis = 'Рост прибыли Сбера опирался на опубликованный прогноз.'

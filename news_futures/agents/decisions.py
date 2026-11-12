@@ -13,6 +13,7 @@ from news_futures.agents.entry_context import entry_reason, restore_entry_source
 from news_futures.agents.review import chat_model, review_cycle
 from news_futures.agents.events import EventArchive, model_publication
 from news_futures.common.artifacts import replace_json
+from news_futures.common.errors import RuntimeErrorInfo
 from news_futures.news.publications import utc_now
 
 
@@ -35,7 +36,10 @@ original claims from corrections and repetitions.
 
 Analyst: assess each supplied candidate contract exactly once. In each assessment
 give a comparative reason based on the news and market, and cite exact quotes
-with the source revision. Mark impact verified only when the supplied evidence
+with the source revision. Use event.revision for the incoming publication and
+related_news[].revision for earlier sources. Copy a continuous excerpt verbatim,
+including punctuation. For a skip with unverified impact, use an empty evidence
+list when you have no exact supporting quote. Mark impact verified only when the supplied evidence
 substantiates the impact of the incoming news on that company. Without a position,
 compare all candidates and choose at most one allowed long or short entry, or
 skip with null company_id and contract_id. Give a comparative reason for the
@@ -139,8 +143,11 @@ def validate_company_proposal(proposal: dict[str, Any], context: dict[str, Any])
     texts = {row['revision']: row['publication']['text'] for row in context['related_news']}
     texts[trigger] = context['publication']['text']
     for assessment in assessments.values():
-        if any(ref['quote'] not in texts.get(ref['revision'], '') for ref in assessment['evidence']):
-            raise ValueError('unverifiable_source_quote')
+        evidence = [ref for ref in assessment['evidence'] if ref['quote'] in texts.get(ref['revision'], '')]
+        if action == 'skip' and assessment['impact'] == 'unverified':
+            assessment['evidence'] = evidence
+        elif len(evidence) != len(assessment['evidence']):
+            raise RuntimeErrorInfo('unverifiable_source_quote')
         if assessment['impact'] == 'verified' and not any(
             ref['revision'] == trigger for ref in assessment['evidence']
         ):
