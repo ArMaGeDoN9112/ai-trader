@@ -90,6 +90,7 @@ const labels = {
   OpenAITimeoutError: 'Сервис модели не ответил в пределах тайм-аута',
   APITimeoutError: 'Сервис модели не ответил в пределах тайм-аута',
   OpenAIRateLimitError: 'Сервис модели ограничил частоту запросов',
+  OpenAIModelNotFoundError: 'Сервис не нашёл модель, доступную с параметрами запроса',
   invalid_model_response: 'Ответ модели не прошёл проверку формата',
   invalid_candidate_assessment: 'Ответ модели противоречит правилам сопоставления',
   unverifiable_source_quote: 'Цитата не совпадает с текстом указанной редакции',

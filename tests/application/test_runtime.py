@@ -324,7 +324,8 @@ class RuntimeAcceptance(RiskFixture):
         self.assertNotEqual(proposals[0]['id'], proposals[1]['id'])
         self.assertEqual(report['result']['proposal']['id'], proposals[1]['id'])
         self.assertEqual(endpoint.requests[0]['model'], 'test/coordinator')
-        self.assertFalse(endpoint.requests[0]['parallel_tool_calls'])
+        self.assertNotIn('parallel_tool_calls', endpoint.requests[0])
+        self.assertTrue(endpoint.requests[0]['provider']['require_parameters'])
         view = trace_view(self.root, self.account_id, incoming.revision_key())
         assert view is not None
         self.assertEqual(view['critic_status'], 'approved')

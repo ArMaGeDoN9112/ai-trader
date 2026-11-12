@@ -151,7 +151,9 @@ def run_tool_agent(
             ).invoke(messages)
             raw = response['raw']
         else:
-            raw = model.bind_tools(list(TOOLS.values()), parallel_tool_calls=False).invoke(messages)
+            # OpenRouter can exclude otherwise compatible endpoints when this optional flag is sent.
+            parallel_tool_calls = False if role.aggregator == 'groq' else None
+            raw = model.bind_tools(list(TOOLS.values()), parallel_tool_calls=parallel_tool_calls).invoke(messages)
         if not isinstance(raw, AIMessage):
             raise RuntimeErrorInfo('invalid_model_response')
         metadata, usage = raw.response_metadata, raw.usage_metadata or {}
