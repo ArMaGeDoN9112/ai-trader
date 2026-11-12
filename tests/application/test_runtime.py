@@ -238,6 +238,89 @@ class RuntimeAcceptance(RiskFixture):
     def sandbox(self) -> None:
         self.profile.write_text(json.dumps(self.profile_data | {'mode': 'sandbox'}), encoding='utf-8')
 
+    def tool_agent(self) -> None:
+        self.profile.write_text(json.dumps(self.profile_data | {
+            'analysis_strategy': 'tool_agent',
+            'coordinator': {'model': 'test/coordinator'},
+        }), encoding='utf-8')
+
+    def test_tool_agent_delegates_and_publishes_a_reviewed_candidate_without_execution(self) -> None:
+        from news_futures.operator.news import trace_view
+
+        def call(name: str, **args: Any) -> dict[str, Any]:
+            return {'tool_calls': [{'id': 'call-' + name, 'type': 'function',
+                                    'function': {'name': name, 'arguments': json.dumps(args)}}]}
+
+        def tool_results(body: dict[str, Any]) -> list[dict[str, Any]]:
+            return [json.loads(message['content']) for message in body['messages'] if message['role'] == 'tool']
+
+        self.tool_agent()
+        incoming = self.news(self.market, 'SBER опубликовал повышенный прогноз.')
+        endpoint = self.serve(
+            call('get_company_news', company_id='sber'),
+            call('get_market_context', contract_id=self.contract_id),
+            lambda body: call('ask_analyst', company_id='sber', question='Проверь прогноз.',
+                              evidence_ids=[item['observation_id'] for item in tool_results(body)]),
+            {'proposal': self.proposal('enter', incoming), 'missing_data': []},
+            lambda body: call('ask_critic', proposal_id=tool_results(body)[-1]['id']),
+            review(False),
+            call('get_company_news', company_id='sber', query='прогноз'),
+            lambda body: call('ask_analyst', company_id='sber', question='Проверь возражение.',
+                              evidence_ids=[item['observation_id'] for item in tool_results(body)
+                                            if 'observation_id' in item],
+                              prior_proposal_id=tool_results(body)[-2]['proposal_id']),
+            {'proposal': self.proposal('enter', incoming) | {'entry_price': 301, 'reason': 'Уточнённое основание входа.'},
+             'missing_data': []},
+            lambda body: call('ask_critic', proposal_id=tool_results(body)[-1]['id']),
+            review(),
+            lambda body: {'status': 'candidate', 'reason': 'Прогноз подтверждён.',
+                          'proposal_id': tool_results(body)[-1]['proposal_id']},
+        )
+        report = self.report(incoming)
+        self.assertEqual(report['result']['status'], 'candidate')
+        self.assertEqual(report['result']['critic_status'], 'approved')
+        self.assertEqual([call['kind'] for call in report['agent']['calls']], [
+            'coordinator', 'get_company_news', 'coordinator', 'get_market_context',
+            'coordinator', 'ask_analyst', 'coordinator', 'ask_critic',
+            'coordinator', 'get_company_news', 'coordinator', 'ask_analyst',
+            'coordinator', 'ask_critic', 'coordinator',
+        ])
+        proposals = [call['output'] for call in report['agent']['calls'] if call['kind'] == 'ask_analyst']
+        self.assertNotEqual(proposals[0]['id'], proposals[1]['id'])
+        self.assertEqual(report['result']['proposal']['id'], proposals[1]['id'])
+        self.assertEqual(endpoint.requests[0]['model'], 'test/coordinator')
+        self.assertFalse(endpoint.requests[0]['parallel_tool_calls'])
+        view = trace_view(self.root, self.account_id, incoming.revision_key())
+        assert view is not None
+        self.assertEqual(view['critic_status'], 'approved')
+        self.assertIn('ask_analyst', {step['kind'] for step in view['steps']})
+        self.write_broker.assert_not_called()
+
+    def test_tool_agent_skips_without_broker_data_or_specialists(self) -> None:
+        self.tool_agent()
+        incoming = self.news(self.market, 'SBER подтвердил расписание вебинара.')
+        with patch.object(self.broker, 'read_risk', side_effect=OSError):
+            endpoint = self.serve({'status': 'skip', 'reason': 'Нет существенного события.', 'proposal_id': None})
+        self.assertEqual(self.report(incoming)['result']['status'], 'skipped')
+        self.assertEqual(len(endpoint.requests), 1)
+        self.write_broker.assert_not_called()
+
+    def test_tool_agent_rejects_unknown_tool_and_unregistered_candidate(self) -> None:
+        self.tool_agent()
+        incoming = self.news(self.market, 'SBER опубликовал прогноз.')
+
+        def forged_candidate(body: dict[str, Any]) -> dict[str, Any]:
+            self.assertEqual(json.loads(body['messages'][-1]['content']), {'error': 'unknown_tool'})
+            return {'status': 'candidate', 'reason': 'Непроверенное предложение.', 'proposal_id': 'fabricated'}
+
+        self.serve({'tool_calls': [{'id': 'write', 'type': 'function',
+                                   'function': {'name': 'request_entry', 'arguments': '{}'}}]},
+                   forged_candidate, code=1)
+        report = self.report(incoming)
+        self.assertEqual(report['result']['reason'], 'unknown_proposal_reference')
+        self.assertNotIn('proposal', report['result'])
+        self.write_broker.assert_not_called()
+
     def test_category_selection_appears_before_company_routing_in_the_runtime_trace(self) -> None:
         self.futures_snapshot['categories']['oil_gas'] = 'Нефтегаз'
         self.futures_snapshot['assets'][1]['categories'] = ['oil_gas']

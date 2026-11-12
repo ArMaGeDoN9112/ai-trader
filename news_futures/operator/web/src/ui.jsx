@@ -6,6 +6,7 @@ export function Badge({ value, children, tone }) {
     connected: 'green', running: 'green', confirmed: 'green', open: 'green', approved: 'green',
     protected: 'green', sandbox: 'purple', observation: 'purple', failed: 'red', rejected: 'red',
     unavailable: 'red', blocked: 'amber', paused: 'amber', pending: 'amber', processing: 'amber', starting: 'amber',
+    candidate: 'purple', insufficient_data: 'amber',
     stopping: 'amber', unconfirmed: 'amber',
   })[value] || 'neutral';
   return <span className={'badge ' + color}><i />{children || label(value)}</span>;

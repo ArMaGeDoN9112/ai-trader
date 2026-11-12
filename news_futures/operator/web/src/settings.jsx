@@ -12,21 +12,25 @@ export function Settings({ settings, status, online, busy, command, error }) {
   if (!settings) return <Panel title="Конфигурация" icon={SlidersHorizontal}><Empty>Загрузка настроек…</Empty></Panel>;
   const { saved, active, changed_at, models_at, profile_at } = settings;
   const values = draft || { mode: saved.mode, channels: saved.channels.join('\n'),
+    analysis_strategy: saved.analysis_strategy || 'fixed',
     contracts: Object.entries(saved.contracts).map(item => item.join(' = ')).join('\n'),
     aggregator: saved.aggregator, models: saved.models, groq_models: saved.groq_models };
   const set = (field, value) => setDraft({ ...values, base: draft?.base || saved, [field]: value });
-  const restart = ['channels', 'contracts'].some(key => JSON.stringify(active[key]) !== JSON.stringify(saved[key]));
+  const restart = ['channels', 'contracts', 'analysis_strategy']
+    .some(key => JSON.stringify(active[key]) !== JSON.stringify(saved[key]));
   const activeModels = roles.map(([id, name]) => [name, <span className="mono">{active.models[id]}</span>]);
   return <form className="stack" onSubmit={async event => {
     event.preventDefault();
     const contracts = lines(values.contracts).map(line => line.split('=').map(item => item.trim()));
     const result = await command('settings', { base: draft?.base || saved, mode: values.mode, channels: lines(values.channels),
-      contracts, aggregator: values.aggregator, models: values.models, groq_models: values.groq_models });
+      contracts, analysis_strategy: values.analysis_strategy,
+      aggregator: values.aggregator, models: values.models, groq_models: values.groq_models });
     if (result) setDraft(null);
   }}>
     <div className="settings-grid">
       <Panel title="Режим и контракты" icon={SlidersHorizontal}>
         <Facts rows={[['Счёт', status.account_id || '—'], ['Активный режим', label(active.mode)],
+          ['Маршрут анализа', label(active.analysis_strategy || 'fixed')],
           ['Активные контракты', Object.keys(active.contracts).join(', ')] , ['Применено', time(profile_at)]]} />
         <label className="field">Сохранённый режим<select value={values.mode}
           disabled={!['stopped', 'failed'].includes(status.worker) || !online || busy}
@@ -34,6 +38,14 @@ export function Settings({ settings, status, online, busy, command, error }) {
           <option value="observation">Наблюдение</option><option value="sandbox">Песочница</option>
         </select></label>
         <p className="muted">Смена режима требует остановки обработчика и сверки свободного счёта.</p>
+        <label className="field">Маршрут анализа<select id="analysis-strategy" value={values.analysis_strategy}
+          onChange={event => set('analysis_strategy', event.target.value)}>
+          <option value="fixed">Фиксированный маршрут</option>
+          <option value="tool_agent" disabled={values.mode !== 'observation'}>Агент с инструментами</option>
+        </select></label>
+        <p className="muted">Агент доступен в режиме наблюдения. Маршрут применяется при запуске обработчика.</p>
+        {values.mode === 'sandbox' && values.analysis_strategy === 'tool_agent' &&
+          <Notice error>Для песочницы выберите фиксированный маршрут.</Notice>}
         <label className="field">Разрешённые контракты<textarea rows={4} spellCheck={false} aria-invalid={error === 'invalid_contracts'}
           placeholder="UID = компания" value={values.contracts} onChange={event => set('contracts', event.target.value)} /></label>
         <p className="muted">Одна пара «UID контракта = идентификатор компании» в строке.</p>
@@ -70,7 +82,8 @@ export function Settings({ settings, status, online, busy, command, error }) {
     </Panel>
     <div className="save-bar"><small>Последнее сохранение · {time(changed_at)}</small>
       {draft && <button className="button secondary" type="button" onClick={() => setDraft(null)}>Сбросить правки</button>}
-      <button className="button primary" disabled={busy || !online || !draft}><Save size={16} />Сохранить настройки</button>
+      <button className="button primary" disabled={busy || !online || !draft ||
+        (values.mode === 'sandbox' && values.analysis_strategy === 'tool_agent')}><Save size={16} />Сохранить настройки</button>
     </div>
   </form>;
 }

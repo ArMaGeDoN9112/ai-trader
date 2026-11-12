@@ -148,6 +148,7 @@ a.list-row:hover { color: var(--text); background: var(--raised); }
 .inline-state { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; background: var(--raised); padding: 11px; border-radius: 9px; }
 .event + .event { margin-top: 16px; }
 .event h3 { margin: 0 0 8px; font-size: .91rem; }
+.agent-trace-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 12px; color: var(--muted); font-size: .85rem; }
 .timeline { overflow-anchor: none; list-style: none; padding: 0 0 0 13px; margin: 0 0 0 4px; border-left: 1px solid #51476b; }
 .step { position: relative; margin: 0 0 9px; }
 .step:last-child { margin-bottom: 0; }

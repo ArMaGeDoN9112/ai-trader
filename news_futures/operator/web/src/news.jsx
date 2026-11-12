@@ -156,7 +156,13 @@ const steps = {
   analyst: 'Предложение аналитика', critic: 'Ответ критика',
   revision: 'Пересмотр аналитика', review: 'Проверка предложения', risk: 'Проверка риска',
   execution: 'Исполнитель', processing: 'Обработка',
+  agent: 'Решение координатора', coordinator: 'Ход координатора',
+  get_company_news: 'Поиск новостей компании', get_market_context: 'Проверка рынка',
+  ask_analyst: 'Анализ компании', ask_critic: 'Проверка критиком', agent_tool: 'Вызов инструмента',
 };
+
+const agentSteps = new Set(['coordinator', 'get_company_news', 'get_market_context',
+  'ask_analyst', 'ask_critic', 'agent_tool']);
 
 function TechnicalDetails({ input, output }) {
   const [open, setOpen] = useState(false);
@@ -223,13 +229,47 @@ function EventEvidence({ step }) {
   </>;
 }
 
+function AgentEvidence({ step, news }) {
+  const { output, arguments: args, error, actual_model, requested_model, latency_ms } = step.output || {};
+  const rows = [];
+  const company = args?.company_id || output?.company_id;
+  if (company) rows.push(['Компания', companyName(news, company)]);
+  if (args?.query) rows.push(['Поисковый запрос', args.query]);
+  if (output?.news) rows.push(['Публикаций найдено', output.news.length]);
+  if (output?.instrument) rows.push(['Контракт', contractName(news, output.instrument.contract_id)],
+    ['Последняя цена', output.instrument.market.last_price], ['Котировка на', time(output.instrument.market.observed_at)]);
+  if (output?.tool) rows.push(['Следующий шаг', steps[output.tool] || 'Неизвестный инструмент']);
+  if (output?.action) rows.push(['Предложение', label(output.action)]);
+  if (output?.missing_data?.length) rows.push(['Недостающие данные', output.missing_data.join(' · ')]);
+  if (typeof output?.approved === 'boolean') rows.push(['Заключение', label(output.approved ? 'approved' : 'rejected')]);
+  if (actual_model || requested_model) rows.push(['Модель', actual_model || requested_model]);
+  if (latency_ms != null) rows.push(['Время вызова', (latency_ms / 1000).toLocaleString('ru-RU') + ' с']);
+  return <>
+    {error && <Notice error>{label(error)}</Notice>}
+    {output?.reason && <p className="preserve">{output.reason}</p>}
+    {output?.objections?.length > 0 && <ul className="routing-links">
+      {output.objections.map((objection, index) => <li key={index}>{objection}</li>)}
+    </ul>}
+    {rows.length > 0 && <Facts rows={rows} />}
+    <SourceLinks data={output?.news} />
+    <TechnicalDetails input={step.input || args} output={step.output} />
+  </>;
+}
+
 function TraceEvidence({ step, news }) {
   if (step.id === 'outcome') {
+    const { proposal, critic_status } = step.output || {};
     return <>
       <p>{label(step.output?.reason || step.status)}</p>
+      {proposal && <Facts rows={[
+        ['Контракт', contractName(news, proposal.contract_id)], ['Направление', label(proposal.side)],
+        ['Цена входа', proposal.entry_price], ['Стоп-лосс', proposal.stop_loss],
+        ['Тейк-профит', proposal.take_profit], ['Проверка критиком', label(critic_status)],
+      ]} />}
       {Object.keys(step.output || {}).some(key => key !== 'reason') && <TechnicalDetails output={step.output} />}
     </>;
   }
+  if (agentSteps.has(step.kind)) return <AgentEvidence step={step} news={news} />;
   if (step.kind === 'publication') {
     return <><Evidence value={step.output} publication /><SourceLinks data={step.output} /></>;
   }
@@ -268,6 +308,10 @@ export function Trace({ revision, from, news, refresh }) {
     {error && <Notice error>{error === 'not_found' ? 'Трасса не найдена.' : label(error)}</Notice>}
     <Panel title={data?.title || 'Ход обработки публикации'} icon={Workflow} actions={data && <Badge value={data.status} />}
       hint={data && [...data.companies.map(id => companyName(news, id)), time(data.at)].join(' · ')}>
+      {data?.analysis_strategy === 'tool_agent' && <div className="agent-trace-summary">
+        <Badge value="tool_agent" tone="purple" />
+        {data.critic_status && <span>Критик · {label(data.critic_status)}</span>}
+      </div>}
       {data?.reason && <Notice error={data.status === 'failed'}>{label(eventError || data.reason)}</Notice>}
       <ul id="trace-steps" className="timeline">{data?.steps.map(step => <Step key={step.id} id={step.id}
         title={(step.id === 'outcome' && step.status !== 'processing' ? 'Итог · ' : '') + (steps[step.kind] || step.kind)}

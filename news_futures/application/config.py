@@ -4,10 +4,10 @@ import json
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from news_futures.agents.company import Nonempty
-from news_futures.agents.contracts import Aggregator, Contract, Settings
+from news_futures.agents.contracts import Aggregator, Contract, RoleSettings, Settings
 from news_futures.agents.routing import JevSettings, catalog_rows, load_catalog
 from news_futures.common.errors import RuntimeErrorInfo
 from news_futures.common.paths import EVENT_SETTINGS, JEV_SETTINGS, REVIEW_SETTINGS, TELEGRAM_SOURCES, config_path
@@ -22,12 +22,20 @@ class RuntimeSettings(Contract):
     account_id: Nonempty
     contracts: dict[Nonempty, Nonempty] = Field(min_length=1)  # contract UID -> company ID
     mode: Literal['observation', 'sandbox'] = 'observation'
+    analysis_strategy: Literal['fixed', 'tool_agent'] = 'fixed'
+    coordinator: RoleSettings | None = None
     sources: Path = TELEGRAM_SOURCES
     session: Path | None = None
     jev: Path = JEV_SETTINGS
     matcher: Path = EVENT_SETTINGS
     review: Path = REVIEW_SETTINGS
     ca_file: Path | None = None
+
+    @model_validator(mode='after')
+    def analysis_permissions(self) -> 'RuntimeSettings':
+        if self.analysis_strategy == 'tool_agent' and self.mode != 'observation':
+            raise ValueError('tool_agent_requires_observation')
+        return self
 
     @property
     def publications(self) -> Path:

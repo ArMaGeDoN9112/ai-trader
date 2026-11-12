@@ -34,10 +34,12 @@ class BrokerAccount:
                 )
         return None
 
-    def read_markets(self, catalog: bytes) -> list[RiskSnapshot]:
+    def read_markets(self, catalog: bytes, *, only_contract: str | None = None) -> list[RiskSnapshot]:
         listed = {(row.company_id, row.share_id) for row in catalog_rows(catalog)}
         readings = []
         for contract_id, company_id in self.contracts.items():
+            if only_contract is not None and contract_id != only_contract:
+                continue
             risk = RiskSnapshot.model_validate(self.reader(contract_id).read_risk(self.account_id, contract_id))
             contract = risk.contract
             if (risk.account_id != self.account_id or contract.contract_id != contract_id
@@ -47,7 +49,8 @@ class BrokerAccount:
             readings.append(risk)
         return readings
 
-    def snapshot(self, events: EventArchive, catalog: bytes) -> tuple[Snapshot, dict[str, Any], list[RiskSnapshot]]:
+    def snapshot(self, events: EventArchive, catalog: bytes, *,
+                 only_contract: str | None = None) -> tuple[Snapshot, dict[str, Any], list[RiskSnapshot]]:
         active = active_cycles(events.db, self.account_id)
         position = None
         protection: dict[str, Any] = {'status': 'none'}
@@ -82,7 +85,7 @@ class BrokerAccount:
         companies = load_catalog(catalog)
         instruments = []
         account = None
-        readings = self.read_markets(catalog)
+        readings = self.read_markets(catalog, only_contract=only_contract)
         for risk in readings:
             contract = risk.contract
             if risk.execution_uncertain or risk.has_position != bool(position) or (

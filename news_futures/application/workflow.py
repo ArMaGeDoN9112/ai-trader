@@ -4,6 +4,7 @@ from collections.abc import Callable
 from contextlib import closing
 from datetime import datetime
 from hashlib import sha256
+import json
 from pathlib import Path
 import sqlite3
 from threading import Event
@@ -19,10 +20,12 @@ from news_futures.agents.company import MAX_SNAPSHOT_AGE, OpenPosition, Snapshot
 from news_futures.agents.decisions import analyze_event
 from news_futures.agents.events import EventArchive, match_route
 from news_futures.agents.routing import route_publication
+from news_futures.agents.tool_agent import run_tool_agent, VERSION
 from news_futures.application.checkpoints import checkpoint_serializer
 from news_futures.common.artifacts import move_artifact, replace_json
 from news_futures.news.publications import Archive, utc_now
 from news_futures.trading.risk import MAX_NEWS_AGE
+from news_futures.trading.terms import ContractSnapshot
 from news_futures.application.config import RuntimeSettings
 from news_futures.common.errors import error_code
 from news_futures.application.records import review_path
@@ -42,13 +45,15 @@ class NewsState(TypedDict, total=False):
     position_id: str | None
     proposal: dict[str, Any] | None
     review_attempt: str | None
+    critic_status: str
 
 
 def analyze_news(
     settings: RuntimeSettings, directory: Path, publication: dict[str, Any], revision: str, *,
     read_snapshot: Callable[[EventArchive], Snapshot], current_position: Callable[[], OpenPosition | None],
-    stop: Event,
+    stop: Event, read_market: Callable[[EventArchive, str, float], tuple[Snapshot, ContractSnapshot]] | None = None,
 ) -> NewsState:
+    tool_agent = settings.analysis_strategy == 'tool_agent'
 
     def route(_: NewsState) -> NewsState:
         route_dir = directory / 'route'
@@ -70,8 +75,11 @@ def analyze_news(
         with EventArchive(settings.events) as events:
             event = match_route(events, directory / 'route')
         replace_json(directory / 'event.json', event)
-        affected = sorted({link['company_id'] for link in event['links']})
+        affected = (event['analysis_company_ids'] if tool_agent
+                    else sorted({link['company_id'] for link in event['links']}))
         result: NewsState = {'decision_id': event['decision_id'], 'affected': affected}
+        if tool_agent and event['kind'] == 'repeat':
+            return result | {'status': 'skipped', 'reason': 'repeat', 'stage': 'event'}
         if not set(affected).intersection(settings.contracts.values()):
             return result | {'status': 'skipped', 'reason': 'no_allowed_company'}
         return result
@@ -90,16 +98,46 @@ def analyze_news(
                 LIMIT 1
             """, (publication['text'], publication['published_at'])).fetchone():
                 return {'status': 'skipped', 'reason': 'historical_reprint'}
-            snapshot = read_snapshot(events)
-        if snapshot.position:
-            contract = snapshot.position.contract_id
+            snapshot = None if tool_agent else read_snapshot(events)
+        position = snapshot.position if snapshot is not None else current_position()
+        if position:
+            contract = position.contract_id
             reason = ('position_already_open' if settings.contracts[contract] in state['affected']
                       else 'account_position_limit')
             return {'status': 'skipped', 'reason': reason, 'held_contract_id': contract}
         if utc_now() - datetime.fromisoformat(publication['published_at']) > MAX_NEWS_AGE:
             return {'status': 'skipped', 'reason': 'publication_context_only'}
-        replace_json(directory / 'snapshot.json', snapshot.model_dump(mode='json'))
+        if snapshot is not None:
+            replace_json(directory / 'snapshot.json', snapshot.model_dump(mode='json'))
         return {}
+
+    def agent(state: NewsState) -> NewsState:
+        assert read_market is not None
+        event = json.loads((directory / 'event.json').read_bytes())
+        contracts = {uid: company for uid, company in settings.contracts.items() if company in state['affected']}
+        archive = Archive(settings.publications)
+        with EventArchive(settings.events) as events, closing(archive.db):
+            def check_current() -> str | None:
+                latest = archive.latest_revision(publication['id'])
+                if latest is None or latest['revision'] != revision:
+                    return 'publication_revision_superseded'
+                if utc_now() - datetime.fromisoformat(publication['published_at']) > MAX_NEWS_AGE:
+                    return 'publication_context_only'
+                if current_position():
+                    return 'position_already_open'
+                current_event = events.db.execute(
+                    'SELECT MAX(id) FROM event_decisions WHERE revision = ?', (event['revision'],),
+                ).fetchone()[0]
+                return 'event_decision_superseded' if current_event != event['decision_id'] else None
+
+            def check_stop() -> None:
+                if stop.is_set():
+                    raise Shutdown
+
+            return cast(NewsState, run_tool_agent(
+                directory, revision, event, contracts, events, lambda uid, seconds: read_market(events, uid, seconds),
+                check_current, check_stop, checkpointer, settings.coordinator,
+            ))
 
     def review(state: NewsState) -> NewsState:
         snapshot_path = directory / 'snapshot.json'
@@ -129,6 +167,8 @@ def analyze_news(
             note({'at': started, 'status': 'processing'})
             try:
                 updates = node(state)
+            except Shutdown:
+                raise
             except Exception as error:
                 updates = {'status': 'failed', 'reason': error_code(error)}
             updates.setdefault('stage', stage)
@@ -143,15 +183,16 @@ def analyze_news(
     # Keep checkpoint node names so revisions interrupted before the upgrade can resume.
     graph.add_node('event', audited('route', record_route))
     graph.add_node('snapshot', audited('position', prepare))
-    graph.add_node('review', audited('review', review))
+    final_node = 'agent' if tool_agent else 'review'
+    graph.add_node(final_node, audited(final_node, agent if tool_agent else review))
     graph.add_edge(START, 'route')
     graph.add_conditional_edges('route', lambda state: 'event' if state['status'] == 'continue' else END)
     graph.add_conditional_edges('event', lambda state: 'snapshot' if state['status'] == 'continue' else END)
-    graph.add_conditional_edges('snapshot', lambda state: 'review' if state['status'] == 'continue' else END)
-    graph.add_edge('review', END)
+    graph.add_conditional_edges('snapshot', lambda state: final_node if state['status'] == 'continue' else END)
+    graph.add_edge(final_node, END)
     with closing(sqlite3.connect(settings.data_dir / 'checkpoints.sqlite3', check_same_thread=False)) as db:
         checkpointer = SqliteSaver(db, serde=checkpoint_serializer())
-        config: RunnableConfig = {'configurable': {'thread_id': revision}}
+        config: RunnableConfig = {'configurable': {'thread_id': f'{revision}:workflow:{VERSION}' if tool_agent else revision}}
         with tracing_context(enabled=False):
             compiled = graph.compile(checkpointer=checkpointer)
             saved = compiled.get_state(config)

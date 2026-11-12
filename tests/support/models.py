@@ -36,12 +36,14 @@ class ScriptedEndpoint:
             raise answer
         if callable(answer):
             answer = answer(body)
+        tool_calls = answer.get('tool_calls') if isinstance(answer, dict) else None
         return httpx.Response(self.status_code, json={
             'id': 'gen-control', 'object': 'chat.completion', 'created': 1793955602,
             'model': self.actual_model or body['model'], 'provider': 'TestProvider', 'system_fingerprint': None,
-            'choices': [{'index': 0, 'finish_reason': self.finish_reason,
+            'choices': [{'index': 0, 'finish_reason': 'tool_calls' if tool_calls else self.finish_reason,
                          'message': {'role': 'assistant', 'content':
-                                     answer if isinstance(answer, str) else json.dumps(answer),
+                                     None if tool_calls else answer if isinstance(answer, str) else json.dumps(answer),
+                                     **({'tool_calls': tool_calls} if tool_calls else {}),
                                      'refusal': self.refusal}}],
             'usage': {'prompt_tokens': 20, 'completion_tokens': 30,
                       'total_tokens': 50, 'cost': 0.001},

@@ -223,8 +223,10 @@ class EventArchive:
             'publication': json.loads(row['publication']), 'links': json.loads(row['links']),
         } for row in rows]
 
-    def report(self, company_id: str | None = None) -> dict[str, Any]:
+    def report(self, company_id: str | None = None, *, through_decision: int | None = None) -> dict[str, Any]:
         history = self.history()
+        if through_decision is not None:
+            history = [row for row in history if row['decision_id'] <= through_decision]
         latest = {row['revision']: row for row in history}
         event_ids = {row['event_id'] for row in latest.values()
                      if company_id is None or company_id in companies([row])

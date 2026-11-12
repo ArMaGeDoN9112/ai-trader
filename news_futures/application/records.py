@@ -7,6 +7,7 @@ import sqlite3
 from typing import Any
 
 from news_futures.agents.events import EventArchive
+from news_futures.agents.tool_agent import VERSION
 from news_futures.news.publications import Archive, utc_now
 from news_futures.application.config import load_settings
 from news_futures.common.errors import RuntimeErrorInfo
@@ -108,6 +109,7 @@ def runtime_report(config: Path, decision: str | None) -> dict[str, Any]:
             ('event', directory / 'event.json'), ('position_check', directory / 'position-status.json'),
             ('context', review / 'context.json'),
             ('review', review / 'trace.json'),
+            ('agent', directory / VERSION / 'trace.json'),
         ):
             if file.is_file():
                 report[name] = json.loads(file.read_bytes())

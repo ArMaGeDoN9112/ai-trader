@@ -28,10 +28,10 @@ from news_futures.common.errors import RuntimeErrorInfo, error_code
 from news_futures.application.records import pending_revisions, review_path, runtime_tables, save_broker_status, save_result
 from news_futures.trading.executor import AUTONOMOUS_PROTECTION_UNAVAILABLE, SandboxExecutor
 from news_futures.adapters.tbank.futures_catalog import fetch_catalog, save_catalog
-from news_futures.adapters.tbank.rest import TBankReader, TBankSandbox, sandbox_client
+from news_futures.adapters.tbank.rest import TBankReader, TBankSandbox, limit_broker_read, sandbox_client
 from news_futures.adapters.telegram import configured_channels, default_session, run_telegram, session_path
 from news_futures.trading.journal import trade_journal
-from news_futures.trading.terms import CloseIntent
+from news_futures.trading.terms import CloseIntent, ContractSnapshot
 
 
 FUTURES_REFRESH_SECONDS = 24 * 60 * 60
@@ -43,6 +43,8 @@ class Runtime:
         broker: Callable[[str], SandboxBroker] | None, *, run_id: str | None = None,
         on_controls: Callable[..., None] | None = None, started_at: datetime | None = None,
     ):
+        if settings.analysis_strategy == 'tool_agent' and (broker is not None or settings.mode != 'observation'):
+            raise RuntimeErrorInfo('tool_agent_requires_observation')
         self.settings = settings
         self.started_at = started_at if started_at is not None else utc_now()
         self.account = BrokerAccount(settings.account_id, settings.contracts, reader)
@@ -146,6 +148,7 @@ class Runtime:
 
     def process(self) -> None:
         settings = self.settings
+        tool_agent = settings.analysis_strategy == 'tool_agent'
         archive = Archive(settings.publications)
         with closing(archive.db), EventArchive(settings.events) as events:
             for row in pending_revisions(archive):
@@ -153,10 +156,11 @@ class Runtime:
                     break
                 publication = json.loads(row['publication'])
                 if row['result'] is None:
-                    if not self.broker_ready:
+                    if not self.broker_ready and not tool_agent:
                         continue
                     result = {'revision': row['revision'], 'mode': settings.mode, 'status': 'processing',
-                              'publication_id': publication['id'], 'inputs_saved': False}
+                              'publication_id': publication['id'], 'inputs_saved': False,
+                              'analysis_strategy': settings.analysis_strategy}
                     save_result(archive, result)
                 else:
                     result = json.loads(row['result'])
@@ -192,12 +196,14 @@ class Runtime:
         if datetime.fromisoformat(publication['published_at']) < self.started_at:
             result.update(status='skipped', stage='source', reason='publication_before_start')
             return
-        if not self.broker_ready:
+        tool_agent = settings.analysis_strategy == 'tool_agent'
+        if not self.broker_ready and not tool_agent:
             return
         frozen = (original if legacy else directory) / 'runtime.json'
         previous = (RuntimeSettings.model_validate_json(frozen.read_bytes())
                     if result.get('inputs_saved') or (legacy and frozen.is_file()) else settings)
-        if (result['mode'] != settings.mode or previous.account_id != settings.account_id
+        if (result.get('analysis_strategy', 'fixed') != settings.analysis_strategy
+                or result['mode'] != settings.mode or previous.account_id != settings.account_id
                 or previous.contracts != settings.contracts):
             result.update(status='skipped', reason='runtime_profile_changed')
             return
@@ -237,13 +243,26 @@ class Runtime:
             snapshot, _, _ = self.account.snapshot(events, catalog)
             return snapshot
 
+        def read_market(events: EventArchive, uid: str, seconds: float) -> tuple[Snapshot, ContractSnapshot]:
+            with limit_broker_read(seconds):
+                snapshot, protection, readings = self.account.snapshot(events, catalog, only_contract=uid)
+            if protection['status'] == 'unconfirmed':
+                raise RuntimeErrorInfo('broker_read_unavailable')
+            return snapshot, readings[0].contract
+
         state = analyze_news(
-            settings, directory, publication, result['revision'], read_snapshot=read_snapshot,
+            previous, directory, publication, result['revision'], read_snapshot=read_snapshot,
             current_position=lambda: self.position, stop=self.stop,
+            **({'read_market': read_market} if tool_agent else {}),
         )
         result.update(stage=state['stage'], status=state['status'], reason=state.get('reason'))
         if 'decision_id' in state:
             result['decision_id'] = state['decision_id']
+        if tool_agent:
+            for key in ('proposal', 'critic_status'):
+                if key in state:
+                    result[key] = state[key]
+            return
         result.pop('review_attempt', None)
         if attempt := state.get('review_attempt'):
             result['review_attempt'] = attempt
@@ -369,13 +388,14 @@ async def run_runtime(
             runtime_tables(archive)
             print(json.dumps({'mode': settings.mode, 'sources': channels, 'account_id': settings.account_id,
                               'contracts': settings.contracts}, ensure_ascii=False), flush=True)
-            try:
-                # Preflight uses the read adapter even when sandbox was selected.
-                runtime.account.read_markets(inputs['catalog'])
-            except Exception as error:
-                raise RuntimeErrorInfo(
-                    f'Брокер: {error_code(error)}. Проверьте токен, счёт, контракт и подключение.',
-                ) from error
+            if settings.analysis_strategy != 'tool_agent':
+                try:
+                    # Preflight uses the read adapter even when sandbox was selected.
+                    runtime.account.read_markets(inputs['catalog'])
+                except Exception as error:
+                    raise RuntimeErrorInfo(
+                        f'Брокер: {error_code(error)}. Проверьте токен, счёт, контракт и подключение.',
+                    ) from error
 
         async def in_worker(action: Callable[[], None]) -> None:
             task = asyncio.create_task(asyncio.to_thread(action))

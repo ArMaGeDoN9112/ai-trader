@@ -52,7 +52,9 @@ export function Overview({ status, news, online, busy, command, controls }) {
       <div className="hero-content">
         <div className="kicker"><span /> УПРАВЛЕНИЕ СЕССИЕЙ</div>
         <h2>Обработчик новостей</h2>
-        <p>Сбор публикаций, проверка решений и сверка с брокером.</p>
+        <p>{(nextStart?.analysis_strategy || status.analysis_strategy) === 'tool_agent'
+          ? 'Координатор выбирает инструменты анализа. Результаты сохраняются в трассе публикации.'
+          : 'Сбор публикаций, проверка решений и сверка с брокером.'}</p>
         <div className="actions">
           {actions.includes('start') || worker !== 'running' ? <button className="button primary" type="button" data-action="start"
             disabled={busy || !actions.includes('start')} onClick={() => command('start')}><Play size={16} />Запустить</button> : null}

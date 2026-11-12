@@ -10,6 +10,7 @@ from typing import Any, Iterator, cast
 from urllib.parse import parse_qsl, urlsplit
 
 from news_futures.common.artifacts import publication_digest
+from news_futures.agents.tool_agent import VERSION
 from news_futures.trading.journal import journal_events
 
 
@@ -207,6 +208,7 @@ def summary(key: str, event: dict[str, Any], result: dict[str, Any], contracts: 
             'at': result.get('at') or event.get('recorded_at') or publication.get('edited_at')
             or publication.get('published_at'),
             'status': result.get('status', event.get('kind', 'processing')), 'reason': result.get('reason'),
+            'analysis_strategy': result.get('analysis_strategy'), 'critic_status': result.get('critic_status'),
             'companies': sorted({link['company_id'] for link in event['links']}), 'contracts': sorted(contracts),
             'title': publication.get('text', '').strip()[:160]
             or ('Пост удалён' if publication.get('change') == 'delete' else 'Публикация без текста')}
@@ -273,7 +275,11 @@ def news_view(root: Path, profile: dict[str, Any], catalog: dict[str, Any],
             linked_companies.update(bindings)
             related_contracts = set()
             assessments: dict[str, dict[str, Any]] = {}
-            used = cycle_contracts.get((result.get('execution') or {}).get('cycle_id'))
+            agent_proposal = result.get('proposal') or {}
+            used = cycle_contracts.get((result.get('execution') or {}).get('cycle_id')) or agent_proposal.get('contract_id')
+            if company in bindings and agent_proposal.get('company_id') == company:
+                assessments.update({check['contract_id']: check | {'at': result['at']}
+                                    for check in agent_proposal.get('assessments', [])})
             for directory in decision_dirs(root, key):
                 if bindings.keys() - companies.keys():
                     saved_catalog = artifact(directory / 'route' / 'catalog.json')
@@ -388,6 +394,14 @@ def trace_view(root: Path, account: str, key: str) -> dict[str, Any] | None:
         routed = False
         approved_risk = set()
         for index, directory in enumerate(decision_dirs(root, key)):
+            agent = artifact(directory / VERSION / 'trace.json')
+            for call in agent.get('calls', []):
+                kind = call['kind']
+                step(f'{index}/agent/{call["id"]}', kind if kind in {
+                    'coordinator', 'get_company_news', 'get_market_context', 'ask_analyst', 'ask_critic',
+                } else 'agent_tool', call['status'], at=call.get('started_at'), input=call.get('input'),
+                     output=fields(call, 'output', 'arguments', 'tool', 'tool_call_id', 'error', 'requested_model', 'actual_model',
+                                   'provider', 'latency_ms', 'cost', 'usage'))
             for route in route_attempts(directory):
                 category_path = route / 'category.json'
                 category = artifact(category_path)
@@ -491,7 +505,8 @@ def trace_view(root: Path, account: str, key: str) -> dict[str, Any] | None:
                          and latest_risk.get('status') == 'processing')
         if stage and not checking_risk:
             step('outcome', stage, result['status'], at=result.get('at'),
-                 output=fields(result, 'reason', 'execution', 'reconcile_pending', 'audit_error'))
+                 output=fields(result, 'reason', 'execution', 'reconcile_pending', 'audit_error',
+                               'proposal', 'critic_status'))
         steps[1:] = sorted(steps[1:], key=lambda item: item['_sort_at'])
         for item in steps:
             del item['_sort_at']

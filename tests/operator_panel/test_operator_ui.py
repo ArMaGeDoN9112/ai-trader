@@ -585,6 +585,23 @@ class OperatorTest(unittest.TestCase):
             expect('document.querySelector("#trace-steps").innerText.includes("Пересмотр аналитика")')
             expect('window.scrollY === 550 && document.querySelector("#trace-steps details").open')
             expect('document.documentElement.scrollWidth === document.documentElement.clientWidth')
+            from news_futures.agents.tool_agent import VERSION
+
+            agent = self.root / 'decisions' / revision / VERSION
+            agent.mkdir()
+            replace_json(agent / 'trace.json', {'calls': [
+                {'id': '1', 'kind': 'coordinator', 'status': 'completed',
+                 'output': {'tool': 'ask_analyst'}, 'started_at': utc_now().isoformat()},
+                {'id': '2', 'kind': 'ask_analyst', 'status': 'completed',
+                 'output': {'reason': 'Аналитик проверил прогноз.'}, 'started_at': utc_now().isoformat()},
+            ]})
+            archive = Archive(self.root / 'publications.sqlite3')
+            with closing(archive.db):
+                save_result(archive, {'revision': revision, 'stage': 'agent', 'status': 'candidate',
+                                      'analysis_strategy': 'tool_agent', 'critic_status': 'not_reviewed'})
+            expect('document.querySelector(".agent-trace-summary")?.innerText.includes("Без заключения")')
+            evaluate('document.querySelector("[data-id=\'0/agent/2\'] details").open = true')
+            expect('document.querySelector("[data-id=\'0/agent/2\']").innerText.includes("Аналитик проверил прогноз.")')
             evaluate('location.hash = "#trades"')
             expect('document.body.innerText.includes("В журнале пока нет торговых циклов.")')
             evaluate('location.hash = "#settings"')
@@ -596,6 +613,8 @@ class OperatorTest(unittest.TestCase):
             expect('document.body.innerText.includes("Для применения перезапустите обработчик.")')
             expect('document.querySelector("#chat-aggregator").value === "openrouter" && '
                    'document.querySelector(".save-bar .primary").disabled')
+            evaluate('((field) => { field.value = "tool_agent"; field.dispatchEvent(new Event("change", {bubbles:true})); })'
+                     '(document.querySelector("#analysis-strategy"))')
             evaluate('((field) => { field.value = "groq"; field.dispatchEvent(new Event("change", {bubbles:true})); })'
                      '(document.querySelector("#chat-aggregator"))')
             expect('Array.from(document.querySelectorAll("label.field")).some(field => '
@@ -604,6 +623,7 @@ class OperatorTest(unittest.TestCase):
             with patch('news_futures.operator.settings.load_token', return_value='test-key'):
                 evaluate('document.querySelector(".save-bar .primary").click()')
                 until(lambda: self.server.worker.controls_state.saved().get('aggregator') == 'groq')
+                self.assertEqual(self.server.worker.controls_state.saved()['analysis_strategy'], 'tool_agent')
                 expect('document.querySelector(".save-bar .primary").disabled && '
                        'document.querySelector("#chat-aggregator").value === "groq"')
             worker = self.server.worker

@@ -1,10 +1,13 @@
 """Sandbox REST adapter for separately submitted T-Invest stops."""
 
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 import ssl
-from typing import Annotated, Any, Literal
+from time import monotonic
+from typing import Annotated, Any, Iterator, Literal
 from uuid import UUID
 
 import httpx
@@ -12,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from news_futures.trading.broker import Fill, Protection, SubmissionRejected, TradeState
 from news_futures.common.credentials import load_token
+from news_futures.common.errors import RuntimeErrorInfo
 from news_futures.news.publications import utc_now
 from news_futures.trading.terms import EntryReservation, RiskSnapshot
 from news_futures.trading.journal import close_requests
@@ -33,6 +37,16 @@ READ_METHODS = {
     ('MarketDataService', 'GetTradingStatuses'),
 }
 READ_URLS = {f'{SANDBOX_REST}{service}/{method}' for service, method in READ_METHODS}
+_read_until: ContextVar[float | None] = ContextVar('broker_read_until', default=None)
+
+
+@contextmanager
+def limit_broker_read(seconds: float) -> Iterator[None]:
+    token = _read_until.set(monotonic() + seconds)
+    try:
+        yield
+    finally:
+        _read_until.reset(token)
 
 
 class Amount(BaseModel):
@@ -91,7 +105,13 @@ class TBankReader:
                  **args: Any) -> dict[str, Any]:
         if account:
             args['accountId'] = self.account_id
-        response = self.client.post(f'{SANDBOX_REST}{service}/{method}', json=args)
+        options: dict[str, Any] = {}
+        if (deadline := _read_until.get()) is not None:
+            remaining = deadline - monotonic()
+            if remaining <= 0:
+                raise RuntimeErrorInfo('broker_read_timeout')
+            options['timeout'] = min(8, remaining)
+        response = self.client.post(f'{SANDBOX_REST}{service}/{method}', json=args, **options)
         response.raise_for_status()
         payload = response.json()
         if not isinstance(payload, dict):
