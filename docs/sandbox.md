@@ -22,13 +22,13 @@ HTTP-редиректы, другие адреса и прокси из окру
 Заполните `token` в секции `[sandbox]` файла `.local/credentials.toml`.
 Пустой шаблон находится в `credentials.example.toml`.
 
-Для штатной проверки SRZ6 сохраните `.local/sandbox-settings.json`:
+Скопируйте профиль диагностики и укажите нужный код контракта в поле
+`tbank_contract`. В шаблоне указан SRZ6.
 
-```json
-{
-  "environment": "sandbox",
-  "endpoint": "https://sandbox-invest-public-api.tbank.ru/mcp",
-  "tbank_contract": "SRZ6_SPBFUT"
+```powershell
+New-Item -ItemType Directory -Force .local | Out-Null
+if (-not (Test-Path .local/sandbox-settings.json)) {
+    Copy-Item config/sandbox-settings.example.json .local/sandbox-settings.json -ErrorAction Stop
 }
 ```
 

@@ -12,7 +12,7 @@
 `openrouter.api_key` в локальном `.local/credentials.toml`.
 
 ```powershell
-.venv\Scripts\python -m news_futures route .local/route-05 --publication .local/publication.json --catalog .local/sandbox-report/diagnostics.json
+.venv\Scripts\python -m news_futures route .local/route-05 --publication .local/publication.json --catalog .local/catalog/diagnostics.json
 .venv\Scripts\python -m news_futures show .local/route-05
 ```
 

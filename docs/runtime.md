@@ -37,39 +37,44 @@ New-Item -ItemType Directory -Force .local | Out-Null
 if (-not (Test-Path .local/credentials.toml)) {
     Copy-Item credentials.example.toml .local/credentials.toml -ErrorAction Stop
 }
+if (-not (Test-Path .local/sandbox-settings.json)) {
+    Copy-Item config/sandbox-settings.example.json .local/sandbox-settings.json -ErrorAction Stop
+}
+if (-not (Test-Path .local/runtime.json)) {
+    Copy-Item config/runtime.example.json .local/runtime.json -ErrorAction Stop
+}
 ```
 
 Если Launcher не видит Python 3.11, в первой команде укажите полный путь к
 `python.exe` этой версии. Заполните секции `[telegram]`,
 `[openrouter]` и `[sandbox]` по шаблону. Подпишитесь в используемом аккаунте
-на `@markettwits` и `@rbc_news`. Создайте `.local/sandbox-settings.json`
-по [инструкции диагностики](sandbox.md). Затем авторизуйтесь локально
-и выполните диагностику в новом каталоге.
+на `@markettwits` и `@rbc_news`. Укажите в `.local/sandbox-settings.json`
+код нужного контракта в поле `tbank_contract`. Затем авторизуйтесь локально
+и выполните [диагностику](sandbox.md). Каталог вывода создаётся командой.
 
 ```powershell
 .venv\Scripts\python -m news_futures telegram-login
-.venv\Scripts\python -m news_futures sandbox-diagnostics .local/sandbox-report --config .local/sandbox-settings.json
+.venv\Scripts\python -m news_futures sandbox-diagnostics .local/catalog --config .local/sandbox-settings.json
 ```
 
-Диагностика читает MCP и готовит каталог. `serve` отдельно проверяет подключение
-к Sandbox REST перед обработкой новостей. В каталоге из отчёта найдите компанию
-по совпадению `share_id` с `operations.future.data.underlying_share_id`.
+Диагностика читает MCP. `serve` отдельно проверяет подключение к Sandbox REST.
+Заполните `.local/runtime.json` по отчёту `.local/catalog/diagnostics.json`.
+Используйте открытый sandbox-счёт с положительной стоимостью портфеля.
+Для поля `account_id` и пары `FUTURE_UID` → `COMPANY_ID` найдите значения:
 
-Сохраните `.local/runtime.json`. Пути внутри файла отсчитываются от его
-каталога. В `catalog` укажите отчёт `diagnostics.json` со списком компаний
-и UID акций из [диагностики песочницы](sandbox.md). Ключи `contracts` —
-UID фьючерсов, значения — ID компаний из каталога. Для каждого фьючерса
-при запуске проверяется UID базовой акции. Используйте открытый sandbox-счёт
-с положительной стоимостью портфеля.
-
-```json
-{
-  "data_dir": "runtime",
-  "catalog": "sandbox-report/diagnostics.json",
-  "account_id": "SANDBOX_ACCOUNT_ID",
-  "contracts": {"FUTURE_UID": "COMPANY_ID"}
-}
+```powershell
+$report = Get-Content .local/catalog/diagnostics.json -Raw -Encoding UTF8 | ConvertFrom-Json
+$report.operations.accounts.data | Select-Object id, name
+$future = $report.operations.future.data
+$future.id
+$report.operations.catalog.data | Where-Object { $_.share_id -eq $future.underlying_share_id } | Select-Object -ExpandProperty company_id
 ```
+
+Пути в профиле отсчитываются от его каталога. При повторной диагностике
+задайте новый каталог вывода и обновите путь `catalog` после проверки отчёта.
+При необходимости храните доверенный PEM-файл в `.local/certs/`. В профиле
+запуска путь `ca_file` относителен к профилю, в настройках диагностики —
+к корню проекта при запуске команд выше.
 
 По умолчанию используются MarketTwits и РБК, внешняя сессия
 `telegram-login` и настройки моделей из пакета. Чтобы изменить их, скопируйте
@@ -223,4 +228,4 @@ $env:OPERATOR_TEST_CHROME = 'C:\Program Files\Google\Chrome\Application\chrome.e
 выполняется в сборке приложения. `Runtime.process` принимает сохранённые
 редакции через общий архив, поэтому узлы графа от транспорта не зависят.
 
-[Протокол прогона тикета 13](../.scratch/news-futures/acceptance.md).
+[Статус приёмки](../.scratch/news-futures/issues/13-technical-prototype-acceptance.md).
