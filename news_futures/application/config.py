@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field
 
 from news_futures.agents.company import Nonempty
 from news_futures.agents.contracts import Aggregator, Contract, RoleSettings, Settings
@@ -31,12 +31,6 @@ class RuntimeSettings(Contract):
     matcher: Path = EVENT_SETTINGS
     review: Path = REVIEW_SETTINGS
     ca_file: Path | None = None
-
-    @model_validator(mode='after')
-    def analysis_permissions(self) -> 'RuntimeSettings':
-        if self.analysis_strategy == 'tool_agent' and self.mode != 'observation':
-            raise ValueError('tool_agent_requires_observation')
-        return self
 
     @property
     def publications(self) -> Path:

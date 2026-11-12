@@ -43,8 +43,6 @@ class Runtime:
         broker: Callable[[str], SandboxBroker] | None, *, run_id: str | None = None,
         on_controls: Callable[..., None] | None = None, started_at: datetime | None = None,
     ):
-        if settings.analysis_strategy == 'tool_agent' and (broker is not None or settings.mode != 'observation'):
-            raise RuntimeErrorInfo('tool_agent_requires_observation')
         self.settings = settings
         self.started_at = started_at if started_at is not None else utc_now()
         self.account = BrokerAccount(settings.account_id, settings.contracts, reader)

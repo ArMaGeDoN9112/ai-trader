@@ -41,11 +41,11 @@ export function Settings({ settings, status, online, busy, command, error }) {
         <label className="field">Маршрут анализа<select id="analysis-strategy" value={values.analysis_strategy}
           onChange={event => set('analysis_strategy', event.target.value)}>
           <option value="fixed">Фиксированный маршрут</option>
-          <option value="tool_agent" disabled={values.mode !== 'observation'}>Агент с инструментами</option>
+          <option value="tool_agent">Агент с инструментами</option>
         </select></label>
-        <p className="muted">Агент доступен в режиме наблюдения. Маршрут применяется при запуске обработчика.</p>
+        <p className="muted">Маршрут применяется при запуске обработчика.</p>
         {values.mode === 'sandbox' && values.analysis_strategy === 'tool_agent' &&
-          <Notice error>Для песочницы выберите фиксированный маршрут.</Notice>}
+          <p className="muted">Агент готовит предложения для ручной отправки.</p>}
         <label className="field">Разрешённые контракты<textarea rows={4} spellCheck={false} aria-invalid={error === 'invalid_contracts'}
           placeholder="UID = компания" value={values.contracts} onChange={event => set('contracts', event.target.value)} /></label>
         <p className="muted">Одна пара «UID контракта = идентификатор компании» в строке.</p>
@@ -82,8 +82,7 @@ export function Settings({ settings, status, online, busy, command, error }) {
     </Panel>
     <div className="save-bar"><small>Последнее сохранение · {time(changed_at)}</small>
       {draft && <button className="button secondary" type="button" onClick={() => setDraft(null)}>Сбросить правки</button>}
-      <button className="button primary" disabled={busy || !online || !draft ||
-        (values.mode === 'sandbox' && values.analysis_strategy === 'tool_agent')}><Save size={16} />Сохранить настройки</button>
+      <button className="button primary" disabled={busy || !online || !draft}><Save size={16} />Сохранить настройки</button>
     </div>
   </form>;
 }

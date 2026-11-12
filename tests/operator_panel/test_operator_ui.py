@@ -613,8 +613,14 @@ class OperatorTest(unittest.TestCase):
             expect('document.body.innerText.includes("Для применения перезапустите обработчик.")')
             expect('document.querySelector("#chat-aggregator").value === "openrouter" && '
                    'document.querySelector(".save-bar .primary").disabled')
+            evaluate('((field) => { field.value = "sandbox"; field.dispatchEvent(new Event("change", {bubbles:true})); })'
+                     '(document.querySelector("select:has(option[value=sandbox])"))')
+            expect('!document.querySelector("#analysis-strategy option[value=tool_agent]").disabled')
             evaluate('((field) => { field.value = "tool_agent"; field.dispatchEvent(new Event("change", {bubbles:true})); })'
                      '(document.querySelector("#analysis-strategy"))')
+            expect('!document.querySelector(".save-bar .primary").disabled')
+            evaluate('((field) => { field.value = "observation"; field.dispatchEvent(new Event("change", {bubbles:true})); })'
+                     '(document.querySelector("select:has(option[value=sandbox])"))')
             evaluate('((field) => { field.value = "groq"; field.dispatchEvent(new Event("change", {bubbles:true})); })'
                      '(document.querySelector("#chat-aggregator"))')
             expect('Array.from(document.querySelectorAll("label.field")).some(field => '

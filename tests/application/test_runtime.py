@@ -238,8 +238,9 @@ class RuntimeAcceptance(RiskFixture):
     def sandbox(self) -> None:
         self.profile.write_text(json.dumps(self.profile_data | {'mode': 'sandbox'}), encoding='utf-8')
 
-    def tool_agent(self) -> None:
+    def tool_agent(self, *, mode: str = 'observation') -> None:
         self.profile.write_text(json.dumps(self.profile_data | {
+            'mode': mode,
             'analysis_strategy': 'tool_agent',
             'coordinator': {'model': 'test/coordinator'},
         }), encoding='utf-8')
@@ -257,7 +258,7 @@ class RuntimeAcceptance(RiskFixture):
         def tool_results(body: dict[str, Any]) -> list[dict[str, Any]]:
             return [json.loads(message['content']) for message in body['messages'] if message['role'] == 'tool']
 
-        self.tool_agent()
+        self.tool_agent(mode='sandbox')
         incoming = self.news(self.market, 'SBER опубликовал повышенный прогноз.')
         endpoint = self.serve(
             call('get_company_news', company_id='sber'),
@@ -280,6 +281,7 @@ class RuntimeAcceptance(RiskFixture):
                           'proposal_id': tool_results(body)[-1]['proposal_id']},
         )
         report = self.report(incoming)
+        self.assertEqual(report['result']['mode'], 'sandbox')
         self.assertEqual(report['result']['status'], 'candidate')
         self.assertEqual(report['result']['critic_status'], 'approved')
         self.assertEqual([call['kind'] for call in report['agent']['calls']], [

@@ -40,7 +40,7 @@ def read_agent_approval(directory: Path, trace: dict[str, Any]) -> tuple[Company
     validate_company_proposal(proposal.model_dump(mode='json'), context)
     runtime = json.loads((directory.parent / 'runtime.json').read_bytes())
     account = runtime['account_id']
-    if (runtime['mode'] != 'observation' or runtime['analysis_strategy'] != 'tool_agent'
+    if (runtime['mode'] not in ('observation', 'sandbox') or runtime['analysis_strategy'] != 'tool_agent'
             or not isinstance(account, str) or not account
             or account != trace['account_id']
             or runtime['contracts'].get(proposal.contract_id) != proposal.company_id):

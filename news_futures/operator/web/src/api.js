@@ -62,7 +62,6 @@ const labels = {
   failed: 'Ошибка', connected: 'Подключён', unknown: 'Неизвестно', unavailable: 'Недоступен',
   observation: 'Наблюдение', sandbox: 'Песочница', none: 'Нет', confirmed: 'Подтверждена',
   fixed: 'Фиксированный маршрут', tool_agent: 'Агент с инструментами',
-  tool_agent_requires_observation: 'Агент с инструментами доступен в режиме наблюдения.',
   invalid_analysis_strategy: 'Выберите допустимый маршрут анализа.',
   candidate: 'Кандидат на вход', insufficient_data: 'Недостаточно данных', cached: 'Из истории запуска',
   not_reviewed: 'Без заключения', agent_budget: 'Исчерпан бюджет анализа',

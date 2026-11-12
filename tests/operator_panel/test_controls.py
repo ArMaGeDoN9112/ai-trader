@@ -64,7 +64,7 @@ class PreferencesTest(unittest.TestCase):
             self.preferences.save(update, stopped=False)
 
     def test_mode_changes_only_when_the_worker_is_stopped_and_the_account_is_flat(self) -> None:
-        update = self.form(mode='sandbox')
+        update = self.form(mode='sandbox', analysis_strategy='tool_agent')
         with self.assertRaisesRegex(ValueError, 'mode_requires_stop'):
             self.preferences.save(update, stopped=False)
         with patch('news_futures.operator.settings.sandbox_client', side_effect=lambda *args, **kw: httpx.Client()), patch(
@@ -83,7 +83,11 @@ class PreferencesTest(unittest.TestCase):
             activity.return_value = (False, False)
             self.preferences.save(update, stopped=True)
         self.assertEqual(self.preferences.active['mode'], 'sandbox')
-        self.assertEqual(Preferences(self.settings, ['example'], self.state).prepare()[0]['mode'], 'sandbox')
+        profile, _, payload = Preferences(self.settings, ['example'], self.state).prepare()
+        self.assertEqual((profile['mode'], profile['analysis_strategy']), ('sandbox', 'tool_agent'))
+        self.assertEqual(RuntimeSettings.model_validate_json(json.dumps(
+            json.loads(payload)['settings'],
+        )).analysis_strategy, 'tool_agent')
 
     def test_groq_preferences_preserve_openrouter_models_and_reject_missing_key(self) -> None:
         original = self.preferences.saved()

@@ -54,8 +54,6 @@ class Preferences:
                 'models_at': self.models_at, 'profile_at': self.profile_at}
 
     def runtime(self, values: dict[str, Any]) -> RuntimeSettings:
-        if values['analysis_strategy'] == 'tool_agent' and values['mode'] != 'observation':
-            raise ValueError('tool_agent_requires_observation')
         return self.base.model_copy(update={key: values[key] for key in ('mode', 'contracts', 'analysis_strategy')})
 
     def prepare(self, *, check_cycles: bool = True) -> tuple[dict[str, Any], list[str], bytes]:
