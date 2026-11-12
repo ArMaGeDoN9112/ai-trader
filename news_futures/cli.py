@@ -19,6 +19,9 @@ def main() -> int:
     sandbox_command = commands.add_parser('sandbox-diagnostics', help='Диагностика sandbox MCP без заявок')
     sandbox_command.add_argument('directory', nargs='?', type=Path)
     sandbox_command.add_argument('--config', type=config_path, default=SANDBOX_SETTINGS)
+    futures_command = commands.add_parser('futures-catalog', help='Выгрузить каталог фьючерсов по категориям')
+    futures_command.add_argument('directory', type=Path)
+    futures_command.add_argument('--ca-file', type=Path)
     run_command = commands.add_parser('run', help='Сохранить новый контрольный запуск')
     run_command.add_argument('directory', nargs='?', type=Path)
     show_command = commands.add_parser('show', help='Прочитать сохранённую трассу')
@@ -132,6 +135,23 @@ def main() -> int:
                 return 1
             finally:
                 logging.disable(previous_logging)
+        if args.command == 'futures-catalog':
+            import httpx
+            from news_futures.adapters.tbank.futures_catalog import fetch_catalog, save_catalog
+            from news_futures.adapters.tbank.rest import sandbox_client
+
+            try:
+                with sandbox_client(args.ca_file, read_only=True) as client:
+                    catalog = fetch_catalog(client)
+            except CredentialsError:
+                raise
+            except (httpx.HTTPError, KeyError, TypeError, ValueError):
+                print('Не удалось прочитать каталог Т-Инвестиций. Проверьте подключение и токен песочницы.',
+                      file=sys.stderr)
+                return 1
+            summary = save_catalog(args.directory, catalog)
+            print(json.dumps(summary | {'report': str((args.directory / 'groups.md').resolve())}))
+            return 0
         if args.command == 'route':
             try:
                 from news_futures.agents.routing import route_publication

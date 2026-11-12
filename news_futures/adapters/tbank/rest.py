@@ -28,7 +28,9 @@ READ_METHODS = {
     ('SandboxService', 'GetSandboxPortfolio'), ('SandboxService', 'GetSandboxWithdrawLimits'),
     ('SandboxService', 'GetSandboxOrders'), ('SandboxService', 'GetSandboxOrderState'),
     ('SandboxService', 'GetSandboxStopOrders'), ('InstrumentsService', 'FutureBy'),
+    ('InstrumentsService', 'Futures'), ('InstrumentsService', 'Shares'),
     ('MarketDataService', 'GetLastPrices'), ('MarketDataService', 'GetTradingStatus'),
+    ('MarketDataService', 'GetTradingStatuses'),
 }
 READ_URLS = {f'{SANDBOX_REST}{service}/{method}' for service, method in READ_METHODS}
 
