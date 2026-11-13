@@ -26,4 +26,5 @@ Use the five standard triage roles. See `docs/agents/triage-labels.md`.
 
 ### Domain docs
 
-Single-context layout. Before exploring the codebase, read `docs/agents/domain.md`.
+Before exploring the codebase, read [the agent guide](docs/runtime.md). It is the
+source for the current workflow, configuration, domain vocabulary and checks.

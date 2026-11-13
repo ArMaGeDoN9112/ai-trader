@@ -39,7 +39,7 @@ Python ≥3.11, setuptools, entry point cli.main:app; requirements.txt соде�
 
 ## Применение у нас
 
-Стек для трёх ролей — LangGraph StateGraph, LangChain Core и Pydantic. Политика стека предусматривает `ChatOpenRouter`, а текущая реализация аналитика и критика использует совместимый `ChatOpenAI`, чтобы сохранить сведения о провайдере. Для торговых предложений требуется строгая JSON Schema. Jev System One — отдельный HTTP-контракт узла. [Политика стека](../../docs/agents/agent-stack.md), [проверка совместимости](../../docs/agents/openrouter-compatibility.md).
+Стек для трёх ролей — LangGraph StateGraph, LangChain Core и Pydantic. Политика стека предусматривает `ChatOpenRouter`, а текущая реализация аналитика и критика использует совместимый `ChatOpenAI`, чтобы сохранить сведения о провайдере. Для торговых предложений требуется строгая JSON Schema. Jev System One — отдельный HTTP-контракт узла. [Политика стека](../../docs/runtime.md).
 
 Telegram MTProto — адаптер публикаций; Т-Банк MCP sandbox — адаптер отдельного программного исполнителя. Доменные публикации/привязки, причина входа и позиция хранятся отдельно; checkpoint нужен при durable recovery, не заменяет идемпотентность заявки/сверку брокера. Лимиты риска обязательны согласно [ADR 0001](../../docs/adr/0001-separate-proposals-from-execution.md).
 
