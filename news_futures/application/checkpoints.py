@@ -9,7 +9,4 @@ from news_futures.agents.contracts import Review
 def checkpoint_serializer() -> JsonPlusSerializer:
     return JsonPlusSerializer(allowed_msgpack_modules=[
         *((model.__module__, model.__name__) for model in (CompanyContext, CompanyProposal, Review)),
-        ('news_futures.decisions', 'CompanyContext'),
-        ('news_futures.decisions', 'CompanyProposal'),
-        ('news_futures.analysis', 'Review'),
     ])

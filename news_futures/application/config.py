@@ -10,7 +10,7 @@ from news_futures.agents.company import Nonempty
 from news_futures.agents.contracts import Aggregator, Contract, RoleSettings, Settings
 from news_futures.agents.routing import JevSettings, catalog_rows, load_catalog
 from news_futures.common.errors import RuntimeErrorInfo
-from news_futures.common.paths import EVENT_SETTINGS, JEV_SETTINGS, REVIEW_SETTINGS, TELEGRAM_SOURCES, config_path
+from news_futures.common.paths import EVENT_SETTINGS, JEV_SETTINGS, REVIEW_SETTINGS, TELEGRAM_SOURCES
 
 
 GROQ_MODELS = {'analyst': 'openai/gpt-oss-120b', 'critic': 'openai/gpt-oss-120b'}
@@ -55,8 +55,6 @@ def load_settings(config: Path) -> RuntimeSettings:
         for field in RuntimeSettings.model_fields
         if isinstance(value := getattr(settings, field), Path)
     }
-    for field in ('sources', 'jev', 'matcher', 'review'):
-        paths[field] = config_path(paths[field])
     return settings.model_copy(update=paths)
 
 

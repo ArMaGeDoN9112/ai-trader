@@ -128,10 +128,7 @@ def review_cycle(
 ) -> dict[str, Any]:
     """Read settings once; persist each result; return only reviewed proposals."""
     settings = Settings.model_validate_json(config_path.read_bytes())
-    # Keep existing OpenRouter settings hashes stable when resuming a review.
-    snapshot = settings.model_dump(mode='json', exclude={
-        role: {'aggregator'} for role in ('analyst', 'critic') if getattr(settings, role).aggregator == 'openrouter'
-    })
+    snapshot = settings.model_dump(mode='json')
     version = sha256(json.dumps(snapshot, sort_keys=True).encode()).hexdigest()
     cycle_id = thread_id or str(uuid4())
     directory.mkdir(parents=True, exist_ok=checkpointer is not None)

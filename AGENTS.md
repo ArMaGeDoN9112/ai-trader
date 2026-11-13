@@ -3,6 +3,12 @@
 Use Conventional Commits: `<type>[optional scope][!]: <description>`
 (for example, `feat: add position tracking` or `fix(wallet): handle expired sessions`).
 
+## Pre-production compatibility
+
+Use the current schema and interfaces. When replacing a type, path, or format,
+update its callers and delete obsolete readers, aliases, migrations, tests, and
+documentation. Add backward compatibility only when explicitly requested.
+
 ## Agent skills
 
 ### AI agent design

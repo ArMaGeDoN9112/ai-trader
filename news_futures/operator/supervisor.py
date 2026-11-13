@@ -45,10 +45,7 @@ def broker_status(path: Path, profile: dict[str, Any], run_id: str | None) -> di
     except (sqlite3.Error, ValueError, AttributeError):
         status = {}
 
-    # Legacy records can supply history if their reconciliation was successful.
     last = status.get('last_confirmed')
-    if last is None and status.get('broker') == 'connected':
-        last = status
     confirmed = None
     try:
         if last:

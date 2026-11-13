@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from news_futures.common.credentials import CredentialsError
 from news_futures.common.paths import (
-    EVENT_SETTINGS, JEV_SETTINGS, REVIEW_SETTINGS, SANDBOX_SETTINGS, TELEGRAM_SOURCES, config_path,
+    EVENT_SETTINGS, JEV_SETTINGS, REVIEW_SETTINGS, SANDBOX_SETTINGS, TELEGRAM_SOURCES,
 )
 from news_futures.simulation.scenario import run
 
@@ -18,7 +18,7 @@ def main() -> int:
     commands = parser.add_subparsers(dest='command', required=True)
     sandbox_command = commands.add_parser('sandbox-diagnostics', help='Диагностика sandbox MCP без заявок')
     sandbox_command.add_argument('directory', nargs='?', type=Path)
-    sandbox_command.add_argument('--config', type=config_path, default=SANDBOX_SETTINGS)
+    sandbox_command.add_argument('--config', type=Path, default=SANDBOX_SETTINGS)
     futures_command = commands.add_parser('futures-catalog', help='Выгрузить каталог фьючерсов по категориям')
     futures_command.add_argument('directory', type=Path)
     futures_command.add_argument('--ca-file', type=Path)
@@ -28,25 +28,25 @@ def main() -> int:
     show_command.add_argument('directory', type=Path)
     analyze_command = commands.add_parser('analyze', help='Аналитик и критик через OpenRouter, без брокера')
     analyze_command.add_argument('directory', nargs='?', type=Path)
-    analyze_command.add_argument('--config', type=config_path, default=REVIEW_SETTINGS)
+    analyze_command.add_argument('--config', type=Path, default=REVIEW_SETTINGS)
     analyze_command.add_argument('--context', type=Path)
     route_command = commands.add_parser('route', help='Привязки публикации к компаниям через Jev')
     route_command.add_argument('directory', nargs='?', type=Path)
     route_command.add_argument('--publication', type=Path, required=True)
     route_command.add_argument('--catalog', type=Path, required=True)
-    route_command.add_argument('--config', type=config_path, default=JEV_SETTINGS)
+    route_command.add_argument('--config', type=Path, default=JEV_SETTINGS)
     login_command = commands.add_parser('telegram-login', help='Локальная пользовательская авторизация')
     login_command.add_argument('--session', type=Path)
     telegram_command = commands.add_parser('telegram', help='Непрерывный приём Telegram, обработка — имитация')
     telegram_command.add_argument('--session', type=Path)
-    telegram_command.add_argument('--config', type=config_path, default=TELEGRAM_SOURCES)
+    telegram_command.add_argument('--config', type=Path, default=TELEGRAM_SOURCES)
     telegram_command.add_argument('--database', type=Path, default=Path('.local/telegram/archive.sqlite3'))
     telegram_command.add_argument('--once', action='store_true', help='История и все доступные изменения, затем выход')
     archive_command = commands.add_parser('publications', help='Прочитать архив, редакции и статусы')
     archive_command.add_argument('--database', type=Path, default=Path('.local/telegram/archive.sqlite3'))
     match_command = commands.add_parser('event-match', help='Сопоставить редакцию из трассы route с событием')
     match_command.add_argument('directory', type=Path)
-    match_command.add_argument('--config', type=config_path, default=EVENT_SETTINGS)
+    match_command.add_argument('--config', type=Path, default=EVENT_SETTINGS)
     events_command = commands.add_parser('events', help='Показать историю событий и контекст компаний')
     events_command.add_argument('--company')
     correct_command = commands.add_parser('event-correct', help='Записать исправление сопоставления')
@@ -58,7 +58,7 @@ def main() -> int:
     decision_command.add_argument('decision_id', type=int)
     decision_command.add_argument('--snapshot', type=Path, required=True)
     decision_command.add_argument('--directory', type=Path)
-    decision_command.add_argument('--config', type=config_path, default=REVIEW_SETTINGS)
+    decision_command.add_argument('--config', type=Path, default=REVIEW_SETTINGS)
     reason_command = commands.add_parser('entry-reason', help='Сохранить исходную причину входа в позицию')
     reason_command.add_argument('record', type=Path)
     trades_command = commands.add_parser('sandbox-trades', help='Показать журнал сделок в песочнице')
