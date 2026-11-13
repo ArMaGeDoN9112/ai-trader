@@ -154,13 +154,17 @@ def fetch_catalog(client: httpx.Client) -> dict[str, Any]:
             'categories': CATEGORIES, 'assets': group_futures(*listings)}
 
 
-def active_futures(client: httpx.Client, catalog: dict[str, Any]) -> list[dict[str, Any]]:
+def listed_futures(catalog: dict[str, Any]) -> dict[str, dict[str, Any]]:
     now = utc_now()
-    contracts = {
+    return {
         item['uid']: {**item, 'asset': asset['name'], 'share_id': asset.get('underlying_position_uid')}
         for asset in catalog['assets'] for item in asset['contracts']
         if item['api_trade_available'] is True and datetime.fromisoformat(item['last_trade']) > now
     }
+
+
+def active_futures(client: httpx.Client, catalog: dict[str, Any]) -> list[dict[str, Any]]:
+    contracts = listed_futures(catalog)
 
     def read(method: str, field: str, ids: list[str]) -> list[dict[str, Any]]:
         response = client.post(f'{SANDBOX_REST}MarketDataService/{method}', json={'instrumentId': ids})

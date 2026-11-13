@@ -281,19 +281,12 @@ def catalog_series(report: dict[str, Any]) -> dict[str, Any]:
 def news_view(root: Path, profile: dict[str, Any], catalog: dict[str, Any],
               series: dict[str, Any], company: str) -> dict[str, Any]:
     companies = dict(catalog)
-    contracts = {key: {'company_id': value, 'ticker': None} for key, value in profile['contracts'].items()}
-    contracts.update({key: dict(item) for key, item in series.items()})
+    contracts = {key: dict(item) for key, item in series.items()}
     decisions = []
     publications = []
     orders = []
     linked_companies: set[str] = set()
     with (read_archive(root / 'publications.sqlite3') as db, read_archive(root / 'events.sqlite3') as events):
-        if db is not None and has_table(db, 'runtime_status'):
-            row = db.execute('SELECT data FROM runtime_status WHERE id = 1').fetchone()
-            if row:
-                for key, item in json.loads(row['data']).get('instruments', {}).items():
-                    if item.get('ticker') or key not in contracts:
-                        contracts[key] = item
         cycles = cycle_rows(events, profile['account_id'])
         cycle_contracts = {cycle['id']: cycle['terms']['contract_id'] for cycle in cycles}
         history_by_revision = event_rows(events, None, include_unlinked=bool(company))
@@ -340,6 +333,12 @@ def news_view(root: Path, profile: dict[str, Any], catalog: dict[str, Any],
                     if proposal := artifact(review / 'trace.json').get('approved_proposal'):
                         used = used or proposal.get('contract_id')
             if any(not contracts[contract]['ticker'] for contract in related_contracts):
+                futures = artifact(directory / 'futures-catalog.json')
+                for asset in futures.get('assets', []):
+                    for item in asset.get('contracts', []):
+                        uid = item['uid']
+                        if uid in related_contracts and not contracts[uid]['ticker']:
+                            contracts[uid]['ticker'] = item['ticker']
                 for uid, item in catalog_series(artifact(directory / 'catalog.json')).items():
                     remember_contract(contracts, item | {'contract_id': uid})
             if used:
@@ -351,12 +350,12 @@ def news_view(root: Path, profile: dict[str, Any], catalog: dict[str, Any],
                 publications.append(company_edition(row, current, binding, list(assessments.values())))
         if not company:
             linked = {row['revision'] for row in decisions}
-            for row in telegram_rows(db):
-                key = row['revision']
+            for telegram in telegram_rows(db):
+                key = telegram['revision']
                 if key not in linked:
-                    publication, result = runtime.get(key) or (json.loads(row['publication']), {})
+                    publication, result = runtime.get(key) or (json.loads(telegram['publication']), {})
                     decisions.append(summary(key, {'publication': publication, 'links': []},
-                                             {'status': row['status']} | result, set()))
+                                             {'status': telegram['status']} | result, set()))
         if publications:
             event_ids = {row['event_id'] for row in publications if row['event_id']}
             revisions = {row['revision'] for row in publications}
@@ -426,7 +425,7 @@ def trace_view(root: Path, account: str, key: str) -> dict[str, Any] | None:
         for call in agent.get('calls', []):
             kind = call['kind']
             step(f'0/agent/{call["id"]}', kind if kind in {
-                'coordinator', 'analyst', 'critic', 'get_company_news', 'get_market_context',
+                'coordinator', 'tool_selection', 'analyst', 'critic', 'get_company_news', 'get_market_context',
             } else 'agent_tool', call['status'], at=call.get('started_at'), input=call.get('input'),
                  output=fields(call, 'output', 'arguments', 'tool', 'tool_call_id', 'error', 'requested_model', 'actual_model',
                                'provider', 'latency_ms', 'cost', 'usage', 'handoff_to'))
@@ -450,6 +449,10 @@ def trace_view(root: Path, account: str, key: str) -> dict[str, Any] | None:
                      company: catalog[company] for batch in batches for company in batch.get('company_ids', [])
                      if company in catalog
                  }}, output=fields(record, 'error', 'links', 'requested_model', 'actual_model') | {'batches': batches})
+        instrument_path = directory / 'instrument.json'
+        if selection := artifact(instrument_path):
+            step('instrument', 'instrument', selection['status'], at=selection['at'],
+                 saved_at=when(instrument_path, {}) or None, output=selection)
         for name in ('event', 'position', 'snapshot', 'review'):
             status_path = directory / f'{name}-status.json'
             if stage_record := artifact(status_path):

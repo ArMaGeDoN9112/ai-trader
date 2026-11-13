@@ -41,13 +41,13 @@ class PreferencesTest(unittest.TestCase):
         root = Path(self.enterContext(TemporaryDirectory()))
         catalog(root / 'catalog.json')
         self.settings = RuntimeSettings(data_dir=root, catalog=root / 'catalog.json',
-                                        account_id='account', contracts={'future': 'sber'})
+                                        account_id='account')
         self.state = OperatorState(root)
         self.preferences = Preferences(self.settings, ['example'], self.state)
 
     def form(self, **changes: object) -> dict[str, Any]:
         saved = self.preferences.saved()
-        return saved | {'base': saved, 'contracts': [list(item) for item in saved['contracts'].items()]} | changes
+        return saved | {'base': saved} | changes
 
     def test_channels_wait_for_restart_and_bad_settings_preserve_working_values(self) -> None:
         original = self.preferences.saved()
@@ -140,7 +140,7 @@ class ManualCloseTest(RiskFixture):
         self.broker = ControlledBroker(self)
         self.controls = OperatorState(self.root)
         self.settings = RuntimeSettings(data_dir=self.root, catalog=self.root / 'catalog.json',
-                                        account_id=self.account_id, contracts={self.contract_id: 'sber'}, mode='sandbox',
+                                        account_id=self.account_id, mode='sandbox',
                                         review=self.config)
         catalog(self.settings.catalog)
 
@@ -160,13 +160,14 @@ class ManualCloseTest(RiskFixture):
         return CloseIntent(str(uuid4()), result['cycle_id'], self.contract_id, 'short' if short else 'long', 3)
 
     def apply_close(self) -> None:
-        runtime = Runtime(self.settings, lambda _: self.broker, lambda _: self.broker,
+        runtime = Runtime(self.settings, lambda *_: self.broker, lambda *_: self.broker,
                           run_id='controlled-run', on_controls=lambda **event: None)
         with patch('builtins.print'):
             runtime.refresh()
 
     def test_manual_close_while_paused_keeps_confirmed_partial_entry_and_short_exit(self) -> None:
         intent = self.open_position(short=True)
+        self.settings.catalog.unlink()
         self.controls.set_pause(True)
         self.assertTrue(OperatorState(self.root).pause()['paused'])
         self.apply_close()

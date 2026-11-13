@@ -19,6 +19,7 @@ from news_futures.common.credentials import load_token
 from news_futures.agents.company import OpenPosition, Snapshot
 from news_futures.agents.contracts import Aggregator
 from news_futures.agents.events import EventArchive
+from news_futures.agents.routing import catalog_contracts
 from news_futures.common.artifacts import replace_json
 from news_futures.application.workflow import Shutdown, analyze_news
 from news_futures.news.publications import Archive, TEST_SOURCE, utc_now
@@ -39,13 +40,13 @@ FUTURES_REFRESH_SECONDS = 24 * 60 * 60
 
 class Runtime:
     def __init__(
-        self, settings: RuntimeSettings, reader: Callable[[str], BrokerReader],
-        broker: Callable[[str], SandboxBroker] | None, *, run_id: str | None = None,
+        self, settings: RuntimeSettings, reader: Callable[[str, str | None], BrokerReader],
+        broker: Callable[[str, str | None], SandboxBroker] | None, *, run_id: str | None = None,
         on_controls: Callable[..., None] | None = None, started_at: datetime | None = None,
     ):
         self.settings = settings
         self.started_at = started_at if started_at is not None else utc_now()
-        self.account = BrokerAccount(settings.account_id, settings.contracts, reader)
+        self.account = BrokerAccount(settings.account_id, reader)
         self.broker = broker
         self.run_id = run_id
         self.operator = OperatorState(settings.data_dir.resolve())
@@ -80,17 +81,16 @@ class Runtime:
             return
         intent = CloseIntent(**{name: row[name] for name in ('request_id', 'cycle_id', 'contract_id', 'side', 'quantity')})
         reason = 'close_position_changed'
-        if intent.contract_id in self.settings.contracts:
-            result = SandboxExecutor(events, self.broker(intent.contract_id)).reconcile(
-                contract_id=intent.contract_id, cycle_id=intent.cycle_id, manual=intent,
-            )
-            if result.get('manual') == 'accepted':
-                self.operator.finish_close(intent.request_id, 'accepted', result['reason'])
-                return
-            if result['reason'] == 'executor_busy':
-                return
-            if result['status'] == 'rejected':
-                reason = result['reason']
+        result = SandboxExecutor(events, self.broker(intent.contract_id, None)).reconcile(
+            contract_id=intent.contract_id, cycle_id=intent.cycle_id, manual=intent,
+        )
+        if result.get('manual') == 'accepted':
+            self.operator.finish_close(intent.request_id, 'accepted', result['reason'])
+            return
+        if result['reason'] == 'executor_busy':
+            return
+        if result['status'] == 'rejected':
+            reason = result['reason']
         self.operator.finish_close(intent.request_id, 'rejected', reason)
 
     def refresh(self) -> None:
@@ -108,7 +108,7 @@ class Runtime:
     def refresh_broker(self, archive: Archive, events: EventArchive) -> None:
         settings = self.settings
         status: dict[str, Any] = {
-            'mode': settings.mode, 'account_id': settings.account_id, 'contracts': settings.contracts,
+            'mode': settings.mode, 'account_id': settings.account_id,
             'run_id': self.run_id, 'confirmed': False,
         }
         last_confirmed = None
@@ -119,14 +119,9 @@ class Runtime:
                 )
                 if reconciliation is not None:
                     status['reconciliation'] = reconciliation
-            snapshot, protection, readings = self.account.snapshot(events, settings.catalog.read_bytes())
-            self.position = snapshot.position
-            status.update(broker='connected', position=snapshot.model_dump(mode='json')['position'],
+            self.position, protection = self.account.position(events)
+            status.update(broker='connected', position=self.position.model_dump(mode='json') if self.position else None,
                           protection=protection)
-            status['instruments'] = {
-                reading.contract.contract_id: {'company_id': reading.contract.company_id, 'ticker': reading.contract.ticker}
-                for reading in readings
-            }
             reconciliation = status.get('reconciliation', {})
             if reconciliation.get('status') == 'blocked' or protection['status'] == 'unconfirmed':
                 status.update(broker='blocked', error=reconciliation.get('reason') or 'protection_unconfirmed')
@@ -201,8 +196,7 @@ class Runtime:
                     if result['inputs_saved'] else settings)
         if (result.get('analysis_strategy', 'fixed') != settings.analysis_strategy
                 or previous.order_transport != settings.order_transport
-                or result['mode'] != settings.mode or previous.account_id != settings.account_id
-                or previous.contracts != settings.contracts):
+                or result['mode'] != settings.mode or previous.account_id != settings.account_id):
             result.update(status='skipped', reason='runtime_profile_changed')
             return
         if not result['inputs_saved']:
@@ -232,20 +226,23 @@ class Runtime:
             if self.on_controls is not None:
                 self.on_controls(models=role_models(inputs), aggregator=aggregator)
         catalog = (directory / 'catalog.json').read_bytes()
+        futures_path = directory / 'futures-catalog.json'
+        try:
+            contracts = catalog_contracts(catalog, futures_path.read_bytes())
+        except FileNotFoundError:
+            contracts = {}
 
-        def read_snapshot(events: EventArchive) -> Snapshot:
-            snapshot, _, _ = self.account.snapshot(events, catalog)
+        def read_snapshot(candidates: dict[str, str]) -> Snapshot:
+            snapshot, _ = self.account.snapshot(catalog, candidates)
             return snapshot
 
         def read_market(events: EventArchive, uid: str, seconds: float) -> tuple[Snapshot, ContractSnapshot]:
             with limit_broker_read(seconds):
-                snapshot, protection, readings = self.account.snapshot(events, catalog, only_contract=uid)
-            if protection['status'] == 'unconfirmed':
-                raise RuntimeErrorInfo('broker_read_unavailable')
+                snapshot, readings = self.account.snapshot(catalog, {uid: contracts[uid]})
             return snapshot, readings[0].contract
 
         state = analyze_news(
-            previous, directory, publication, result['revision'], read_snapshot=read_snapshot,
+            previous, directory, publication, result['revision'], contracts=contracts, read_snapshot=read_snapshot,
             current_position=lambda: self.position, stop=self.stop,
             **({'read_market': read_market} if tool_agent else {}),
         )
@@ -274,8 +271,10 @@ class Runtime:
             result.update(status='processing', reason='shutdown_before_execution')
             return
         assert attempt is not None
+        uid = state['selected_contract_id']
         self._execute_review(
             archive, events, review_path(directory, attempt), proposal, state.get('position_id'), result,
+            {uid: contracts[uid]} if uid in contracts else {},
         )
 
     def _recover_execution(self, events: EventArchive, approval: Path, result: dict[str, Any]) -> bool:
@@ -303,12 +302,12 @@ class Runtime:
 
     def _execute_review(
         self, archive: Archive, events: EventArchive, review: Path, proposal: dict[str, Any],
-        position_id: str | None, result: dict[str, Any],
+        position_id: str | None, result: dict[str, Any], contracts: dict[str, str],
     ) -> None:
         assert self.broker is not None
         result.update(stage='execution', status='processing', reason='broker_reconciliation_required')
         save_result(archive, result)
-        executor = SandboxExecutor(events, self.broker(proposal['contract_id']))
+        executor = SandboxExecutor(events, self.broker(proposal['contract_id'], contracts.get(proposal['contract_id'])))
         risk_path = review / f'risk-{uuid4().hex}.json'
         risk_audit_error = False
 
@@ -321,7 +320,7 @@ class Runtime:
                 risk_audit_error = True
 
         if proposal['action'] == 'enter':
-            execution = executor.start(archive, review, allowed_contracts=set(self.settings.contracts),
+            execution = executor.start(archive, review, allowed_contracts=contracts.keys(),
                                        record_risk=record_risk, entry_block=lambda: self._entry_block(result))
             if execution['reason'] == 'independent_stops_require_opt_in':
                 execution['reason'] = AUTONOMOUS_PROTECTION_UNAVAILABLE
@@ -345,7 +344,7 @@ async def run_runtime(
 ) -> int:
     started_at = utc_now()
     settings = load_settings(config) if isinstance(config, Path) else config
-    inputs = cycle_inputs(settings)
+    cycle_inputs(settings)
     try:
         if channels is None:
             channels = configured_channels(settings.sources)
@@ -372,30 +371,22 @@ async def run_runtime(
         if on_phase is not None:
             on_phase('broker')
         client = stack.enter_context(sandbox_client(settings.ca_file, read_only=use_mcp or settings.mode == 'observation'))
-        def reader(contract: str) -> BrokerReader:
+        def reader(contract: str, company: str | None) -> BrokerReader:
             adapter = TBankMCPReader if use_mcp else TBankReader
-            return adapter(client, settings.account_id, contract, settings.contracts[contract])
+            return adapter(client, settings.account_id, contract, company)
 
-        def broker(contract: str) -> SandboxBroker:
+        def broker(contract: str, company: str | None) -> SandboxBroker:
             if use_mcp:
-                return TBankMCPSandbox(client, settings.account_id, contract, settings.contracts[contract], settings.ca_file)
-            return TBankSandbox(client, settings.account_id, contract, settings.contracts[contract])
+                return TBankMCPSandbox(client, settings.account_id, contract, company, settings.ca_file)
+            return TBankSandbox(client, settings.account_id, contract, company)
 
         runtime = Runtime(settings, reader, broker if settings.mode == 'sandbox' else None,
                           run_id=run_id, on_controls=on_controls, started_at=started_at)
         archive = Archive(settings.publications)
         with closing(archive.db):
             runtime_tables(archive)
-            print(json.dumps({'mode': settings.mode, 'sources': channels, 'account_id': settings.account_id,
-                              'contracts': settings.contracts}, ensure_ascii=False), flush=True)
-            if settings.analysis_strategy != 'tool_agent':
-                try:
-                    # Preflight uses the read adapter even when sandbox was selected.
-                    runtime.account.read_markets(inputs['catalog'])
-                except Exception as error:
-                    raise RuntimeErrorInfo(
-                        f'Брокер: {error_code(error)}. Проверьте токен, счёт, контракт и подключение.',
-                    ) from error
+            print(json.dumps({'mode': settings.mode, 'sources': channels, 'account_id': settings.account_id},
+                             ensure_ascii=False), flush=True)
 
         async def in_worker(action: Callable[[], None]) -> None:
             task = asyncio.create_task(asyncio.to_thread(action))

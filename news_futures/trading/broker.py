@@ -6,6 +6,7 @@ from typing import Annotated, Literal, Protocol
 from pydantic import ConfigDict, Field, TypeAdapter
 from pydantic.dataclasses import dataclass
 
+from news_futures.common.errors import RuntimeErrorInfo
 from news_futures.trading.terms import EntryReservation
 
 
@@ -78,7 +79,17 @@ class SubmissionRejected(ValueError):
     """The broker definitively refused a submission before creating an order."""
 
 
+class UnsupportedFuturesUnits(ValueError):
+    """The contract uses units the executor cannot price safely."""
+
+
+class NoSupportedFutures(RuntimeErrorInfo):
+    """The account snapshot has no supported, unexpired contracts."""
+
+
 class BrokerReader(Protocol):
+    def account_activity(self) -> tuple[bool, bool]: ...
+
     def read_risk(self, account_id: str, contract_id: str) -> object: ...
     def read_trade(
         self, entry: EntryReservation, operations: dict[str, str], receipts: dict[str, str | None],

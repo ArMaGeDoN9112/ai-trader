@@ -11,16 +11,14 @@ from news_futures.adapters.telegram import validate_channels
 from news_futures.application.config import GROQ_MODELS, RuntimeSettings, cycle_inputs, role_models
 from news_futures.application.operator_state import OperatorState
 from news_futures.common.credentials import CredentialsError, load_token
-from news_futures.common.errors import RuntimeErrorInfo
 from news_futures.news.publications import utc_now
 from news_futures.operator.news import read_archive
-from news_futures.trading.account import BrokerAccount
 from news_futures.trading.executor import AUTONOMOUS_PROTECTION_UNAVAILABLE
 from news_futures.trading.journal import active_cycles
 
 
 def profile_view(settings: RuntimeSettings) -> dict[str, Any]:
-    return settings.model_dump(include={'mode', 'account_id', 'contracts', 'analysis_strategy'}) | {
+    return settings.model_dump(include={'mode', 'account_id', 'analysis_strategy'}) | {
         'entry_block': AUTONOMOUS_PROTECTION_UNAVAILABLE if settings.mode == 'sandbox' else None,
     }
 
@@ -29,7 +27,7 @@ class Preferences:
     def __init__(self, settings: RuntimeSettings, channels: list[str], state: OperatorState):
         self.base = settings
         self.state = state
-        self.default: dict[str, Any] = {'mode': settings.mode, 'channels': channels, 'contracts': settings.contracts,
+        self.default: dict[str, Any] = {'mode': settings.mode, 'channels': channels,
                                        'analysis_strategy': settings.analysis_strategy,
                                        'models': role_models(cycle_inputs(settings)),
                                        'aggregator': 'openrouter', 'groq_models': GROQ_MODELS}
@@ -54,16 +52,11 @@ class Preferences:
                 'models_at': self.models_at, 'profile_at': self.profile_at}
 
     def runtime(self, values: dict[str, Any]) -> RuntimeSettings:
-        return self.base.model_copy(update={key: values[key] for key in ('mode', 'contracts', 'analysis_strategy')})
+        return self.base.model_copy(update={key: values[key] for key in ('mode', 'analysis_strategy')})
 
-    def prepare(self, *, check_cycles: bool = True) -> tuple[dict[str, Any], list[str], bytes]:
+    def prepare(self) -> tuple[dict[str, Any], list[str], bytes]:
         values = self.saved()
         runtime = self.runtime(values)
-        if check_cycles:
-            with read_archive(runtime.events) as db:
-                if db is not None and any(json.loads(row['terms'])['contract_id'] not in runtime.contracts
-                                          for row in active_cycles(db, runtime.account_id)):
-                    raise ValueError('account_has_operations')
         self.active = values | {'models': self.default['models'], 'aggregator': self.default['aggregator']}
         self.models_at = None
         self.profile_at = None
@@ -72,11 +65,11 @@ class Preferences:
         }).encode()
 
     @contextmanager
-    def exclusive_profile(self, *, stopped: bool) -> Iterator[None]:
+    def exclusive_profile(self) -> Iterator[None]:
         self.base.data_dir.mkdir(parents=True, exist_ok=True)
         with (closing(sqlite3.connect(self.base.data_dir / 'runtime-lock.sqlite3', timeout=0)) as runtime,
               closing(sqlite3.connect(str(self.base.events) + '.sandbox-lock', timeout=0)) as execution):
-            for connection in ((runtime, execution) if stopped else (execution,)):
+            for connection in (runtime, execution):
                 try:
                     connection.execute('BEGIN IMMEDIATE')
                 except sqlite3.OperationalError as error:
@@ -93,9 +86,8 @@ class Preferences:
                 ).fetchone():
                     raise ValueError('account_has_operations')
         try:
-            contract = next(iter(settings.contracts))
             with sandbox_client(settings.ca_file, read_only=True) as client:
-                position, orders = TBankReader(client, settings.account_id, contract, None).account_activity()
+                position, orders = TBankReader(client, settings.account_id, '', None).account_activity()
         except Exception as error:
             raise ValueError('account_unconfirmed') from error
         if position or orders:
@@ -116,13 +108,6 @@ class Preferences:
             channels = validate_channels(body.get('channels'))
         except ValueError as error:
             raise ValueError('invalid_channels') from error
-        rows = body.get('contracts')
-        if (not isinstance(rows, list) or not rows
-                or any(not isinstance(pair, list) or len(pair) != 2 or any(
-                    not isinstance(item, str) or not item or item.strip() != item for item in pair) for pair in rows)
-                or len(dict(rows)) != len(rows)):
-            raise ValueError('invalid_contracts')
-        contracts = dict(rows)
         aggregator = body.get('aggregator', saved['aggregator'])
         if aggregator not in ('openrouter', 'groq'):
             raise ValueError('invalid_aggregator')
@@ -132,13 +117,9 @@ class Preferences:
             if (not isinstance(choices, dict) or choices.keys() != defaults.keys()
                     or not all(isinstance(model, str) and len(model) <= 200 for model in choices.values())):
                 raise ValueError('invalid_models')
-        values = {'mode': mode, 'analysis_strategy': strategy, 'channels': channels, 'contracts': contracts, 'models': models,
+        values = {'mode': mode, 'analysis_strategy': strategy, 'channels': channels, 'models': models,
                   'aggregator': aggregator, 'groq_models': groq_models, 'account_id': self.base.account_id}
         candidate = self.runtime(values)
-        try:
-            inputs = cycle_inputs(candidate)
-        except (RuntimeErrorInfo, ValueError) as error:
-            raise ValueError('invalid_contracts') from error
         try:
             cycle_inputs(candidate, models)
             cycle_inputs(candidate, models | groq_models, aggregator='groq')
@@ -152,19 +133,9 @@ class Preferences:
         mode_changed = mode != saved['mode']
         if mode_changed and not stopped:
             raise ValueError('mode_requires_stop')
-        removed = saved['contracts'].items() - contracts.items()
-        added = contracts.items() - (saved['contracts'].items() | self.active['contracts'].items())
-        if added:
-            try:
-                with sandbox_client(candidate.ca_file, read_only=True) as client:
-                    BrokerAccount(candidate.account_id, dict(added), lambda contract: TBankReader(
-                        client, candidate.account_id, contract, contracts[contract],
-                    )).read_markets(inputs['catalog'])
-            except Exception as error:
-                raise ValueError('invalid_contracts') from error
-        if mode_changed or removed:
+        if mode_changed:
             # Changing the execution profile requires a broker check with no concurrent local executor.
-            with self.exclusive_profile(stopped=stopped):
+            with self.exclusive_profile():
                 self.require_flat(self.runtime(self.active))
                 self.state.save_settings(values, expected=stored)
         else:

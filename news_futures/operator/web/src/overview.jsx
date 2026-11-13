@@ -1,7 +1,9 @@
 import { useRef, useState } from 'react';
-import { Activity, ArrowRight, ArrowUpRight, CirclePause, Database, Layers3, Play, Radio, RotateCw, ShieldCheck, Square, Workflow } from 'lucide-react';
-import { contractName, label, route, time } from './api';
+import { Activity, ArrowRight, ArrowUpRight, CirclePause, Database, Layers3, Play, Radio, RotateCw, ShieldCheck, Square, Wallet, Workflow } from 'lucide-react';
+import { contractName, label, route, time, useResource } from './api';
 import { Badge, DecisionList, Empty, Facts, Notice, Panel, PositionValue } from './ui';
+
+const rubles = new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB' });
 
 function SignalArt() {
   return <svg className="signal-art" viewBox="0 0 400 226" fill="none" aria-hidden="true">
@@ -33,12 +35,14 @@ function Metric({ title, value, caption, icon: Icon, tone = 'purple' }) {
 export function Overview({ status, news, online, busy, command, controls }) {
   const dialog = useRef(null);
   const [confirmation, setConfirmation] = useState(null);
+  const balance = useResource('/api/account-balance', 0, 25000);
+  const account = balance.error ? null : balance.data;
   const { broker, worker, pause } = status;
   const current = online ? broker?.current : null;
   const last = broker?.last_confirmed;
   const position = current?.position;
   const id = position?.contract_id;
-  const company = news.contracts[id]?.company_id || status.contracts?.[id];
+  const company = news.contracts[id]?.company_id;
   const actions = online ? status.allowed || [] : [];
   const channels = Object.entries(status.sources || {});
   const connected = online ? channels.filter(([, state]) => state === 'connected').length : 0;
@@ -81,6 +85,9 @@ export function Overview({ status, news, online, busy, command, controls }) {
         icon={Activity} tone="purple" />
       <Metric title="Брокер" value={label(online ? broker?.state : 'unknown')}
         caption={last ? 'Сверка ' + time(last.checked_at) : 'Подтверждений пока нет'} icon={Database} tone="blue" />
+      <Metric title="Баланс счёта" value={account ? rubles.format(account.equity) : '—'}
+        caption={account ? 'Портфель · ' + time(account.checked_at) : balance.error ? 'Недоступен' : 'Загрузка…'}
+        icon={Wallet} tone="green" />
       <Metric title="Позиция" value={!current ? 'Неизвестно' : position ? contractName(news, id) : 'Позиции нет'}
         caption={position ? label(position.side) + ' · ' + position.quantity + ' лот.' : 'Подтверждение брокера'} icon={Layers3} tone="green" />
       <Metric title="Источники" value={online && channels.length ? connected + ' / ' + channels.length : '—'}
@@ -111,8 +118,6 @@ export function Overview({ status, news, online, busy, command, controls }) {
       <Panel title="Рабочий профиль" icon={Layers3} actions={<a className="text-link" href="#settings">Настройки <ArrowUpRight size={15} /></a>}>
         <Facts rows={[
           ['Счёт', <span className="mono">{status.account_id || '—'}</span>],
-          [nextStart ? 'Контракты следующего запуска' : 'Разрешённые контракты',
-            Object.keys(nextStart?.contracts || status.contracts || {}).map(item => contractName(news, item)).join(', ') || '—'],
         ]} />
         <h3 className="subheading">Источники Telegram</h3>
         <div className="list sources">{channels.length ? channels.map(([name, state]) => <div key={name} className="list-row">

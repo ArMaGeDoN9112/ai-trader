@@ -15,7 +15,7 @@ from urllib.parse import parse_qs
 import httpx
 
 from news_futures.adapters.tbank.futures_catalog import active_futures
-from news_futures.adapters.tbank.rest import sandbox_client
+from news_futures.adapters.tbank.rest import TBankReader, limit_broker_read, sandbox_client
 from news_futures.news.publications import utc_now
 from news_futures.operator.news import (
     artifact, catalog_series, enqueue_test_news, fields, news_view, testing_view, trace_view, visible,
@@ -71,7 +71,8 @@ class OperatorHandler(BaseHTTPRequestHandler):
                 self.reply(404, {'result': 'not_found'})
             else:
                 self.reply(200, body, mime={'js': 'text/javascript', 'css': 'text/css'}[asset[2]])
-        elif path in ('/api/overview', '/api/news', '/api/trace', '/api/trades', '/api/controls', '/api/tickers', '/api/testing'):
+        elif path in ('/api/overview', '/api/news', '/api/trace', '/api/trades', '/api/controls', '/api/tickers',
+                      '/api/testing', '/api/account-balance'):
             if not self.authorized():
                 self.reply(403, {'result': 'forbidden'})
                 return
@@ -81,6 +82,8 @@ class OperatorHandler(BaseHTTPRequestHandler):
             try:
                 if path == '/api/overview':
                     value = worker.overview()
+                elif path == '/api/account-balance':
+                    value = self.server.account_balance()
                 elif path == '/api/tickers':
                     value = self.server.market_tickers()
                 elif path == '/api/news':
@@ -95,7 +98,8 @@ class OperatorHandler(BaseHTTPRequestHandler):
                 else:
                     value = worker.controls()
             except (sqlite3.Error, httpx.HTTPError, OSError, ValueError, KeyError, TypeError):
-                self.reply(503, {'result': 'market_unavailable' if path == '/api/tickers' else 'archive_unavailable'})
+                result = {'/api/tickers': 'market_unavailable', '/api/account-balance': 'balance_unavailable'}
+                self.reply(503, {'result': result.get(path, 'archive_unavailable')})
             else:
                 if value is None:
                     self.reply(404, {'result': 'not_found'})
@@ -155,6 +159,11 @@ class OperatorServer(ThreadingHTTPServer):
         super().__init__(('127.0.0.1', port), OperatorHandler)
         self.host = f'127.0.0.1:{self.server_port}'
 
+    def account_balance(self) -> dict[str, Any]:
+        with sandbox_client(self.ca_file, read_only=True) as client, limit_broker_read(4):
+            equity = TBankReader(client, self.worker.profile['account_id'], '', None).account_equity()
+        return {'equity': str(equity), 'checked_at': utc_now().isoformat()}
+
     def market_tickers(self) -> dict[str, Any]:
         with self.market_lock:
             if monotonic() < self.market_until:
@@ -164,10 +173,9 @@ class OperatorServer(ThreadingHTTPServer):
                 return {'checked_at': None, 'tickers': []}
             with sandbox_client(self.ca_file, read_only=True) as client:
                 tickers = active_futures(client, catalog)
-            owners = self.worker.profile['contracts']
             self.market_cache = {'checked_at': utc_now().isoformat(), 'tickers': [
                 fields(item, 'uid', 'ticker', 'asset', 'expiration', 'price', 'quote_at') | {
-                    'company_id': self.share_companies.get(item['share_id']) or owners.get(item['uid']),
+                    'company_id': self.share_companies.get(item['share_id']),
                 } for item in tickers
             ]}
             self.market_until = monotonic() + 25
@@ -187,7 +195,7 @@ def serve_operator(config: Path, port: int) -> int:
         settings = load_settings(config)
         channels = configured_channels(settings.sources)
         preferences = Preferences(settings, channels, OperatorState(settings.data_dir))
-        profile, channels, payload = preferences.prepare(check_cycles=False)
+        profile, channels, payload = preferences.prepare()
     except (OSError, ValueError, TypeError, KeyError, sqlite3.Error):
         print('Проверьте общую конфигурацию и список источников. См. docs/runtime.md.', file=sys.stderr)
         return 1

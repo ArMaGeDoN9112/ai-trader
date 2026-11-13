@@ -40,6 +40,13 @@ class ControlBroker:
     def read_risk(self, account_id: str, contract_id: str) -> object:
         return self.risk.snapshot
 
+    def account_activity(self) -> tuple[bool, bool]:
+        return (
+            bool(self.state.position_lots) or self.state.other_exposure or self.risk.snapshot['has_position'],
+            self.state.active_orders or self.risk.snapshot['has_active_orders']
+            or any(stop.status == 'active' for stop in self.state.protection),
+        )
+
     def read_trade(self, entry: EntryReservation, operations: dict[str, str],
                    receipts: dict[str, str | None]) -> TradeState:
         assert operations == self.operation_ids

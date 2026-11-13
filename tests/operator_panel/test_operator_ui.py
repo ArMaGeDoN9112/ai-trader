@@ -91,7 +91,7 @@ class OperatorTest(unittest.TestCase):
     def setUp(self) -> None:
         directory = self.enterContext(TemporaryDirectory())
         self.root = Path(directory)
-        self.profile = {'mode': 'observation', 'account_id': 'account', 'contracts': {'future': 'company'}}
+        self.profile = {'mode': 'observation', 'account_id': 'account'}
         (self.root / 'control').write_text('position', encoding='utf-8')
         worker = Worker(self.root, self.profile, [sys.executable, '-c', CONTROLLED_WORKER, str(self.root)],
                         json.dumps(self.profile).encode())
@@ -134,7 +134,13 @@ class OperatorTest(unittest.TestCase):
         replace_json(folder / 'catalog.json', {'assets': assets})
 
         def respond(request: httpx.Request) -> httpx.Response:
-            ids = json.loads(request.content)['instrumentId']
+            payload = json.loads(request.content)
+            if request.url.path.endswith('/GetSandboxPortfolio'):
+                self.assertEqual(payload, {'accountId': 'account'})
+                return httpx.Response(200, json={'accountId': 'account', 'totalAmountPortfolio': {
+                    'currency': 'rub', 'units': '123456', 'nano': 780000000,
+                }})
+            ids = payload['instrumentId']
             self.assertNotIn('old-future', ids)
             if request.url.path.endswith('/GetTradingStatuses'):
                 return httpx.Response(200, json={'tradingStatuses': [
@@ -162,6 +168,31 @@ class OperatorTest(unittest.TestCase):
         self.assertEqual(rows['future']['company_id'], 'company')
         self.assertEqual(rows['future']['price'], '123.450000000')
         self.assertNotIn('price', rows['gold'])
+
+    def test_account_balance_is_available_with_stopped_worker_and_requires_a_local_session(self) -> None:
+        self.mock_market()
+        path = '/api/account-balance'
+        session = {'X-Operator-Session': self.session}
+        self.assertEqual(self.request('GET', path)[0], 403)
+        self.assertEqual(self.overview()['worker'], 'stopped')
+        code, body = self.request('GET', path, **session)
+        self.assertEqual(code, 200)
+        self.assertEqual(json.loads(body)['equity'], '123456.780000000')
+
+        self.server.worker.profile['account_id'] = 'another-account'
+
+        def wrong_account(request: httpx.Request) -> httpx.Response:
+            self.assertEqual(json.loads(request.content), {'accountId': 'another-account'})
+            return httpx.Response(200, json={'accountId': 'account', 'totalAmountPortfolio': {
+                'currency': 'rub', 'units': '0', 'nano': 0,
+            }})
+
+        with patch('news_futures.operator.server.sandbox_client', return_value=httpx.Client(
+            transport=httpx.MockTransport(wrong_account),
+        )):
+            code, body = self.request('GET', path, **session)
+        self.assertEqual((code, json.loads(body)), (503, {'result': 'balance_unavailable'}))
+        self.assertEqual(self.overview()['worker'], 'stopped')
 
     def request(self, method: str, path: str, *, body: object = None, **headers: str) -> tuple[int, str]:
         connection = HTTPConnection('127.0.0.1', self.port, timeout=3)
@@ -329,7 +360,7 @@ class OperatorTest(unittest.TestCase):
             save_result(archive, {'revision': revision, 'stage': 'review', 'status': 'rejected', 'decision_id': 1,
                                   'review_attempt': revision})
             save_result(archive, {'revision': unlinked.revision_key(), 'stage': 'event', 'status': 'skipped',
-                                  'reason': 'no_allowed_company'})
+                                  'reason': 'no_company_link'})
         directory = self.root / 'decisions' / revision
         review = directory / 'review' / revision
         review.mkdir(parents=True)
@@ -376,7 +407,7 @@ class OperatorTest(unittest.TestCase):
                 rows = {row['revision']: row for row in news['decisions']}
                 self.assertEqual(rows[pending.revision_key()]['status'], status)
                 self.assertEqual(rows[unlinked]['status'], 'skipped')
-                self.assertEqual(rows[unlinked]['reason'], 'no_allowed_company')
+                self.assertEqual(rows[unlinked]['reason'], 'no_company_link')
                 self.assertEqual(rows[revision]['status'], 'rejected')
                 code, body = self.request('GET', '/api/trace?revision=' + pending.revision_key(),
                                           **{'X-Operator-Session': self.session})
@@ -404,7 +435,7 @@ class OperatorTest(unittest.TestCase):
         self.assertEqual(code, 200)
         trace = json.loads(body)
         self.assertEqual(trace['status'], 'skipped')
-        self.assertEqual(trace['reason'], 'no_allowed_company')
+        self.assertEqual(trace['reason'], 'no_company_link')
         self.assertEqual([step['id'] for step in trace['steps']], ['publication', 'event', 'outcome'])
         self.assertEqual(self.request('GET', '/api/trace?revision=../runtime.json', **session)[0], 404)
         code, body = self.request('GET', '/api/trace?revision=' + revision, **session)
@@ -448,12 +479,15 @@ class OperatorTest(unittest.TestCase):
             'candidates': ['company'],
         })
         replace_json(completed / 'trace.json', {'status': 'completed', 'links': []})
+        replace_json(self.root / 'decisions' / revision / 'instrument.json', {
+            'at': utc_now().isoformat(), 'status': 'completed', 'requested_model': 'typesafe/jev-1.14',
+            'selected': {'ticker': 'ABCZ6', 'company_id': 'company'},
+        })
         catalog = self.root / 'catalog.json'
         replace_json(catalog, {'operations': {'catalog': {'availability': 'available', 'data': [{
             'company_id': 'company', 'company_name': 'Компания А', 'ticker': 'ABC', 'share_id': 'share',
         }]}}})
-        settings = RuntimeSettings(data_dir=self.root, catalog=catalog, account_id='account',
-                                   contracts={'future': 'company'})
+        settings = RuntimeSettings(data_dir=self.root, catalog=catalog, account_id='account')
         worker = self.server.worker
         worker.preferences = Preferences(settings, ['example'], worker.controls_state)
         profile = self.root / 'chromium'
@@ -512,6 +546,8 @@ class OperatorTest(unittest.TestCase):
 
             cdp('Emulation.setDeviceMetricsOverride', width=1440, height=1024, deviceScaleFactor=1, mobile=False)
             cdp('Page.navigate', url=self.origin)
+            expect('Array.from(document.querySelectorAll(".metric")).some(tile => '
+                   'tile.innerText.includes("Баланс счёта") && /123\\s456,78\\s₽/.test(tile.innerText))')
             expect('document.querySelectorAll("#recent a").length === 2')
             expect(f'document.querySelector("#recent a[href^=\'#trace/{unlinked}\']")?.innerText.includes("Ошибка")')
             expect(f'document.querySelector("#recent a[href^=\'#trace/{revision}\']")?.innerText.includes("Отклонено")')
@@ -582,12 +618,22 @@ class OperatorTest(unittest.TestCase):
             evaluate('document.querySelector("#decisions a").click()')
             expect(f'location.hash.startsWith("#trace/{revision}") && document.querySelector("#trace-steps")'
                    '?.innerText.includes("Ответ критика")')
+            graph_history = 'document.querySelector("#trace-node-history")'
+            evaluate('document.querySelector("[data-node=instrument]").click()')
+            expect(f'{graph_history}.innerText.includes("ABCZ6") && '
+                   f'{graph_history}.innerText.includes("typesafe/jev-1.14")')
+            evaluate('document.querySelector("[data-node=analyst]").click()')
+            expect(f'{graph_history}.querySelectorAll(".step").length === 1 && '
+                   f'{graph_history}.innerText.includes("Полный ответ аналитика") && '
+                   f'!{graph_history}.innerText.includes("private-key-in-output")')
             evaluate('document.querySelector("#trace-steps details").open = true; window.scrollTo(0, 550)')
             expect('window.scrollY === 550 && !document.querySelector("#trace-steps img")')
             expect('document.querySelector("#trace-steps a[href=\'https://t.me/source/1\']") !== null')
             replace_json(review / 'call-03.json', {'role': 'analyst', 'at': utc_now().isoformat(),
                          'input': {'review': {'approved': False}}, 'output': {'action': 'skip'}})
             expect('document.querySelector("#trace-steps").innerText.includes("Пересмотр аналитика")')
+            expect(f'{graph_history}.querySelectorAll(".step").length === 2 && '
+                   'document.querySelector("[data-node=analyst]").getAttribute("aria-pressed") === "true"')
             expect('window.scrollY === 550 && document.querySelector("#trace-steps details").open')
             expect('document.documentElement.scrollWidth === document.documentElement.clientWidth')
             from news_futures.agents.tool_agent import TEAM_DIRECTORY
@@ -597,9 +643,16 @@ class OperatorTest(unittest.TestCase):
             replace_json(agent / 'trace.json', {'calls': [
                 {'id': '1', 'kind': 'coordinator', 'status': 'completed',
                  'handoff_to': 'analyst', 'started_at': utc_now().isoformat()},
-                {'id': '2', 'kind': 'analyst', 'status': 'completed', 'handoff_to': 'critic',
+                {'id': '2', 'kind': 'tool_selection', 'status': 'completed',
+                 'output': {'tool': 'get_company_news'}, 'actual_model': 'typesafe/jev-1.14',
+                 'started_at': utc_now().isoformat()},
+                {'id': '3', 'kind': 'get_company_news', 'status': 'completed', 'tool': 'get_company_news',
+                 'tool_call_id': 'news-request',
+                 'arguments': {'company_id': 'company'},
+                 'output': {'news': []}, 'started_at': utc_now().isoformat()},
+                {'id': '4', 'kind': 'analyst', 'status': 'completed', 'handoff_to': 'critic',
                  'output': {'reason': 'Аналитик проверил прогноз.'}, 'started_at': utc_now().isoformat()},
-                {'id': '3', 'kind': 'critic', 'status': 'completed',
+                {'id': '5', 'kind': 'critic', 'status': 'completed',
                  'output': {'approved': True}, 'started_at': utc_now().isoformat()},
             ]})
             archive = Archive(self.root / 'publications.sqlite3')
@@ -609,8 +662,25 @@ class OperatorTest(unittest.TestCase):
             expect('document.querySelector(".agent-trace-summary")?.innerText.includes("Мультиагентный анализ")')
             evaluate('document.querySelector("[data-id=\'0/agent/1\'] details").open = true')
             expect('document.querySelector("[data-id=\'0/agent/1\']").innerText.includes("Аналитику")')
-            evaluate('document.querySelector("[data-id=\'0/agent/2\'] details").open = true')
-            expect('document.querySelector("[data-id=\'0/agent/2\']").innerText.includes("Аналитик проверил прогноз.")')
+            evaluate('document.querySelector("[data-node=tool_selection]").click()')
+            expect(f'{graph_history}.innerText.includes("Выбор инструмента") && '
+                   f'{graph_history}.innerText.includes("typesafe/jev-1.14")')
+            evaluate('document.querySelector("[data-id=\'0/agent/4\'] details").open = true')
+            expect('document.querySelector("[data-id=\'0/agent/4\']").innerText.includes("Аналитик проверил прогноз.")')
+            expect('document.querySelector(".trace-edge.tool") !== null && '
+                   'document.querySelector(".trace-edge.handoff") !== null && '
+                   'document.documentElement.scrollWidth === document.documentElement.clientWidth')
+            evaluate('document.querySelector("[data-node=get_company_news]").focus()')
+            expect('document.activeElement?.dataset.node === "get_company_news"')
+            cdp('Input.dispatchKeyEvent', type='keyDown', key='Enter', code='Enter', text='\r',
+                unmodifiedText='\r', windowsVirtualKeyCode=13)
+            cdp('Input.dispatchKeyEvent', type='keyUp', key='Enter', code='Enter', windowsVirtualKeyCode=13)
+            expect(f'{graph_history}.innerText.includes("Публикаций найдено") && '
+                   f'{graph_history}.innerText.includes("Выбор инструмента → Поиск новостей компании")')
+            cdp('Emulation.setDeviceMetricsOverride', width=1440, height=900, deviceScaleFactor=1, mobile=False)
+            evaluate('document.querySelector("[data-node=critic]").click()')
+            expect(f'{graph_history}.innerText.includes("Аналитик → Критик") && '
+                   'document.documentElement.scrollWidth === document.documentElement.clientWidth')
             evaluate('location.hash = "#trades"')
             expect('document.body.innerText.includes("В журнале пока нет торговых циклов.")')
             evaluate('location.hash = "#settings"')

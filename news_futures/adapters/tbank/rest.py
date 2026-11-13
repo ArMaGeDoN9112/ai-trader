@@ -13,7 +13,7 @@ from uuid import UUID
 import httpx
 from pydantic import BaseModel, Field
 
-from news_futures.trading.broker import Fill, Protection, SubmissionRejected, TradeState
+from news_futures.trading.broker import Fill, Protection, SubmissionRejected, TradeState, UnsupportedFuturesUnits
 from news_futures.common.credentials import load_token
 from news_futures.common.errors import RuntimeErrorInfo
 from news_futures.news.publications import utc_now
@@ -150,6 +150,12 @@ class TBankReader:
             for stop in stops
         )
 
+    def account_equity(self) -> Decimal:
+        portfolio = self.call('GetSandboxPortfolio')
+        if portfolio['accountId'] != self.account_id:
+            raise ValueError('sandbox_portfolio_mismatch')
+        return amount(portfolio['totalAmountPortfolio'], rubles=True)
+
     def read_risk(self, account_id: str, contract_id: str) -> RiskSnapshot:
         if self.company_id is None or (account_id, contract_id) != (self.account_id, self.contract_id):
             raise ValueError('sandbox_selection_mismatch')
@@ -159,9 +165,11 @@ class TBankReader:
         tick = amount(future['minPriceIncrement'])
         tick_value = amount(future['minPriceIncrementAmount'])
         # shortcut: only trade lot-one RUB contracts with a verified one-to-one points conversion.
-        if (future['uid'] != contract_id or future['currency'].lower() != 'rub' or future['assetType'] != 'TYPE_SECURITY'
+        if future['uid'] != contract_id:
+            raise ValueError('market_contract_mismatch')
+        if (future['currency'].lower() != 'rub' or future['assetType'] != 'TYPE_SECURITY'
                 or type(future['lot']) is not int or future['lot'] != 1 or tick <= 0 or tick != tick_value):
-            raise ValueError('unsupported_futures_units')
+            raise UnsupportedFuturesUnits('unsupported_futures_units')
         last, = rows(self.call('GetLastPrices', service='MarketDataService', account=False,
                                instrumentId=[contract_id]), 'lastPrices')
         status = self.call('GetTradingStatus', service='MarketDataService', account=False, instrumentId=contract_id)
@@ -172,9 +180,7 @@ class TBankReader:
                      and status['limitOrderAvailableFlag'] is True
                      and status['marketOrderAvailableFlag'] is True)
         lots, foreign = self.positions()
-        portfolio = self.call('GetSandboxPortfolio')
-        if portfolio['accountId'] != account_id:
-            raise ValueError('sandbox_portfolio_mismatch')
+        equity = self.account_equity()
         cash = self.call('GetSandboxWithdrawLimits')
         free = sum((amount(item, rubles=True) for item in rows(cash, 'money')
                     if item['currency'].lower() == 'rub'), Decimal(0))
@@ -186,7 +192,7 @@ class TBankReader:
         ticker = future.get('ticker')
         return RiskSnapshot.model_validate({
             'account_id': account_id, 'account_observed_at': now, 'currency': 'RUB',
-            'equity': amount(portfolio['totalAmountPortfolio'], rubles=True),
+            'equity': equity,
             'available_margin': max(Decimal(0), free), 'has_position': bool(lots) or foreign,
             'has_active_orders': bool(ordinary) or open_stops, 'execution_uncertain': False,
             'contract': {

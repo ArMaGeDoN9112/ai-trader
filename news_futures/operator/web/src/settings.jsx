@@ -13,25 +13,23 @@ export function Settings({ settings, status, online, busy, command, error }) {
   const { saved, active, changed_at, models_at, profile_at } = settings;
   const values = draft || { mode: saved.mode, channels: saved.channels.join('\n'),
     analysis_strategy: saved.analysis_strategy || 'fixed',
-    contracts: Object.entries(saved.contracts).map(item => item.join(' = ')).join('\n'),
     aggregator: saved.aggregator, models: saved.models, groq_models: saved.groq_models };
   const set = (field, value) => setDraft({ ...values, base: draft?.base || saved, [field]: value });
-  const restart = ['channels', 'contracts', 'analysis_strategy']
+  const restart = ['channels', 'analysis_strategy']
     .some(key => JSON.stringify(active[key]) !== JSON.stringify(saved[key]));
   const activeModels = roles.map(([id, name]) => [name, <span className="mono">{active.models[id]}</span>]);
   return <form className="stack" onSubmit={async event => {
     event.preventDefault();
-    const contracts = lines(values.contracts).map(line => line.split('=').map(item => item.trim()));
     const result = await command('settings', { base: draft?.base || saved, mode: values.mode, channels: lines(values.channels),
-      contracts, analysis_strategy: values.analysis_strategy,
+      analysis_strategy: values.analysis_strategy,
       aggregator: values.aggregator, models: values.models, groq_models: values.groq_models });
     if (result) setDraft(null);
   }}>
     <div className="settings-grid">
-      <Panel title="Режим и контракты" icon={SlidersHorizontal}>
+      <Panel title="Режим работы" icon={SlidersHorizontal}>
         <Facts rows={[['Счёт', status.account_id || '—'], ['Активный режим', label(active.mode)],
           ['Маршрут анализа', label(active.analysis_strategy || 'fixed')],
-          ['Активные контракты', Object.keys(active.contracts).join(', ')] , ['Применено', time(profile_at)]]} />
+          ['Применено', time(profile_at)]]} />
         <label className="field">Сохранённый режим<select value={values.mode}
           disabled={!['stopped', 'failed'].includes(status.worker) || !online || busy}
           onChange={event => set('mode', event.target.value)}>
@@ -46,9 +44,6 @@ export function Settings({ settings, status, online, busy, command, error }) {
         <p className="muted">Маршрут применяется при запуске обработчика.</p>
         {values.mode === 'sandbox' && values.analysis_strategy === 'tool_agent' &&
           <p className="muted">Команда готовит предложения для ручной отправки.</p>}
-        <label className="field">Разрешённые контракты<textarea rows={4} spellCheck={false} aria-invalid={error === 'invalid_contracts'}
-          placeholder="UID = компания" value={values.contracts} onChange={event => set('contracts', event.target.value)} /></label>
-        <p className="muted">Одна пара «UID контракта = идентификатор компании» в строке.</p>
       </Panel>
       <Panel title="Источники Telegram" icon={Radio}>
         <Facts rows={[['Активные каналы', active.channels.map(name => '@' + name).join(', ') || '—']]} />

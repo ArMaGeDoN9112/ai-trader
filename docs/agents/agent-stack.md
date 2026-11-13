@@ -25,7 +25,9 @@ Preserve the existing diagnostics as independent ways to inspect integrations.
 
 Express the approved workflow as explicit nodes and conditional edges. The
 multi-agent route gives the coordinator, analyst and critic separate graph
-nodes. The analyst owns the read-tool loop. The critic reviews an exact
+nodes. A System One decision selects the next allowlisted read or hands the
+collected evidence to the analyst. The application supplies tool arguments
+from the assigned company and contract. The critic reviews an exact
 proposal and can send it back to the analyst once. See the
 [multi-agent specification](../../.scratch/multi-agent-news/spec.md).
 Keep numerical risk checks and the execution lifecycle as ordinary Python code

@@ -40,7 +40,7 @@ def broker_status(path: Path, profile: dict[str, Any], run_id: str | None) -> di
         with closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=0.2)) as db:
             row = db.execute('SELECT data FROM runtime_status WHERE id = 1').fetchone()
         status = json.loads(row[0]) if row else {}
-        if any(status.get(key) != profile[key] for key in ('mode', 'account_id', 'contracts')):
+        if any(status.get(key) != profile[key] for key in ('mode', 'account_id')):
             status = {}
     except (sqlite3.Error, ValueError, AttributeError):
         status = {}
@@ -52,7 +52,8 @@ def broker_status(path: Path, profile: dict[str, Any], run_id: str | None) -> di
             checked_at = datetime.fromisoformat(last['checked_at']).isoformat()
             position = last['position']
             if position is not None:
-                if (position['contract_id'] not in profile['contracts'] or position['side'] not in ('long', 'short')
+                if (not isinstance(position['contract_id'], str) or not position['contract_id']
+                        or position['side'] not in ('long', 'short')
                         or type(position['quantity']) is not int or position['quantity'] <= 0):
                     raise ValueError('Invalid position')
                 cycle_id = position.get('id')

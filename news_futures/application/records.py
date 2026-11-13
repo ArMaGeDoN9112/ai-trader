@@ -51,15 +51,9 @@ def save_broker_status(archive: Archive, status: dict[str, Any], last_confirmed:
         # Preserve the last successful snapshot even if this attempt failed.
         archive.db.execute('BEGIN IMMEDIATE')
         previous = archive.db.execute('SELECT data FROM runtime_status WHERE id = 1').fetchone()
-        if previous:
+        if previous and last_confirmed is None:
             old = json.loads(previous['data'])
-            instruments = old.get('instruments', {})
-            for contract, item in status.get('instruments', {}).items():
-                if item['ticker'] or contract not in instruments:
-                    instruments[contract] = item
-            status['instruments'] = instruments
-            if last_confirmed is None and all(old.get(key) == status[key] for key in
-                                              ('mode', 'account_id', 'contracts')):
+            if all(old.get(key) == status[key] for key in ('mode', 'account_id')):
                 last_confirmed = old.get('last_confirmed')
         status['last_confirmed'] = last_confirmed
         archive.db.execute('INSERT OR REPLACE INTO runtime_status VALUES (1, ?)', (json.dumps(status),))
@@ -100,6 +94,7 @@ def runtime_report(config: Path, decision: str | None) -> dict[str, Any]:
             ('settings', directory / 'runtime.json'), ('category', directory / 'route' / 'category.json'),
             ('route', directory / 'route' / 'trace.json'),
             ('event', directory / 'event.json'), ('position_check', directory / 'position-status.json'),
+            ('instrument', directory / 'instrument.json'),
             ('agent', directory / TEAM_DIRECTORY / 'trace.json'),
         ):
             if file.is_file():

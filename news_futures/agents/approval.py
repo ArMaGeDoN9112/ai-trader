@@ -7,6 +7,7 @@ from typing import Any
 
 from news_futures.agents.company import CompanyProposal
 from news_futures.agents.contracts import Review
+from news_futures.agents.routing import catalog_contracts
 from news_futures.agents.team_dto import AgentTrace, AnalystInput, CriticTask
 from news_futures.common.artifacts import publication_digest
 from news_futures.common.errors import Rejected
@@ -41,12 +42,18 @@ def read_agent_approval(directory: Path, trace: AgentTrace) -> tuple[CompanyProp
                                    'proposal': proposal.model_dump(mode='json')}) != proposal_id):
         raise Rejected('proposal_not_reviewed')
     check_company_proposal(proposal, evidence)
-    runtime = json.loads((directory.parent / 'runtime.json').read_bytes())
+    inputs = directory.parent
+    runtime = json.loads((inputs / 'runtime.json').read_bytes())
     account = runtime['account_id']
     if (runtime['mode'] not in ('observation', 'sandbox') or runtime['analysis_strategy'] != 'tool_agent'
-            or not isinstance(account, str) or not account
-            or account != trace.account_id
-            or runtime['contracts'].get(proposal.contract_id) != proposal.company_id):
+            or not isinstance(account, str) or not account or account != trace.account_id):
+        raise Rejected('invalid_approval_record')
+    contracts = catalog_contracts((inputs / 'catalog.json').read_bytes(), (inputs / 'futures-catalog.json').read_bytes())
+    selection = json.loads((inputs / 'instrument.json').read_bytes())
+    if (proposal.contract_id is None or contracts.get(proposal.contract_id) != proposal.company_id
+            or selection['status'] != 'completed' or selection['error'] is not None
+            or selection['selected']['contract_id'] != proposal.contract_id
+            or selection['selected']['company_id'] != proposal.company_id):
         raise Rejected('invalid_approval_record')
     return proposal, proposal_id, datetime.fromisoformat(analyst.at), context | {
         'account': context['account'] | {'id': account},

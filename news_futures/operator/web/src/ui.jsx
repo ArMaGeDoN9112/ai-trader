@@ -92,9 +92,9 @@ export function Evidence({ value, publication = false }) {
   return <pre>{JSON.stringify(value, null, 2)}</pre>;
 }
 
-export function Step({ title, at, status, children, id }) {
+export function Step({ title, at, status, children, id, initiallyOpen }) {
   return <li className="step" data-id={id}>
-    <details><summary><span className="step-label"><strong>{title}</strong><small>{at}</small></span>
+    <details open={initiallyOpen}><summary><span className="step-label"><strong>{title}</strong><small>{at}</small></span>
       {status && <Badge value={status} />}<ChevronRight className="step-arrow" size={17} />
     </summary><div className="step-content">{children}</div></details>
   </li>;

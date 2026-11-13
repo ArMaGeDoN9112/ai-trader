@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ArrowLeft, ChevronRight, FileText, Layers3, Search, Workflow } from 'lucide-react';
 import { companyName, contractName, contractOptions, label, query, route, time, useResource } from './api';
+import { TraceGraph } from './trace-graph';
 import { Badge, DecisionList, Empty, Evidence, Facts, Filter, Notice, Panel, PositionValue, SourceLinks, Step } from './ui';
 
 export function Decisions({ news }) {
@@ -152,11 +153,12 @@ export function Tickers({ news, company, contract = '', broker, refresh }) {
 const steps = {
   publication: 'Исходная публикация', source: 'Получение публикации',
   category: 'Категория новости', route: 'Привязки к компаниям', event: 'Сопоставление события',
-  position: 'Проверка открытой позиции', snapshot: 'Подготовка контекста',
+  position: 'Проверка открытой позиции', instrument: 'Выбор фьючерса', snapshot: 'Подготовка контекста',
   analyst: 'Предложение аналитика', critic: 'Ответ критика',
   revision: 'Пересмотр аналитика', review: 'Проверка предложения', risk: 'Проверка риска',
   execution: 'Исполнитель', processing: 'Обработка',
   agent: 'Решение команды', coordinator: 'Координатор',
+  tool_selection: 'Выбор инструмента', analyze: 'Передать аналитику',
   get_company_news: 'Поиск новостей компании', get_market_context: 'Проверка рынка',
   agent_tool: 'Вызов инструмента',
 };
@@ -247,7 +249,7 @@ function AgentEvidence({ step, news }) {
   if (latency_ms != null) rows.push(['Время вызова', (latency_ms / 1000).toLocaleString('ru-RU') + ' с']);
   return <>
     {error && <Notice error>{label(error)}</Notice>}
-    {output?.reason && <p className="preserve">{output.reason}</p>}
+    {output?.reason && <p className="preserve">{label(output.reason)}</p>}
     {output?.objections?.length > 0 && <ul className="routing-links">
       {output.objections.map((objection, index) => <li key={index}>{objection}</li>)}
     </ul>}
@@ -288,14 +290,28 @@ function TraceEvidence({ step, news }) {
   }
   if (step.kind === 'route') return <RoutingEvidence step={step} news={news} />;
   if (step.kind === 'event') return <EventEvidence step={step} />;
+  if (step.kind === 'instrument') {
+    const { status, selected, error, requested_model, metadata } = step.output;
+    return <>
+      {status === 'failed' ? <Notice error>{label(error)}</Notice>
+        : status === 'processing' ? <p>Модель выбирает фьючерс для анализа.</p>
+          : <p>{selected ? `${selected.ticker} · ${companyName(news, selected.company_id)}` : label('no_suitable_contract')}</p>}
+      <Facts rows={[[metadata?.model ? 'Модель' : 'Запрошенная модель', metadata?.model || requested_model]]} />
+      <TechnicalDetails output={step.output} />
+    </>;
+  }
   if (step.kind === 'position') return step.output?.reason
     ? <p>{label(step.output.reason)}</p>
-    : step.status === 'completed' ? <p>Счёт свободен. Новость передана на анализ.</p> : null;
+    : step.status === 'completed' ? <p>Счёт свободен.</p> : null;
   return <>
     <h3>Сохранённый вход</h3><Evidence value={step.input} />
     <h3>Сохранённый ответ</h3><Evidence value={step.output} />
     <SourceLinks data={[step.input, step.output]} />
   </>;
+}
+
+function traceTitle(step) {
+  return (step.id === 'outcome' && step.status !== 'processing' ? 'Итог · ' : '') + (steps[step.kind] || step.kind);
 }
 
 export function Trace({ revision, from, news, refresh }) {
@@ -315,13 +331,16 @@ export function Trace({ revision, from, news, refresh }) {
         {data.critic_status && <span>Критик · {label(data.critic_status)}</span>}
       </div>}
       {data?.reason && <Notice error={data.status === 'failed'}>{label(eventError || data.reason)}</Notice>}
+      {!data && !error && <Empty>Загрузка трассы…</Empty>}
+    </Panel>
+    {data && <TraceGraph steps={data.steps} names={steps} title={traceTitle}
+      renderEvidence={step => <TraceEvidence step={step} news={news} />} />}
+    {data && <Panel title="Хронология" icon={Workflow}>
       <ul id="trace-steps" className="timeline">{data?.steps.map(step => <Step key={step.id} id={step.id}
-        title={step.id.includes('/agent/') && agentRoles[step.kind] ||
-          (step.id === 'outcome' && step.status !== 'processing' ? 'Итог · ' : '') + (steps[step.kind] || step.kind)}
+        title={step.id.includes('/agent/') && agentRoles[step.kind] || traceTitle(step)}
         status={step.status} at={step.at ? time(step.at) : step.saved_at ? 'Сохранено ' + time(step.saved_at) : 'Время не сохранено'}>
         <TraceEvidence step={step} news={news} />
       </Step>)}</ul>
-      {!data && !error && <Empty>Загрузка трассы…</Empty>}
-    </Panel>
+    </Panel>}
   </div>;
 }

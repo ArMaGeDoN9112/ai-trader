@@ -2,8 +2,5 @@
   "mode": "observation",
   "data_dir": "runtime",
   "catalog": "catalog/diagnostics.json",
-  "account_id": "SANDBOX_ACCOUNT_ID",
-  "contracts": {
-    "FUTURE_UID": "COMPANY_ID"
-  }
+  "account_id": "SANDBOX_ACCOUNT_ID"
 }

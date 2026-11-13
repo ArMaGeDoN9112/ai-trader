@@ -15,7 +15,7 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from typing import Any, cast
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import ANY, AsyncMock, patch
 
 import httpx
 
@@ -31,7 +31,7 @@ from news_futures.agents.contracts import Review
 from news_futures.agents.events import EventArchive
 from news_futures.application.checkpoints import checkpoint_serializer
 from news_futures.common.paths import EVENT_SETTINGS, JEV_SETTINGS, REVIEW_SETTINGS, TELEGRAM_SOURCES
-from news_futures.trading.broker import Fill
+from news_futures.trading.broker import Fill, UnsupportedFuturesUnits
 from news_futures.agents.routing import request_choices
 from news_futures.common.artifacts import replace_json, write_json
 from news_futures.operator.news import news_view, trace_view
@@ -42,6 +42,7 @@ from news_futures.application.config import load_settings
 from news_futures.application.operator_state import OperatorState
 from news_futures.application.records import runtime_tables
 from news_futures.application.workflow import Shutdown
+from news_futures.adapters.tbank.futures_catalog import save_catalog
 from news_futures.adapters.tbank.rest import SANDBOX_REST, TBankReader, restrict_to_reads
 from news_futures.adapters.telegram import Difference, Source
 
@@ -57,7 +58,6 @@ class RuntimeTest(unittest.TestCase):
             profile = Path(directory) / 'runtime.json'
             write_json(profile, {
                 'data_dir': '.', 'catalog': 'catalog.json', 'account_id': 'account',
-                'contracts': {'contract': 'company'},
             })
             settings = load_settings(profile)
         for field, path in packaged.items():
@@ -121,22 +121,32 @@ class RuntimeAcceptance(RiskFixture):
         self.enterContext(patch('news_futures.adapters.telegram.TelethonTransport', return_value=self))
         self.enterContext(patch('news_futures.application.runtime.load_token', return_value='test-key'))
         self.enterContext(patch('news_futures.agents.routing.load_token', return_value='test-key'))
+        self.enterContext(patch('news_futures.agents.tool_agent.load_token', return_value='test-key'))
         self.enterContext(patch('news_futures.agents.review.load_token', return_value='test-key'))
         self.enterContext(patch('news_futures.application.runtime.sandbox_client', side_effect=lambda *args, **kw: httpx.Client()))
         self.futures_snapshot: dict[str, Any] = {
             'fetched_at': self.started_at.isoformat(), 'categories': {'financial': 'Финансы'},
-            'assets': [{'name': company, 'categories': ['financial'], 'contracts': [],
-                        'underlying_position_uid': f'{company}-share'} for company in ('sber', 'vtb')],
+            'assets': [{'name': company, 'categories': ['financial'], 'underlying_position_uid': f'{company}-share',
+                        'contracts': [{'uid': uid, 'ticker': uid, 'api_trade_available': True,
+                                       'last_trade': (self.started_at + timedelta(days=1)).isoformat()}]}
+                       for company, uid in (('sber', self.contract_id), ('vtb', 'vtb-future'))],
         }
         self.fetch_futures = self.enterContext(patch('news_futures.application.runtime.fetch_catalog',
                                                    return_value=self.futures_snapshot))
+        save_catalog(self.root / 'futures-catalog', self.futures_snapshot)
         self.enterContext(patch('news_futures.application.runtime.TBankReader', return_value=self.broker))
         self.write_broker = self.enterContext(patch('news_futures.application.runtime.TBankSandbox', return_value=self.broker))
         self.jev_requests: list[dict[str, Any]] = []
         self.category_requests: list[dict[str, Any]] = []
+        self.instrument_requests: list[dict[str, Any]] = []
+        self.instrument_choice = 'contract_0'
+        self.tool_requests: list[dict[str, Any]] = []
+        self.tool_choices = iter(['get_market_context', 'analyze', 'analyze'])
         jev_client = self.enterContext(httpx.Client(transport=httpx.MockTransport(self.jev_reply)))
         self.enterContext(patch('news_futures.agents.routing.request_choices',
                                 side_effect=lambda _client, *args: request_choices(jev_client, *args)))
+        self.enterContext(patch('news_futures.agents.tool_agent.request_choices',
+                                side_effect=lambda _client, *args, **kwargs: request_choices(jev_client, *args, **kwargs)))
         self.catalog = self.root / 'catalog.json'
         write_json(self.catalog, {'operations': {'catalog': {'availability': 'available', 'data': [
             {'company_id': company, 'company_name': company.upper(), 'ticker': company.upper(),
@@ -146,13 +156,31 @@ class RuntimeAcceptance(RiskFixture):
         self.profile = self.root / 'runtime.json'
         self.profile_data = {
             'data_dir': '.', 'catalog': self.catalog.name, 'account_id': self.account_id,
-            'contracts': {self.contract_id: 'sber', 'vtb-future': 'vtb'},
             'session': 'telegram.session', 'review': self.config.name, 'matcher': 'unused-event-model.json',
         }
         write_json(self.profile, self.profile_data)
 
     def jev_reply(self, request: httpx.Request) -> httpx.Response:
         data = json.loads(request.content)
+        if 'next_step' in data['questions']:
+            self.assertEqual(str(request.url), 'https://openrouter.ai/api/alpha/decisions')
+            self.assertEqual(data['model'], 'typesafe/jev-1.14')
+            self.tool_requests.append(data)
+            choice = next(self.tool_choices)
+            return httpx.Response(200, json={
+                'id': 'tool-result', 'model': data['model'], 'provider': 'TypeSafe', 'answers': {
+                    'next_step': {'type': 'choice', 'choice': choice, 'confidence': 1.0,
+                                  'probabilities': {key: float(key == choice)
+                                                    for key in data['questions']['next_step']['criteria']}},
+                },
+            })
+        if 'instrument' in data['questions']:
+            self.instrument_requests.append(data)
+            return httpx.Response(200, json={'id': 'instrument-result', 'model': data['model'], 'answers': {
+                'instrument': {'type': 'choice', 'choice': self.instrument_choice, 'confidence': 1.0,
+                               'probabilities': {key: float(key == self.instrument_choice)
+                                                 for key in data['questions']['instrument']['criteria']}},
+            }})
         if all(key.startswith('category_') for key in data['questions']):
             self.category_requests.append(data)
             return httpx.Response(200, json={'id': 'category-result', 'model': data['model'], 'answers': {
@@ -245,10 +273,6 @@ class RuntimeAcceptance(RiskFixture):
     def delegate(self) -> dict[str, str]:
         return {'status': 'delegate', 'company_id': 'sber', 'reason': 'Проверь прогноз.'}
 
-    def agent_read(self, name: str, **args: Any) -> dict[str, Any]:
-        return {'tool_calls': [{'id': 'call-' + name, 'type': 'function',
-                                'function': {'name': name, 'arguments': json.dumps(args)}}]}
-
     def test_manual_news_runs_in_sandbox_and_is_ineligible_for_execution(self) -> None:
         from news_futures.application.records import review_path
         from news_futures.operator.news import enqueue_test_news, testing_view
@@ -286,23 +310,22 @@ class RuntimeAcceptance(RiskFixture):
         from news_futures.operator.news import trace_view
 
         self.tool_agent(mode='sandbox')
+        self.tool_choices = iter(['get_company_news', 'get_market_context'])
         incoming = self.news(self.market, 'SBER опубликовал повышенный прогноз.')
 
         def follow_up(body: dict[str, Any]) -> dict[str, Any]:
             objections = json.loads(body['messages'][-1]['content'])['review']['objections']
             self.assertEqual(objections, ['Insufficient independent evidence.'])
             self.assertEqual(body['messages'][-1]['name'], 'critic')
-            return self.agent_read('get_company_news', company_id='sber', query='прогноз')
+            return {'proposal': self.proposal('enter', incoming) | {
+                'entry_price': 301, 'reason': 'Уточнённое основание входа.',
+            }, 'missing_data': []}
 
         endpoint = self.serve(
             self.delegate(),
-            self.agent_read('get_company_news', company_id='sber'),
-            self.agent_read('get_market_context', contract_id=self.contract_id),
             {'proposal': self.proposal('enter', incoming), 'missing_data': []},
             review(False),
             follow_up,
-            {'proposal': self.proposal('enter', incoming) | {'entry_price': 301, 'reason': 'Уточнённое основание входа.'},
-             'missing_data': []},
             review(),
         )
         report = self.report(incoming)
@@ -311,26 +334,26 @@ class RuntimeAcceptance(RiskFixture):
         self.assertEqual(report['result']['critic_status'], 'approved')
         calls = report['agent']['calls']
         self.assertEqual([call['kind'] for call in calls], [
-            'coordinator', 'analyst', 'get_company_news', 'analyst', 'get_market_context',
-            'analyst', 'critic', 'analyst', 'get_company_news', 'analyst', 'critic',
+            'coordinator', 'tool_selection', 'get_company_news', 'tool_selection', 'get_market_context',
+            'tool_selection', 'analyst', 'critic', 'tool_selection', 'analyst', 'critic',
         ])
+        self.assertEqual(calls[1]['output'], {'tool': 'get_company_news'})
+        self.assertEqual(calls[1]['actual_model'], 'typesafe/jev-1.14')
+        self.assertEqual(calls[1]['provider'], 'TypeSafe')
+        self.assertEqual(calls[2]['arguments'], {'company_id': 'sber'})
+        self.assertEqual(calls[4]['arguments'], {'contract_id': self.contract_id})
+        self.assertNotIn('get_company_news', self.tool_requests[1]['questions']['next_step']['criteria'])
         self.assertEqual([call['handoff_to'] for call in calls if 'handoff_to' in call],
                          ['analyst', 'critic', 'analyst', 'critic'])
         proposals = [call['output'] for call in calls if call.get('handoff_to') == 'critic']
         self.assertNotEqual(proposals[0]['id'], proposals[1]['id'])
         self.assertEqual(report['result']['proposal']['id'], proposals[1]['id'])
         self.assertEqual([request['model'] for request in endpoint.requests], [
-            'test/coordinator', 'test/analyst', 'test/analyst', 'test/analyst', 'test/critic',
-            'test/analyst', 'test/analyst', 'test/critic',
+            'test/coordinator', 'test/analyst', 'test/critic', 'test/analyst', 'test/critic',
         ])
         for request in endpoint.requests:
-            if request['model'] == 'test/analyst':
-                self.assertEqual({tool['function']['name'] for tool in request['tools']},
-                                 {'get_company_news', 'get_market_context'})
-            else:
-                self.assertNotIn('tools', request)
-                self.assertEqual(request['response_format']['type'], 'json_schema')
-        self.assertNotIn('parallel_tool_calls', endpoint.requests[1])
+            self.assertNotIn('tools', request)
+            self.assertEqual(request['response_format']['type'], 'json_schema')
         self.assertTrue(endpoint.requests[0]['provider']['require_parameters'])
         view = trace_view(self.root, self.account_id, incoming.revision_key())
         assert view is not None
@@ -358,23 +381,31 @@ class RuntimeAcceptance(RiskFixture):
         self.assertEqual(len(endpoint.requests), 1)
         self.write_broker.assert_not_called()
 
-    def test_tool_agent_rejects_unknown_tool_and_out_of_scope_reads(self) -> None:
+    def test_tool_agent_stops_after_market_finds_no_supported_futures(self) -> None:
         self.tool_agent()
+        self.tool_choices = iter(['get_market_context', 'get_market_context'])
         incoming = self.news(self.market, 'SBER опубликовал прогноз.')
-
-        def other_company(body: dict[str, Any]) -> dict[str, Any]:
-            self.assertEqual(json.loads(body['messages'][-1]['content']), {'error': 'unknown_tool'})
-            return self.agent_read('get_market_context', contract_id='vtb-future')
-
-        def missing_data(body: dict[str, Any]) -> dict[str, Any]:
-            self.assertEqual(json.loads(body['messages'][-1]['content']), {'error': 'unknown_contract'})
-            return {'proposal': None, 'missing_data': ['Нет котировки.']}
-
-        self.serve(self.delegate(), self.agent_read('request_entry'), other_company, missing_data)
+        with patch.object(self.broker, 'read_risk', side_effect=UnsupportedFuturesUnits) as read_risk:
+            endpoint = self.serve(self.delegate(), code=0)
+            read_risk.assert_called_once_with(self.account_id, self.contract_id)
         report = self.report(incoming)
-        self.assertEqual(report['result']['status'], 'insufficient_data')
-        self.assertEqual([call['error'] for call in report['agent']['calls'] if call['status'] == 'failed'],
-                         ['unknown_tool', 'unknown_contract'])
+        self.assertEqual((report['result']['status'], report['result']['reason']), ('skipped', 'no_supported_futures'))
+        self.assertEqual([(call['kind'], call['status']) for call in report['agent']['calls']], [
+            ('coordinator', 'completed'), ('tool_selection', 'completed'), ('get_market_context', 'skipped'),
+        ])
+        self.assertEqual(len(endpoint.requests), 1)
+        self.write_broker.assert_not_called()
+
+    def test_tool_agent_rejects_unknown_tool_from_decisions(self) -> None:
+        self.tool_agent()
+        self.tool_choices = iter(['request_entry'])
+        incoming = self.news(self.market, 'SBER опубликовал прогноз.')
+        with patch.object(self.broker, 'read_risk') as read_risk:
+            self.assertEqual(len(self.serve(self.delegate(), code=1).requests), 1)
+        read_risk.assert_not_called()
+        report = self.report(incoming)
+        self.assertEqual(report['result']['status'], 'failed')
+        self.assertEqual(report['agent']['calls'][-1]['error'], 'invalid_decision')
         self.assertNotIn('proposal', report['result'])
         self.write_broker.assert_not_called()
 
@@ -383,14 +414,14 @@ class RuntimeAcceptance(RiskFixture):
         incoming = self.news(self.market, 'SBER опубликовал прогноз.')
         first = self.proposal('enter', incoming)
         endpoint = self.serve(
-            self.delegate(), self.agent_read('get_market_context', contract_id=self.contract_id),
+            self.delegate(),
             {'proposal': first, 'missing_data': []}, review(False),
             {'proposal': first | {'entry_price': 301}, 'missing_data': []}, review(False),
         )
         result = self.report(incoming)['result']
         self.assertEqual((result['status'], result['critic_status']), ('rejected', 'rejected'))
         self.assertNotIn('proposal', result)
-        self.assertEqual(len(endpoint.requests), 6)
+        self.assertEqual(len(endpoint.requests), 5)
         self.write_broker.assert_not_called()
 
     def test_tool_agent_resumes_at_critic_with_the_saved_proposal(self) -> None:
@@ -398,13 +429,15 @@ class RuntimeAcceptance(RiskFixture):
         incoming = self.news(self.market, 'SBER опубликовал прогноз.')
         with self.assertRaises(Interrupted):
             self.serve(
-                self.delegate(), self.agent_read('get_market_context', contract_id=self.contract_id),
+                self.delegate(),
                 {'proposal': self.proposal('enter', incoming), 'missing_data': []}, Interrupted(),
             )
         saved = self.report(incoming)['agent']['calls'][-1]['output']
         self.assertEqual(saved['action'], 'enter')
         endpoint = self.serve(review())
         self.assertEqual([request['model'] for request in endpoint.requests], ['test/critic'])
+        self.assertEqual(len(self.instrument_requests), 1)
+        self.assertEqual(len(self.tool_requests), 2)
         self.assertEqual(self.report(incoming)['result']['proposal'], saved)
         self.write_broker.assert_not_called()
 
@@ -422,6 +455,51 @@ class RuntimeAcceptance(RiskFixture):
         trace = trace_view(self.root, self.account_id, incoming.revision_key())
         assert trace is not None
         self.assertEqual([step['kind'] for step in trace['steps'][:3]], ['publication', 'category', 'route'])
+        self.assertEqual([step['kind'] for step in trace['steps'][3:6]], ['position', 'instrument', 'snapshot'])
+
+    def test_decisions_selects_the_only_contract_passed_to_the_fixed_analyst(self) -> None:
+        contracts = self.futures_snapshot['assets'][0]['contracts']
+        contracts.insert(0, contracts[0] | {'uid': 'other-series', 'ticker': 'SBER2'})
+        self.instrument_choice = 'contract_1'
+        incoming = self.news(self.market, 'SBER опубликовал прогноз.')
+
+        with patch.object(self.broker, 'read_risk', wraps=self.broker.read_risk) as read_risk:
+            self.serve(self.proposal('enter', incoming), review())
+        read_risk.assert_called_once_with(self.account_id, self.contract_id)
+        request, = self.instrument_requests
+        self.assertEqual(request['model'], self.category_requests[0]['model'])
+        self.assertEqual(request['model'], self.jev_requests[0]['model'])
+        self.assertEqual(list(request['questions']['instrument']['criteria']), ['contract_0', 'contract_1', 'none'])
+        self.assertEqual(request['state']['contract_0']['contract_id'], 'other-series')
+        report = self.report(incoming)
+        self.assertEqual(report['instrument']['selected']['contract_id'], self.contract_id)
+        self.assertEqual([row['contract_id'] for row in report['context']['candidates']], [self.contract_id])
+        self.assertEqual(report['result']['status'], 'approved_for_checks')
+
+    def test_instrument_selection_stops_before_chat_on_none_or_invalid_choice(self) -> None:
+        for choice, status, reason, code in (
+            ('none', 'skipped', 'no_suitable_contract', 0), ('outside_catalog', 'failed', 'invalid_decision', 1),
+        ):
+            with self.subTest(choice=choice):
+                self.instrument_choice = choice
+                incoming = self.news(self.market, f'SBER опубликовал прогноз. {choice}')
+                with patch.object(self.broker, 'read_risk') as read_risk:
+                    self.assertEqual(self.serve(code=code).requests, [])
+                read_risk.assert_not_called()
+                report = self.report(incoming)
+                result = report['result']
+                self.assertEqual((result['stage'], result['status'], result['reason']), ('instrument', status, reason))
+                self.assertIsNone(report['instrument']['selected'])
+
+    def test_fixed_route_skips_when_market_finds_no_supported_futures(self) -> None:
+        incoming = self.news(self.market, 'SBER опубликовал прогноз.')
+        with patch.object(self.broker, 'read_risk', side_effect=UnsupportedFuturesUnits) as read_risk:
+            self.assertEqual(self.serve().requests, [])
+            read_risk.assert_called_once_with(self.account_id, self.contract_id)
+        result = self.report(incoming)['result']
+        self.assertEqual((result['stage'], result['status'], result['reason']),
+                         ('snapshot', 'skipped', 'no_supported_futures'))
+        self.write_broker.assert_not_called()
 
     def test_unrelated_category_result_skips_company_routing(self) -> None:
         self.futures_snapshot['categories'] = {'oil_gas': 'Нефтегаз'}
@@ -435,6 +513,26 @@ class RuntimeAcceptance(RiskFixture):
         self.assertEqual(report['category']['selected'], [])
         self.assertEqual(report['result']['status'], 'skipped')
         self.assertEqual(report['result']['stage'], 'category')
+
+    def test_sandbox_analyzes_headhunter_from_catalog_without_a_profile_list(self) -> None:
+        self.sandbox()
+        asset = self.futures_snapshot['assets'][0]
+        asset.update(name='HEAD', underlying_position_uid='head-share')
+        asset['contracts'][0]['ticker'] = 'HDZ6'
+        catalog = json.loads(self.catalog.read_bytes())
+        catalog['operations']['catalog']['data'][0].update(
+            company_id='head', company_name='HeadHunter', ticker='HEAD', share_id='head-share',
+        )
+        replace_json(self.catalog, catalog)
+        self.snapshot['contract'].update(company_id='head', share_id='head-share', ticker='HDZ6')
+        incoming = self.news(self.market, '#HEAD HeadHunter выкупил собственные акции.')
+        proposal = self.proposal('enter', incoming) | {'company_id': 'head'}
+
+        self.serve(proposal, review())
+
+        self.assertEqual(self.report(incoming)['result']['status'], 'protected')
+        self.assertEqual(self.broker.calls, ['enter', 'sl', 'tp'])
+        self.write_broker.assert_any_call(ANY, self.account_id, self.contract_id, 'head')
 
     def test_catalog_refreshes_on_each_start_and_keeps_last_snapshot_on_failure(self) -> None:
         output = self.root / 'futures-catalog' / 'catalog.json'
@@ -513,7 +611,7 @@ class RuntimeAcceptance(RiskFixture):
 
     def test_panel_model_edit_applies_to_the_next_revision_and_keeps_frozen_review(self) -> None:
         controls = OperatorState(self.root)
-        runtime = Runtime(load_settings(self.profile), lambda _: self.broker, None, on_controls=lambda **event: None)
+        runtime = Runtime(load_settings(self.profile), lambda *_: self.broker, None, on_controls=lambda **event: None)
         runtime.broker_ready = True
         first = self.news(self.market, 'SBER raised its forecast.')
         second = self.news(self.market, 'SBER raised its dividend.')
@@ -554,8 +652,7 @@ class RuntimeAcceptance(RiskFixture):
         controls = OperatorState(self.root)
         preferences = Preferences(settings, ['markettwits'], controls)
         saved = preferences.saved()
-        form = saved | {'base': saved, 'aggregator': 'groq',
-                        'contracts': [list(item) for item in saved['contracts'].items()]}
+        form = saved | {'base': saved, 'aggregator': 'groq'}
         with patch('news_futures.operator.settings.load_token', return_value='groq-test-key') as token:
             preferences.save(form, stopped=False)
             token.assert_called_once_with('groq', 'api_key')
@@ -578,11 +675,9 @@ class RuntimeAcceptance(RiskFixture):
             return endpoint.respond(request)
 
         applied: list[dict[str, Any]] = []
-        runtime = Runtime(settings, lambda _: self.broker, None, on_controls=lambda **event: applied.append(event),
+        runtime = Runtime(settings, lambda *_: self.broker, None, on_controls=lambda **event: applied.append(event),
                           started_at=self.started_at)
         runtime.broker_ready = True
-        settings.futures_catalog.parent.mkdir()
-        write_json(settings.futures_catalog, self.futures_snapshot)
         archive = Archive(settings.publications)
         with closing(archive.db):
             runtime_tables(archive)
@@ -612,8 +707,8 @@ class RuntimeAcceptance(RiskFixture):
         last = self.report()['broker']['last_confirmed']
         self.assertEqual(last['position']['quantity'], 3)
         settings = load_settings(self.profile)
-        runtime = Runtime(settings, lambda _: self.broker, lambda _: self.broker, run_id='test-run')
-        with (patch.object(self.broker, 'read_risk', side_effect=ConnectionError('private connection error')),
+        runtime = Runtime(settings, lambda *_: self.broker, lambda *_: self.broker, run_id='test-run')
+        with (patch.object(self.broker, 'read_trade', side_effect=ConnectionError('private connection error')),
               patch('builtins.print')):
             runtime.refresh()
         status = self.report()['broker']
@@ -722,7 +817,7 @@ class RuntimeAcceptance(RiskFixture):
     def test_restart_skips_reviewed_entry_when_broker_execution_never_started(self) -> None:
         self.sandbox()
         incoming = self.news(self.rbc, 'SBER raised its forecast.')
-        runtime = Runtime(load_settings(self.profile), lambda _: self.broker, lambda _: self.broker,
+        runtime = Runtime(load_settings(self.profile), lambda *_: self.broker, lambda *_: self.broker,
                           started_at=self.started_at)
 
         def stop(body: dict[str, Any]) -> dict[str, Any]:
@@ -774,6 +869,7 @@ class RuntimeAcceptance(RiskFixture):
     def test_open_position_skips_news_analysis_until_broker_confirms_exit(self) -> None:
         self.sandbox()
         self.snapshot['contract']['ticker'] = 'SRZ5'
+        self.futures_snapshot['assets'][0]['contracts'][0]['ticker'] = 'SRZ5'
         entry = self.news(self.market, 'SBER increased profit forecast.')
         self.serve(self.proposal('enter', entry), review())
         self.assertEqual(self.report(entry)['result']['status'], 'protected')
@@ -805,12 +901,8 @@ class RuntimeAcceptance(RiskFixture):
 
         view = news_view(self.root, self.profile_data, {}, {}, 'sber')
         self.assertEqual(view['contracts'][self.contract_id]['ticker'], 'SRZ5')
-        # Older archives kept instrument identity in the decision snapshot only.
-        with closing(sqlite3.connect(self.root / 'publications.sqlite3')) as db, db:
-            db.execute("UPDATE runtime_status SET data = json_remove(data, '$.instruments')")
-        archived = news_view(self.root, self.profile_data | {'contracts': {'next': 'sber'}}, {}, {}, 'sber')
-        self.assertIn('enter', [order['action'] for order in archived['orders']])
-        self.assertTrue(all(order['contract_id'] == self.contract_id for order in archived['orders']))
+        self.assertIn('enter', [order['action'] for order in view['orders']])
+        self.assertTrue(all(order['contract_id'] == self.contract_id for order in view['orders']))
 
     def test_skips_and_rereads_account_after_approval(self) -> None:
         self.sandbox()

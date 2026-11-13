@@ -79,7 +79,6 @@ class get_company_news(Contract):
     """Read earlier publications about an allowed company from the local archive."""
 
     company_id: str
-    query: str | None = Field(default=None, max_length=120)
 
 
 class get_market_context(Contract):
@@ -92,7 +91,6 @@ class ToolRequest(DTO):
     name: str
     args: dict[str, JsonValue]
     id: str
-    type: Literal['tool_call'] = 'tool_call'
 
 
 class Observation(DTO):

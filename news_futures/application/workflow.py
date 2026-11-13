@@ -20,11 +20,12 @@ from news_futures.agents.company import MAX_SNAPSHOT_AGE, OpenPosition, Snapshot
 from news_futures.agents.decisions import analyze_event, news_record
 from news_futures.agents.events import EventArchive, match_route
 from news_futures.agents.team_dto import EventEvidence
-from news_futures.agents.routing import route_publication
+from news_futures.agents.routing import route_publication, select_contract
 from news_futures.agents.tool_agent import TEAM_DIRECTORY, run_tool_agent
 from news_futures.application.checkpoints import checkpoint_serializer
 from news_futures.common.artifacts import move_artifact, replace_json
 from news_futures.news.publications import Archive, TEST_SOURCE, utc_now
+from news_futures.trading.broker import NoSupportedFutures
 from news_futures.trading.risk import MAX_NEWS_AGE
 from news_futures.trading.terms import ContractSnapshot
 from news_futures.application.config import RuntimeSettings
@@ -42,6 +43,7 @@ class NewsState(TypedDict, total=False):
     reason: str | None
     decision_id: int
     affected: list[str]
+    selected_contract_id: str
     held_contract_id: str
     position_id: str | None
     proposal: dict[str, Any] | None
@@ -51,7 +53,8 @@ class NewsState(TypedDict, total=False):
 
 def analyze_news(
     settings: RuntimeSettings, directory: Path, publication: dict[str, Any], revision: str, *,
-    read_snapshot: Callable[[EventArchive], Snapshot], current_position: Callable[[], OpenPosition | None],
+    contracts: dict[str, str], read_snapshot: Callable[[dict[str, str]], Snapshot],
+    current_position: Callable[[], OpenPosition | None],
     stop: Event, read_market: Callable[[EventArchive, str, float], tuple[Snapshot, ContractSnapshot]] | None = None,
 ) -> NewsState:
     tool_agent = settings.analysis_strategy == 'tool_agent'
@@ -65,7 +68,7 @@ def analyze_news(
         routed = route_publication(directory / 'jev.json', directory / 'publication.json',
                                    directory / 'catalog.json', route_dir,
                                    futures_catalog=directory / 'futures-catalog.json',
-                                   position_company=settings.contracts.get(position.contract_id) if position else None)
+                                   position_company=contracts.get(position.contract_id) if position else None)
         if routed['status'] != 'completed':
             return {'status': 'failed', 'reason': routed['error'],
                     'stage': 'category' if routed['candidate_count'] is None else 'route'}
@@ -82,13 +85,15 @@ def analyze_news(
         result: NewsState = {'decision_id': event['decision_id'], 'affected': affected}
         if tool_agent and event['kind'] == 'repeat':
             return result | {'status': 'skipped', 'reason': 'repeat', 'stage': 'event'}
-        if not set(affected).intersection(settings.contracts.values()):
-            return result | {'status': 'skipped', 'reason': 'no_allowed_company'}
+        if not affected:
+            return result | {'status': 'skipped', 'reason': 'no_company_link'}
+        if not set(affected).intersection(contracts.values()):
+            return result | {'status': 'skipped', 'reason': 'no_listed_futures'}
         return result
 
     def prepare(state: NewsState) -> NewsState:
         archive = Archive(settings.publications)
-        with closing(archive.db), EventArchive(settings.events) as events:
+        with closing(archive.db):
             latest = archive.latest_revision(publication['id'])
             if latest is None or latest['revision'] != revision:
                 return {'status': 'skipped', 'reason': 'publication_revision_superseded'}
@@ -100,23 +105,41 @@ def analyze_news(
                 LIMIT 1
             """, (publication['text'], publication['published_at'])).fetchone():
                 return {'status': 'skipped', 'reason': 'historical_reprint'}
-            snapshot = None if tool_agent else read_snapshot(events)
-        position = snapshot.position if snapshot is not None else current_position()
+        position = current_position()
         if position:
             contract = position.contract_id
-            reason = ('position_already_open' if settings.contracts[contract] in state['affected']
+            reason = ('position_already_open' if contracts.get(contract) in state['affected']
                       else 'account_position_limit')
             return {'status': 'skipped', 'reason': reason, 'held_contract_id': contract}
         if utc_now() - datetime.fromisoformat(publication['published_at']) > MAX_NEWS_AGE:
             return {'status': 'skipped', 'reason': 'publication_context_only'}
-        if snapshot is not None:
-            replace_json(directory / 'snapshot.json', snapshot.model_dump(mode='json'))
+        return {}
+
+    def instrument(state: NewsState) -> NewsState:
+        if selected := state.get('selected_contract_id'):
+            return {} if selected in contracts else {'status': 'skipped', 'reason': 'no_suitable_contract'}
+        selection = select_contract(directory, publication['text'], {
+            uid: company for uid, company in contracts.items() if company in state['affected']
+        })
+        if selection['error']:
+            return {'status': 'failed', 'reason': selection['error']}
+        if selection['selected'] is None:
+            return {'status': 'skipped', 'reason': 'no_suitable_contract'}
+        return {'selected_contract_id': selection['selected']['contract_id']}
+
+    def capture_snapshot(state: NewsState) -> NewsState:
+        uid = state['selected_contract_id']
+        try:
+            market = read_snapshot({uid: contracts[uid]})
+        except NoSupportedFutures as error:
+            return {'status': 'skipped', 'reason': str(error)}
+        replace_json(directory / 'snapshot.json', market.model_dump(mode='json'))
         return {}
 
     def agent(state: NewsState) -> NewsState:
         assert read_market is not None
         event = EventEvidence.model_validate(news_record(json.loads((directory / 'event.json').read_bytes())))
-        contracts = {uid: company for uid, company in settings.contracts.items() if company in state['affected']}
+        uid = state['selected_contract_id']
         archive = Archive(settings.publications)
         with EventArchive(settings.events, testing_revision=testing_revision) as events, closing(archive.db):
             def check_current() -> str | None:
@@ -137,7 +160,7 @@ def analyze_news(
                     raise Shutdown
 
             outcome = run_tool_agent(
-                directory, revision, event, settings.account_id, contracts, events,
+                directory, revision, event, settings.account_id, {uid: contracts[uid]}, events,
                 lambda uid, seconds: read_market(events, uid, seconds),
                 check_current, check_stop, checkpointer, settings.coordinator,
             )
@@ -149,9 +172,12 @@ def analyze_news(
             return result
 
     def review(state: NewsState) -> NewsState:
+        uid = state['selected_contract_id']
         snapshot_path = directory / 'snapshot.json'
         content = snapshot_path.read_bytes()
         snapshot = Snapshot.model_validate_json(content)
+        if [item.contract_id for item in snapshot.instruments] != [uid]:
+            return {'status': 'failed', 'reason': 'instrument_selection_mismatch'}
         attempt = sha256(content).hexdigest()
         with EventArchive(settings.events, testing_revision=testing_revision) as events:
             trace = analyze_event(events, state['decision_id'], snapshot_path,
@@ -162,7 +188,7 @@ def analyze_news(
 
     def audited(stage: str, node: Callable[[NewsState], NewsState]) -> RunnableLambda[NewsState, dict[str, Any]]:
         def note(record: dict[str, Any]) -> None:
-            if stage != 'route':
+            if stage not in ('route', 'instrument'):
                 try:
                     replace_json(directory / f'{stage}-status.json', record)
                 except OSError:
@@ -190,13 +216,19 @@ def analyze_news(
     graph: StateGraph[NewsState, None, NewsState, NewsState] = StateGraph(NewsState)
     graph.add_node('route', audited('route', route))
     graph.add_node('event', audited('route', record_route))
-    graph.add_node('snapshot', audited('position', prepare))
+    graph.add_node('position', audited('position', prepare))
+    graph.add_node('instrument', audited('instrument', instrument))
     final_node = 'agent' if tool_agent else 'review'
+    if not tool_agent:
+        graph.add_node('snapshot', audited('snapshot', capture_snapshot))
+        graph.add_conditional_edges('snapshot', lambda state: final_node if state['status'] == 'continue' else END)
     graph.add_node(final_node, audited(final_node, agent if tool_agent else review))
     graph.add_edge(START, 'route')
     graph.add_conditional_edges('route', lambda state: 'event' if state['status'] == 'continue' else END)
-    graph.add_conditional_edges('event', lambda state: 'snapshot' if state['status'] == 'continue' else END)
-    graph.add_conditional_edges('snapshot', lambda state: final_node if state['status'] == 'continue' else END)
+    graph.add_conditional_edges('event', lambda state: 'position' if state['status'] == 'continue' else END)
+    graph.add_conditional_edges('position', lambda state: 'instrument' if state['status'] == 'continue' else END)
+    graph.add_conditional_edges('instrument', lambda state: ('agent' if tool_agent else 'snapshot')
+                                if state['status'] == 'continue' else END)
     graph.add_edge(final_node, END)
     with closing(sqlite3.connect(settings.data_dir / 'checkpoints.sqlite3', check_same_thread=False)) as db:
         checkpointer = SqliteSaver(db, serde=checkpoint_serializer())

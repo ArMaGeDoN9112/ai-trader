@@ -4,11 +4,9 @@ import json
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
-
 from news_futures.agents.company import Nonempty
 from news_futures.agents.contracts import Aggregator, Contract, RoleSettings, Settings
-from news_futures.agents.routing import JevSettings, catalog_rows, load_catalog
+from news_futures.agents.routing import JevSettings, load_catalog
 from news_futures.common.errors import RuntimeErrorInfo
 from news_futures.common.paths import EVENT_SETTINGS, JEV_SETTINGS, REVIEW_SETTINGS, TELEGRAM_SOURCES
 
@@ -20,7 +18,6 @@ class RuntimeSettings(Contract):
     data_dir: Path
     catalog: Path
     account_id: Nonempty
-    contracts: dict[Nonempty, Nonempty] = Field(min_length=1)  # contract UID -> company ID
     mode: Literal['observation', 'sandbox'] = 'observation'
     analysis_strategy: Literal['fixed', 'tool_agent'] = 'fixed'
     order_transport: Literal['rest', 'mcp'] = 'rest'
@@ -77,8 +74,6 @@ def cycle_inputs(settings: RuntimeSettings, models: dict[str, str] | None = None
         except (OSError, ValueError, KeyError, TypeError) as error:
             raise RuntimeErrorInfo(f'Проверьте файл настройки {field}.') from error
         inputs[field] = content
-    if set(settings.contracts.values()) - {row.company_id for row in catalog_rows(inputs['catalog']) if row.share_id}:
-        raise RuntimeErrorInfo('Сопоставьте contracts с компаниями из catalog.')
     if models is None and aggregator is None:
         return inputs
     models = models or {}

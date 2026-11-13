@@ -4,7 +4,8 @@ from collections.abc import Callable
 from typing import Any
 
 from news_futures.trading.broker import (
-    TRADE_STATE, BrokerReader, SandboxBroker, reconciled_fills, verified_protection,
+    TRADE_STATE, BrokerReader, NoSupportedFutures, SandboxBroker, UnsupportedFuturesUnits, reconciled_fills,
+    verified_protection,
 )
 from news_futures.agents.company import Account, Instrument, Market, OpenPosition, Snapshot
 from news_futures.agents.events import EventArchive
@@ -17,40 +18,22 @@ from news_futures.trading.journal import active_cycles, read_evidence
 
 
 class BrokerAccount:
-    def __init__(self, account_id: str, contracts: dict[str, str], reader: Callable[[str], BrokerReader]):
+    def __init__(self, account_id: str, reader: Callable[[str, str | None], BrokerReader]):
         self.account_id = account_id
-        self.contracts = contracts
         self.reader = reader
 
-    def reconcile(self, events: EventArchive, broker: Callable[[str], SandboxBroker],
+    def reconcile(self, events: EventArchive, broker: Callable[[str, str | None], SandboxBroker],
                   publications: Archive | None) -> dict[str, str] | None:
         active = active_cycles(events.db, self.account_id)
         if len(active) == 1:
             entry = EntryReservation.model_validate_json(active[0]['terms'])
             contract_id = entry.contract_id
-            if contract_id in self.contracts:
-                return SandboxExecutor(events, broker(contract_id)).reconcile(
-                    contract_id=contract_id, cycle_id=entry.id, publications=publications,
-                )
+            return SandboxExecutor(events, broker(contract_id, None)).reconcile(
+                contract_id=contract_id, cycle_id=entry.id, publications=publications,
+            )
         return None
 
-    def read_markets(self, catalog: bytes, *, only_contract: str | None = None) -> list[RiskSnapshot]:
-        listed = {(row.company_id, row.share_id) for row in catalog_rows(catalog)}
-        readings = []
-        for contract_id, company_id in self.contracts.items():
-            if only_contract is not None and contract_id != only_contract:
-                continue
-            risk = RiskSnapshot.model_validate(self.reader(contract_id).read_risk(self.account_id, contract_id))
-            contract = risk.contract
-            if (risk.account_id != self.account_id or contract.contract_id != contract_id
-                    or contract.company_id != company_id or (company_id, contract.share_id) not in listed
-                    or len({contract_id, company_id, contract.share_id}) != 3 or contract.last_trade_at <= utc_now()):
-                raise RuntimeErrorInfo('Сверьте счёт, фьючерсы и UID их базовых акций в contracts и catalog.')
-            readings.append(risk)
-        return readings
-
-    def snapshot(self, events: EventArchive, catalog: bytes, *,
-                 only_contract: str | None = None) -> tuple[Snapshot, dict[str, Any], list[RiskSnapshot]]:
+    def position(self, events: EventArchive) -> tuple[OpenPosition | None, dict[str, Any]]:
         active = active_cycles(events.db, self.account_id)
         position = None
         protection: dict[str, Any] = {'status': 'none'}
@@ -59,12 +42,10 @@ class BrokerAccount:
                 raise RuntimeErrorInfo('Сверьте конфликтующие циклы счёта.')
             trade = active[0]
             entry = EntryReservation.model_validate_json(trade['terms'])
-            if entry.contract_id not in self.contracts:
-                raise RuntimeErrorInfo('Верните контракт открытого цикла в contracts и сверьте счёт.')
             evidence = read_evidence(events.db, entry.id)
             if 'enter' not in evidence.operations:
                 raise RuntimeErrorInfo('Сверьте незавершённый резерв счёта.')
-            observation = self.reader(entry.contract_id).read_trade(entry, evidence.operations, evidence.receipts)
+            observation = self.reader(entry.contract_id, None).read_trade(entry, evidence.operations, evidence.receipts)
             state = TRADE_STATE.validate_python(observation)
             fills = reconciled_fills(entry, state)
             if (not state.settled or state.other_exposure or state.active_orders or fills is None
@@ -82,16 +63,35 @@ class BrokerAccount:
                              == {('sl', entry.stop_loss), ('tp', entry.take_profit)})
                 protection = {'status': 'confirmed' if protected else 'unconfirmed',
                               'active_ids': [stop.id for stop in stops]}
-        companies = load_catalog(catalog)
-        instruments = []
-        account = None
-        readings = self.read_markets(catalog, only_contract=only_contract)
-        for risk in readings:
-            contract = risk.contract
-            if risk.execution_uncertain or risk.has_position != bool(position) or (
-                not position and risk.has_active_orders
-            ):
+        else:
+            has_position, has_orders = self.reader('', None).account_activity()
+            if has_position or has_orders:
                 raise RuntimeErrorInfo('На счёте есть неподтверждённая позиция или заявки. Сверьте брокера.')
+        return position, protection
+
+    def snapshot(self, catalog: bytes, contracts: dict[str, str]) -> tuple[Snapshot, list[RiskSnapshot]]:
+        companies = load_catalog(catalog)
+        listed = {(row.company_id, row.share_id) for row in catalog_rows(catalog)}
+        instruments = []
+        readings = []
+        account = None
+        for contract_id, company_id in contracts.items():
+            try:
+                risk = RiskSnapshot.model_validate(self.reader(contract_id, company_id).read_risk(
+                    self.account_id, contract_id,
+                ))
+            except UnsupportedFuturesUnits:
+                continue
+            contract = risk.contract
+            if (risk.account_id != self.account_id or contract.contract_id != contract_id
+                    or contract.company_id != company_id or (company_id, contract.share_id) not in listed
+                    or len({contract_id, company_id, contract.share_id}) != 3):
+                raise RuntimeErrorInfo('market_contract_mismatch')
+            if risk.execution_uncertain or risk.has_position or risk.has_active_orders:
+                raise RuntimeErrorInfo('На счёте есть неподтверждённая позиция или заявки. Сверьте брокера.')
+            if contract.last_trade_at <= utc_now():
+                continue
+            readings.append(risk)
             account = Account(id=risk.account_id, observed_at=risk.account_observed_at, currency=risk.currency,
                               equity=float(risk.equity), available_margin=float(risk.available_margin))
             instruments.append(Instrument(
@@ -99,5 +99,6 @@ class BrokerAccount:
                 contract_id=contract.contract_id, share_id=contract.share_id, allowed_for_entry=True,
                 market=Market(observed_at=contract.quote_at, last_price=float(contract.last_price)),
             ))
-        assert account is not None
-        return Snapshot(account=account, position=position, instruments=instruments), protection, readings
+        if account is None:
+            raise NoSupportedFutures('no_supported_futures')
+        return Snapshot(account=account, position=None, instruments=instruments), readings
