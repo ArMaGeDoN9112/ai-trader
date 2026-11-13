@@ -32,7 +32,7 @@ class ScriptedEndpoint:
         body = json.loads(request.content)
         self.requests.append(body)
         answer = next(self.answers)
-        if isinstance(answer, Exception):
+        if isinstance(answer, BaseException):
             raise answer
         if callable(answer):
             answer = answer(body)

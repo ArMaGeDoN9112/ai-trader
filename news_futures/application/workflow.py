@@ -17,10 +17,11 @@ from langgraph.graph import END, START, StateGraph
 from langsmith import tracing_context
 
 from news_futures.agents.company import MAX_SNAPSHOT_AGE, OpenPosition, Snapshot
-from news_futures.agents.decisions import analyze_event
+from news_futures.agents.decisions import analyze_event, news_record
 from news_futures.agents.events import EventArchive, match_route
+from news_futures.agents.team_dto import EventEvidence
 from news_futures.agents.routing import route_publication
-from news_futures.agents.tool_agent import run_tool_agent, VERSION
+from news_futures.agents.tool_agent import TEAM_DIRECTORY, run_tool_agent
 from news_futures.application.checkpoints import checkpoint_serializer
 from news_futures.common.artifacts import move_artifact, replace_json
 from news_futures.news.publications import Archive, TEST_SOURCE, utc_now
@@ -114,7 +115,7 @@ def analyze_news(
 
     def agent(state: NewsState) -> NewsState:
         assert read_market is not None
-        event = json.loads((directory / 'event.json').read_bytes())
+        event = EventEvidence.model_validate(news_record(json.loads((directory / 'event.json').read_bytes())))
         contracts = {uid: company for uid, company in settings.contracts.items() if company in state['affected']}
         archive = Archive(settings.publications)
         with EventArchive(settings.events, testing_revision=testing_revision) as events, closing(archive.db):
@@ -127,19 +128,25 @@ def analyze_news(
                 if current_position():
                     return 'position_already_open'
                 current_event = events.db.execute(
-                    'SELECT MAX(id) FROM event_decisions WHERE revision = ?', (event['revision'],),
+                    'SELECT MAX(id) FROM event_decisions WHERE revision = ?', (event.revision,),
                 ).fetchone()[0]
-                return 'event_decision_superseded' if current_event != event['decision_id'] else None
+                return 'event_decision_superseded' if current_event != event.decision_id else None
 
             def check_stop() -> None:
                 if stop.is_set():
                     raise Shutdown
 
-            return cast(NewsState, run_tool_agent(
+            outcome = run_tool_agent(
                 directory, revision, event, settings.account_id, contracts, events,
                 lambda uid, seconds: read_market(events, uid, seconds),
                 check_current, check_stop, checkpointer, settings.coordinator,
-            ))
+            )
+            result: NewsState = {'status': outcome.status, 'reason': outcome.reason}
+            if outcome.proposal is not None:
+                result['proposal'] = outcome.proposal.model_dump(mode='json')
+            if outcome.critic_status is not None:
+                result['critic_status'] = outcome.critic_status
+            return result
 
     def review(state: NewsState) -> NewsState:
         snapshot_path = directory / 'snapshot.json'
@@ -182,7 +189,6 @@ def analyze_news(
 
     graph: StateGraph[NewsState, None, NewsState, NewsState] = StateGraph(NewsState)
     graph.add_node('route', audited('route', route))
-    # Keep checkpoint node names so revisions interrupted before the upgrade can resume.
     graph.add_node('event', audited('route', record_route))
     graph.add_node('snapshot', audited('position', prepare))
     final_node = 'agent' if tool_agent else 'review'
@@ -194,7 +200,9 @@ def analyze_news(
     graph.add_edge(final_node, END)
     with closing(sqlite3.connect(settings.data_dir / 'checkpoints.sqlite3', check_same_thread=False)) as db:
         checkpointer = SqliteSaver(db, serde=checkpoint_serializer())
-        config: RunnableConfig = {'configurable': {'thread_id': f'{revision}:workflow:{VERSION}' if tool_agent else revision}}
+        config: RunnableConfig = {
+            'configurable': {'thread_id': f'{revision}:workflow:{TEAM_DIRECTORY}' if tool_agent else revision},
+        }
         with tracing_context(enabled=False):
             compiled = graph.compile(checkpointer=checkpointer)
             saved = compiled.get_state(config)

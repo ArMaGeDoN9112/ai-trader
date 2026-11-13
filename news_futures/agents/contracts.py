@@ -103,10 +103,14 @@ class AnalysisContext(ReviewContext):
 
 
 def validate_levels(proposal: dict[str, Any]) -> None:
-    side, entry, stop, take = (proposal[key] for key in (
-        'side', 'entry_price', 'stop_loss', 'take_profit'))
-    if proposal['action'] == 'enter':
-        if side is None or any(price is None or price <= 0 for price in (entry, stop, take)):
+    check_levels(proposal['action'], proposal['side'], proposal['entry_price'],
+                 proposal['stop_loss'], proposal['take_profit'])
+
+
+def check_levels(action: str, side: str | None, entry: float | None,
+                 stop: float | None, take: float | None) -> None:
+    if action == 'enter':
+        if side is None or entry is None or stop is None or take is None or min(entry, stop, take) <= 0:
             raise ValueError('missing_entry_levels')
         if not (stop < entry < take if side == 'long' else take < entry < stop):
             raise ValueError('invalid_protection_levels')

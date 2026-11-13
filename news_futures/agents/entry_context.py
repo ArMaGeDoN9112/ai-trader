@@ -1,10 +1,8 @@
-"""Persist the original reason for entry and recover evidence for old cycles."""
+"""Persist the original reason for entry and its supporting evidence."""
 
 import json
-from pathlib import Path
 from typing import Any
 
-from news_futures.agents.approval import read_approval
 from news_futures.agents.company import CompanyProposal, EntryReason, EntrySource
 from news_futures.agents.events import EventArchive
 
@@ -35,8 +33,6 @@ def save_entry_reason(archive: EventArchive, record: EntryReason) -> None:
             PRIMARY KEY (account_id, position_id)
         )
     ''')
-    if 'sources' not in {row['name'] for row in archive.db.execute('PRAGMA table_info(position_entry_reasons)')}:
-        archive.db.execute("ALTER TABLE position_entry_reasons ADD COLUMN sources TEXT NOT NULL DEFAULT '[]'")
     existing = entry_reason(archive, record.account_id, record.position_id)
     if existing is None:
         archive.db.execute('INSERT INTO position_entry_reasons VALUES (?, ?, ?, ?, ?)', (
@@ -59,26 +55,5 @@ def entry_reason(archive: EventArchive, account_id: str, position_id: str) -> En
     if row is None:
         return None
     data = dict(row)
-    data['sources'] = json.loads(data.get('sources', '[]'))
+    data['sources'] = json.loads(data['sources'])
     return EntryReason.model_validate(data)
-
-
-def restore_entry_sources(archive: EventArchive, record: EntryReason) -> EntryReason:
-    if record.sources or not archive.db.execute(
-        "SELECT 1 FROM sqlite_master WHERE name = 'sandbox_cycles'"
-    ).fetchone():
-        return record
-    row = archive.db.execute('SELECT approval, proposal_id FROM sandbox_cycles WHERE id = ? AND account_id = ?',
-                             (record.position_id, record.account_id)).fetchone()
-    if row is None:
-        return record
-    # Old reservations store the approval path and ID instead of inline evidence.
-    try:
-        proposal, proposal_id, _, context = read_approval(Path(row['approval']))
-        if (proposal_id == row['proposal_id'] and proposal.action == 'enter'
-                and proposal.contract_id == record.contract_id and proposal.reason == record.reason
-                and context['account']['id'] == record.account_id):
-            return record.model_copy(update={'sources': entry_sources(proposal, context)})
-    except (OSError, KeyError, TypeError, ValueError):
-        pass  # A legacy reason may outlive the files containing its citations.
-    return record

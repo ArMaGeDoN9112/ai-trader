@@ -107,7 +107,7 @@ def trade(root: Path, db: sqlite3.Connection, row: sqlite3.Row,
               if has_table(db, 'position_entry_reasons') else None)
     protection = {'protected': 'confirmed', 'closed': 'none', 'no_fill': 'none'}.get(row['status'], 'unknown')
     return summary | {'traces': traces, 'events': events, 'orders': order_list, 'entry_reason': reason['reason'] if reason else None,
-                      'entry_sources': json.loads(dict(reason).get('sources', '[]')) if reason else [],
+                      'entry_sources': json.loads(reason['sources']) if reason else [],
                       'requested_lots': terms['lots'], 'confirmed_at': confirmed_at, 'protection': protection,
                       'protection_orders': protection_orders, 'exit_reason': exit_reason}
 

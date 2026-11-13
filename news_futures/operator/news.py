@@ -10,7 +10,7 @@ from typing import Any, Iterator, cast
 from urllib.parse import parse_qsl, urlsplit
 
 from news_futures.common.artifacts import publication_digest
-from news_futures.agents.tool_agent import VERSION
+from news_futures.agents.tool_agent import TEAM_DIRECTORY
 from news_futures.application.records import runtime_tables
 from news_futures.news.publications import Archive, TEST_SOURCE
 from news_futures.trading.journal import journal_events
@@ -103,11 +103,6 @@ def edition(publication: dict[str, Any]) -> dict[str, Any]:
                   'change', 'unread_media')
 
 
-def decision_dirs(root: Path, revision: str) -> tuple[Path, Path]:
-    original = root / 'decisions' / revision
-    return original, original / 'resumed'
-
-
 def route_attempts(directory: Path) -> list[Path]:
     return sorted((path for path in directory.glob('route*') if path.is_dir()
                    and (path.name == 'route' or path.name.startswith('route-interrupted-'))),
@@ -116,7 +111,7 @@ def route_attempts(directory: Path) -> list[Path]:
 
 def reviews(directory: Path) -> list[Path]:
     base = directory / 'review'
-    return [base, *(path for path in base.glob('*') if path.is_dir() and REVISION.fullmatch(path.name))]
+    return [path for path in base.glob('*') if path.is_dir() and REVISION.fullmatch(path.name)]
 
 
 def calls(directory: Path) -> list[tuple[Path, dict[str, Any]]]:
@@ -200,7 +195,7 @@ def archive_news(root: Path, runtime: dict[str, tuple[dict[str, Any], Any]],
                 yield key, events[key], runtime.get(key, ({}, {}))[1]
             continue
         publication, result = runtime[key]
-        attempts = [path for directory in decision_dirs(root, key) for path in route_attempts(directory)]
+        attempts = route_attempts(root / 'decisions' / key)
         for directory in reversed(attempts):
             route = artifact(directory / 'trace.json')
             if (route.get('status') == 'completed' and route.get('links')
@@ -314,40 +309,39 @@ def news_view(root: Path, profile: dict[str, Any], catalog: dict[str, Any],
             if company in bindings and agent_proposal.get('company_id') == company:
                 assessments.update({check['contract_id']: check | {'at': result['at']}
                                     for check in agent_proposal.get('assessments', [])})
-            for directory in decision_dirs(root, key):
-                if bindings.keys() - companies.keys():
-                    saved_catalog = artifact(directory / 'route' / 'catalog.json')
-                    for owner in bindings.keys() - companies.keys():
-                        if owner in saved_catalog:
-                            companies[owner] = fields(saved_catalog[owner], 'names', 'tickers')
-                snapshot = artifact(directory / 'snapshot.json')
-                for item in snapshot.get('instruments', []):
+            directory = root / 'decisions' / key
+            if bindings.keys() - companies.keys():
+                saved_catalog = artifact(directory / 'route' / 'catalog.json')
+                for owner in bindings.keys() - companies.keys():
+                    if owner in saved_catalog:
+                        companies[owner] = fields(saved_catalog[owner], 'names', 'tickers')
+            snapshot = artifact(directory / 'snapshot.json')
+            for item in snapshot.get('instruments', []):
+                remember_contract(contracts, item)
+                if item['company_id'] in bindings:
+                    related_contracts.add(item['contract_id'])
+            for review in reviews(directory):
+                context = artifact(review / 'context.json')
+                for item in context.get('candidates', []):
                     remember_contract(contracts, item)
                     if item['company_id'] in bindings:
                         related_contracts.add(item['contract_id'])
-                for review in reviews(directory):
-                    context = artifact(review / 'context.json')
-                    for item in context.get('candidates', []):
-                        remember_contract(contracts, item)
-                        if item['company_id'] in bindings:
-                            related_contracts.add(item['contract_id'])
-                    if company in bindings and bindings[company]['kind'] != 'direct':
-                        for path, call in calls(review):
-                            if call.get('role') != 'analyst':
-                                continue
-                            for check in (call.get('output') or {}).get('assessments', []):
-                                contract = contracts.get(check['contract_id'], {})
-                                if contract.get('company_id') == company:
-                                    at = when(path, call)
-                                    if check['contract_id'] not in assessments or at >= assessments[check['contract_id']]['at']:
-                                        assessments[check['contract_id']] = check | {'at': at}
-                    if (result.get('review_attempt') == review.name
-                            or (not result.get('review_attempt') and review.name == 'review')):
-                        if proposal := artifact(review / 'trace.json').get('approved_proposal'):
-                            used = used or proposal.get('contract_id')
-                if any(not contracts[contract]['ticker'] for contract in related_contracts):
-                    for uid, item in catalog_series(artifact(directory / 'catalog.json')).items():
-                        remember_contract(contracts, item | {'contract_id': uid})
+                if company in bindings and bindings[company]['kind'] != 'direct':
+                    for path, call in calls(review):
+                        if call.get('role') != 'analyst':
+                            continue
+                        for check in (call.get('output') or {}).get('assessments', []):
+                            contract = contracts.get(check['contract_id'], {})
+                            if contract.get('company_id') == company:
+                                at = when(path, call)
+                                if check['contract_id'] not in assessments or at >= assessments[check['contract_id']]['at']:
+                                    assessments[check['contract_id']] = check | {'at': at}
+                if result.get('review_attempt') == review.name:
+                    if proposal := artifact(review / 'trace.json').get('approved_proposal'):
+                        used = used or proposal.get('contract_id')
+            if any(not contracts[contract]['ticker'] for contract in related_contracts):
+                for uid, item in catalog_series(artifact(directory / 'catalog.json')).items():
+                    remember_contract(contracts, item | {'contract_id': uid})
             if used:
                 related_contracts = {used}
             row = summary(key, current, result, related_contracts)
@@ -427,73 +421,73 @@ def trace_view(root: Path, account: str, key: str) -> dict[str, Any] | None:
         approvals = set()
         routed = False
         approved_risk = set()
-        for index, directory in enumerate(decision_dirs(root, key)):
-            agent = artifact(directory / VERSION / 'trace.json')
-            for call in agent.get('calls', []):
-                kind = call['kind']
-                step(f'{index}/agent/{call["id"]}', kind if kind in {
-                    'coordinator', 'get_company_news', 'get_market_context', 'ask_analyst', 'ask_critic',
-                } else 'agent_tool', call['status'], at=call.get('started_at'), input=call.get('input'),
-                     output=fields(call, 'output', 'arguments', 'tool', 'tool_call_id', 'error', 'requested_model', 'actual_model',
-                                   'provider', 'latency_ms', 'cost', 'usage'))
-            for route in route_attempts(directory):
-                category_path = route / 'category.json'
-                category = artifact(category_path)
-                if category:
-                    step(f'{index}/{route.name}-category', 'category', category['status'],
-                         at=category.get('at'), saved_at=when(category_path, {}) or None,
-                         output=category)
-                    if category['status'] != 'completed' or not category.get('candidates'):
-                        continue
-                path = route / 'trace.json'
-                record = artifact(path)
-                routed |= bool(record.get('links'))
-                batches = [artifact(path) for path in sorted(route.glob('batch-*.json'))] or record.get('batches', [])
-                catalog = artifact(route / 'catalog.json')
-                step(f'{index}/{route.name}', 'route', record.get('status', 'processing'),
-                     at=record.get('at'), saved_at=when(path, {}) or None,
-                     input={'publication': publication, 'companies': {
-                         company: catalog[company] for batch in batches for company in batch.get('company_ids', [])
-                         if company in catalog
-                     }}, output=fields(record, 'error', 'links', 'requested_model', 'actual_model') | {'batches': batches})
-            for name in ('event', 'position', 'snapshot', 'review'):
-                status_path = directory / f'{name}-status.json'
-                if stage_record := artifact(status_path):
-                    if name in ('position', 'snapshot') or stage_record['status'] == 'processing' or (
-                        name == 'event' and stage_record['status'] != 'continue'
-                    ):
-                        step(f'{index}/{name}-status', name, stage_record['status'], at=stage_record.get('at'),
-                             input={'publication': publication} if name == 'snapshot' else None,
-                             output=fields(stage_record, 'reason', 'started_at', 'held_contract_id') | (
-                                 artifact(directory / 'snapshot.json') if name == 'snapshot' else {}
-                             ))
-            for review in reviews(directory):
-                saved_calls = calls(review)
-                approval = str(review.resolve())
-                approvals.add(approval)
-                for path, call in saved_calls:
-                    role = call.get('role')
-                    if role not in ('analyst', 'critic'):
-                        continue
-                    kind = 'revision' if role == 'analyst' and (call.get('input') or {}).get('review') else role
-                    output = call.get('output') or {}
-                    status = ('failed' if call.get('error') else 'processing' if not output else
-                              ('approved' if output.get('approved') else 'rejected') if role == 'critic'
-                              else output.get('action', 'completed'))
-                    saved_at = when(path, {})
-                    attempt = call.get('started_at') or call.get('at') or saved_at
-                    step(f'{index}/{review.name}/{path.name.split("-interrupted-")[0].split(".")[0]}/{attempt}',
-                         kind, status,
-                         at=call.get('at') or call.get('formed_at') or call.get('started_at'), saved_at=saved_at or None,
-                         input=call.get('input'), output=response(call))
-                for risk_path in [review / 'risk.json', *review.glob('risk-*.json')]:
-                    if risk := artifact(risk_path):
-                        if risk['status'] == 'approved':
-                            approved_risk.add(approval)
-                        step(f'{index}/{review.name}/{risk_path.stem}', 'risk', risk['status'], at=risk.get('at'),
-                             saved_at=when(risk_path, {}) or None,
-                             input=(risk.get('input') or {}) | {'context': artifact(review / 'context.json') or None},
-                             output=risk.get('output'))
+        directory = root / 'decisions' / key
+        agent = artifact(directory / TEAM_DIRECTORY / 'trace.json')
+        for call in agent.get('calls', []):
+            kind = call['kind']
+            step(f'0/agent/{call["id"]}', kind if kind in {
+                'coordinator', 'analyst', 'critic', 'get_company_news', 'get_market_context',
+            } else 'agent_tool', call['status'], at=call.get('started_at'), input=call.get('input'),
+                 output=fields(call, 'output', 'arguments', 'tool', 'tool_call_id', 'error', 'requested_model', 'actual_model',
+                               'provider', 'latency_ms', 'cost', 'usage', 'handoff_to'))
+        for route in route_attempts(directory):
+            category_path = route / 'category.json'
+            category = artifact(category_path)
+            if category:
+                step(f'0/{route.name}-category', 'category', category['status'],
+                     at=category.get('at'), saved_at=when(category_path, {}) or None,
+                     output=category)
+                if category['status'] != 'completed' or not category.get('candidates'):
+                    continue
+            path = route / 'trace.json'
+            record = artifact(path)
+            routed |= bool(record.get('links'))
+            batches = [artifact(path) for path in sorted(route.glob('batch-*.json'))] or record.get('batches', [])
+            catalog = artifact(route / 'catalog.json')
+            step(f'0/{route.name}', 'route', record.get('status', 'processing'),
+                 at=record.get('at'), saved_at=when(path, {}) or None,
+                 input={'publication': publication, 'companies': {
+                     company: catalog[company] for batch in batches for company in batch.get('company_ids', [])
+                     if company in catalog
+                 }}, output=fields(record, 'error', 'links', 'requested_model', 'actual_model') | {'batches': batches})
+        for name in ('event', 'position', 'snapshot', 'review'):
+            status_path = directory / f'{name}-status.json'
+            if stage_record := artifact(status_path):
+                if name in ('position', 'snapshot') or stage_record['status'] == 'processing' or (
+                    name == 'event' and stage_record['status'] != 'continue'
+                ):
+                    step(f'0/{name}-status', name, stage_record['status'], at=stage_record.get('at'),
+                         input={'publication': publication} if name == 'snapshot' else None,
+                         output=fields(stage_record, 'reason', 'started_at', 'held_contract_id') | (
+                             artifact(directory / 'snapshot.json') if name == 'snapshot' else {}
+                         ))
+        for review in reviews(directory):
+            saved_calls = calls(review)
+            approval = str(review.resolve())
+            approvals.add(approval)
+            for path, call in saved_calls:
+                role = call.get('role')
+                if role not in ('analyst', 'critic'):
+                    continue
+                kind = 'revision' if role == 'analyst' and (call.get('input') or {}).get('review') else role
+                output = call.get('output') or {}
+                status = ('failed' if call.get('error') else 'processing' if not output else
+                          ('approved' if output.get('approved') else 'rejected') if role == 'critic'
+                          else output.get('action', 'completed'))
+                saved_at = when(path, {})
+                attempt = call.get('started_at') or call.get('at') or saved_at
+                step(f'0/{review.name}/{path.name.split("-interrupted-")[0].split(".")[0]}/{attempt}',
+                     kind, status,
+                     at=call.get('at') or call.get('formed_at') or call.get('started_at'), saved_at=saved_at or None,
+                     input=call.get('input'), output=response(call))
+            for risk_path in review.glob('risk-*.json'):
+                if risk := artifact(risk_path):
+                    if risk['status'] == 'approved':
+                        approved_risk.add(approval)
+                    step(f'0/{review.name}/{risk_path.stem}', 'risk', risk['status'], at=risk.get('at'),
+                         saved_at=when(risk_path, {}) or None,
+                         input=(risk.get('input') or {}) | {'context': artifact(review / 'context.json') or None},
+                         output=risk.get('output'))
         if not routed and event['links']:
             step('bindings', 'route', 'saved', at=event.get('recorded_at'), output={'links': event['links']})
         if event.get('kind') != 'saved' and (event.get('event_id') or event.get('call')):

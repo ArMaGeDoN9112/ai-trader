@@ -146,7 +146,8 @@ class ManualCloseTest(RiskFixture):
 
     def open_position(self, *, short: bool = False) -> CloseIntent:
         approval = self.approved(side='short', stop_loss=310, take_profit=280) if short else self.approved()
-        saved = self.root / 'decisions' / self.publication.revision_key() / 'review'
+        revision = self.publication.revision_key()
+        saved = self.root / 'decisions' / revision / 'review' / revision
         saved.parent.mkdir(parents=True)
         approval.rename(saved)
         archive = Archive(self.publications_db)

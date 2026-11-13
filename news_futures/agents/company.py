@@ -17,12 +17,15 @@ class Market(Contract):
     last_price: float = Field(gt=0)
 
 
-class Account(Contract):
-    id: Nonempty
+class AccountBalance(Contract):
     observed_at: AwareDatetime
     currency: Nonempty
     equity: float
     available_margin: float
+
+
+class Account(AccountBalance):
+    id: Nonempty
 
 
 class Instrument(Contract):

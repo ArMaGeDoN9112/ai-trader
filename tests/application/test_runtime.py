@@ -27,11 +27,10 @@ from tests.support.telegram import ControlledTransport
 
 from news_futures.cli import main
 from news_futures.adapters.groq import GroqChat
-from news_futures.agents.company import CompanyContext, CompanyProposal
 from news_futures.agents.contracts import Review
 from news_futures.agents.events import EventArchive
 from news_futures.application.checkpoints import checkpoint_serializer
-from news_futures.common.paths import EVENT_SETTINGS, JEV_SETTINGS, PACKAGE, REVIEW_SETTINGS, TELEGRAM_SOURCES
+from news_futures.common.paths import EVENT_SETTINGS, JEV_SETTINGS, REVIEW_SETTINGS, TELEGRAM_SOURCES
 from news_futures.trading.broker import Fill
 from news_futures.agents.routing import request_choices
 from news_futures.common.artifacts import replace_json, write_json
@@ -52,24 +51,22 @@ class Interrupted(BaseException):
 
 
 class RuntimeTest(unittest.TestCase):
-    def test_profile_loads_old_paths_to_packaged_defaults(self) -> None:
+    def test_profile_loads_packaged_defaults(self) -> None:
         packaged = {'sources': TELEGRAM_SOURCES, 'jev': JEV_SETTINGS, 'matcher': EVENT_SETTINGS, 'review': REVIEW_SETTINGS}
         with TemporaryDirectory() as directory:
             profile = Path(directory) / 'runtime.json'
             write_json(profile, {
                 'data_dir': '.', 'catalog': 'catalog.json', 'account_id': 'account',
                 'contracts': {'contract': 'company'},
-                **{field: str(PACKAGE / path.name) for field, path in packaged.items()},
             })
             settings = load_settings(profile)
         for field, path in packaged.items():
             self.assertEqual(getattr(settings, field), path)
             self.assertTrue(path.is_file())
 
-    def test_checkpoint_deserializes_legacy_review_model(self) -> None:
+    def test_checkpoint_deserializes_review_model(self) -> None:
         record = Review(proposal_id='proposal', approved=True, objections=[], reason='Checked.')
-        with patch.object(Review, '__module__', 'news_futures.analysis'):
-            data = checkpoint_serializer().dumps_typed(record)
+        data = checkpoint_serializer().dumps_typed(record)
         restored = checkpoint_serializer().loads_typed(data)
         self.assertIsInstance(restored, Review)
         self.assertEqual(restored, record)
@@ -245,6 +242,13 @@ class RuntimeAcceptance(RiskFixture):
             'coordinator': {'model': 'test/coordinator'},
         }), encoding='utf-8')
 
+    def delegate(self) -> dict[str, str]:
+        return {'status': 'delegate', 'company_id': 'sber', 'reason': 'Проверь прогноз.'}
+
+    def agent_read(self, name: str, **args: Any) -> dict[str, Any]:
+        return {'tool_calls': [{'id': 'call-' + name, 'type': 'function',
+                                'function': {'name': name, 'arguments': json.dumps(args)}}]}
+
     def test_manual_news_runs_in_sandbox_and_is_ineligible_for_execution(self) -> None:
         from news_futures.application.records import review_path
         from news_futures.operator.news import enqueue_test_news, testing_view
@@ -277,61 +281,64 @@ class RuntimeAcceptance(RiskFixture):
 
     def test_tool_agent_delegates_and_publishes_a_reviewed_candidate_without_execution(self) -> None:
         from news_futures.agents.approval import read_approval
-        from news_futures.agents.tool_agent import VERSION
+        from news_futures.agents.tool_agent import TEAM_DIRECTORY
         from news_futures.common.errors import Rejected
         from news_futures.operator.news import trace_view
 
-        def call(name: str, **args: Any) -> dict[str, Any]:
-            return {'tool_calls': [{'id': 'call-' + name, 'type': 'function',
-                                    'function': {'name': name, 'arguments': json.dumps(args)}}]}
-
-        def tool_results(body: dict[str, Any]) -> list[dict[str, Any]]:
-            return [json.loads(message['content']) for message in body['messages'] if message['role'] == 'tool']
-
         self.tool_agent(mode='sandbox')
         incoming = self.news(self.market, 'SBER опубликовал повышенный прогноз.')
+
+        def follow_up(body: dict[str, Any]) -> dict[str, Any]:
+            objections = json.loads(body['messages'][-1]['content'])['review']['objections']
+            self.assertEqual(objections, ['Insufficient independent evidence.'])
+            self.assertEqual(body['messages'][-1]['name'], 'critic')
+            return self.agent_read('get_company_news', company_id='sber', query='прогноз')
+
         endpoint = self.serve(
-            call('get_company_news', company_id='sber'),
-            call('get_market_context', contract_id=self.contract_id),
-            lambda body: call('ask_analyst', company_id='sber', question='Проверь прогноз.',
-                              evidence_ids=[item['observation_id'] for item in tool_results(body)]),
+            self.delegate(),
+            self.agent_read('get_company_news', company_id='sber'),
+            self.agent_read('get_market_context', contract_id=self.contract_id),
             {'proposal': self.proposal('enter', incoming), 'missing_data': []},
-            lambda body: call('ask_critic', proposal_id=tool_results(body)[-1]['id']),
             review(False),
-            call('get_company_news', company_id='sber', query='прогноз'),
-            lambda body: call('ask_analyst', company_id='sber', question='Проверь возражение.',
-                              evidence_ids=[item['observation_id'] for item in tool_results(body)
-                                            if 'observation_id' in item],
-                              prior_proposal_id=tool_results(body)[-2]['proposal_id']),
+            follow_up,
             {'proposal': self.proposal('enter', incoming) | {'entry_price': 301, 'reason': 'Уточнённое основание входа.'},
              'missing_data': []},
-            lambda body: call('ask_critic', proposal_id=tool_results(body)[-1]['id']),
             review(),
-            lambda body: {'status': 'candidate', 'reason': 'Прогноз подтверждён.',
-                          'proposal_id': tool_results(body)[-1]['proposal_id']},
         )
         report = self.report(incoming)
         self.assertEqual(report['result']['mode'], 'sandbox')
         self.assertEqual(report['result']['status'], 'candidate')
         self.assertEqual(report['result']['critic_status'], 'approved')
-        self.assertEqual([call['kind'] for call in report['agent']['calls']], [
-            'coordinator', 'get_company_news', 'coordinator', 'get_market_context',
-            'coordinator', 'ask_analyst', 'coordinator', 'ask_critic',
-            'coordinator', 'get_company_news', 'coordinator', 'ask_analyst',
-            'coordinator', 'ask_critic', 'coordinator',
+        calls = report['agent']['calls']
+        self.assertEqual([call['kind'] for call in calls], [
+            'coordinator', 'analyst', 'get_company_news', 'analyst', 'get_market_context',
+            'analyst', 'critic', 'analyst', 'get_company_news', 'analyst', 'critic',
         ])
-        proposals = [call['output'] for call in report['agent']['calls'] if call['kind'] == 'ask_analyst']
+        self.assertEqual([call['handoff_to'] for call in calls if 'handoff_to' in call],
+                         ['analyst', 'critic', 'analyst', 'critic'])
+        proposals = [call['output'] for call in calls if call.get('handoff_to') == 'critic']
         self.assertNotEqual(proposals[0]['id'], proposals[1]['id'])
         self.assertEqual(report['result']['proposal']['id'], proposals[1]['id'])
-        self.assertEqual(endpoint.requests[0]['model'], 'test/coordinator')
-        self.assertNotIn('parallel_tool_calls', endpoint.requests[0])
+        self.assertEqual([request['model'] for request in endpoint.requests], [
+            'test/coordinator', 'test/analyst', 'test/analyst', 'test/analyst', 'test/critic',
+            'test/analyst', 'test/analyst', 'test/critic',
+        ])
+        for request in endpoint.requests:
+            if request['model'] == 'test/analyst':
+                self.assertEqual({tool['function']['name'] for tool in request['tools']},
+                                 {'get_company_news', 'get_market_context'})
+            else:
+                self.assertNotIn('tools', request)
+                self.assertEqual(request['response_format']['type'], 'json_schema')
+        self.assertNotIn('parallel_tool_calls', endpoint.requests[1])
         self.assertTrue(endpoint.requests[0]['provider']['require_parameters'])
         view = trace_view(self.root, self.account_id, incoming.revision_key())
         assert view is not None
         self.assertEqual(view['critic_status'], 'approved')
-        self.assertIn('ask_analyst', {step['kind'] for step in view['steps']})
+        self.assertTrue(any(step['kind'] == 'analyst' and step['output']['handoff_to'] == 'critic'
+                            for step in view['steps'] if step['output'] and 'handoff_to' in step['output']))
         self.write_broker.assert_not_called()
-        directory = self.root / 'decisions' / incoming.revision_key() / VERSION
+        directory = self.root / 'decisions' / incoming.revision_key() / TEAM_DIRECTORY
         proposal, identity, _, context = read_approval(directory)
         self.assertEqual((identity, proposal.entry_price, context['account']['id']),
                          (proposals[1]['id'], 301, self.account_id))
@@ -346,25 +353,59 @@ class RuntimeAcceptance(RiskFixture):
         self.tool_agent()
         incoming = self.news(self.market, 'SBER подтвердил расписание вебинара.')
         with patch.object(self.broker, 'read_risk', side_effect=OSError):
-            endpoint = self.serve({'status': 'skip', 'reason': 'Нет существенного события.', 'proposal_id': None})
+            endpoint = self.serve({'status': 'skip', 'reason': 'Нет существенного события.', 'company_id': None})
         self.assertEqual(self.report(incoming)['result']['status'], 'skipped')
         self.assertEqual(len(endpoint.requests), 1)
         self.write_broker.assert_not_called()
 
-    def test_tool_agent_rejects_unknown_tool_and_unregistered_candidate(self) -> None:
+    def test_tool_agent_rejects_unknown_tool_and_out_of_scope_reads(self) -> None:
         self.tool_agent()
         incoming = self.news(self.market, 'SBER опубликовал прогноз.')
 
-        def forged_candidate(body: dict[str, Any]) -> dict[str, Any]:
+        def other_company(body: dict[str, Any]) -> dict[str, Any]:
             self.assertEqual(json.loads(body['messages'][-1]['content']), {'error': 'unknown_tool'})
-            return {'status': 'candidate', 'reason': 'Непроверенное предложение.', 'proposal_id': 'fabricated'}
+            return self.agent_read('get_market_context', contract_id='vtb-future')
 
-        self.serve({'tool_calls': [{'id': 'write', 'type': 'function',
-                                   'function': {'name': 'request_entry', 'arguments': '{}'}}]},
-                   forged_candidate, code=1)
+        def missing_data(body: dict[str, Any]) -> dict[str, Any]:
+            self.assertEqual(json.loads(body['messages'][-1]['content']), {'error': 'unknown_contract'})
+            return {'proposal': None, 'missing_data': ['Нет котировки.']}
+
+        self.serve(self.delegate(), self.agent_read('request_entry'), other_company, missing_data)
         report = self.report(incoming)
-        self.assertEqual(report['result']['reason'], 'unknown_proposal_reference')
+        self.assertEqual(report['result']['status'], 'insufficient_data')
+        self.assertEqual([call['error'] for call in report['agent']['calls'] if call['status'] == 'failed'],
+                         ['unknown_tool', 'unknown_contract'])
         self.assertNotIn('proposal', report['result'])
+        self.write_broker.assert_not_called()
+
+    def test_tool_agent_stops_after_second_critic_rejection(self) -> None:
+        self.tool_agent()
+        incoming = self.news(self.market, 'SBER опубликовал прогноз.')
+        first = self.proposal('enter', incoming)
+        endpoint = self.serve(
+            self.delegate(), self.agent_read('get_market_context', contract_id=self.contract_id),
+            {'proposal': first, 'missing_data': []}, review(False),
+            {'proposal': first | {'entry_price': 301}, 'missing_data': []}, review(False),
+        )
+        result = self.report(incoming)['result']
+        self.assertEqual((result['status'], result['critic_status']), ('rejected', 'rejected'))
+        self.assertNotIn('proposal', result)
+        self.assertEqual(len(endpoint.requests), 6)
+        self.write_broker.assert_not_called()
+
+    def test_tool_agent_resumes_at_critic_with_the_saved_proposal(self) -> None:
+        self.tool_agent()
+        incoming = self.news(self.market, 'SBER опубликовал прогноз.')
+        with self.assertRaises(Interrupted):
+            self.serve(
+                self.delegate(), self.agent_read('get_market_context', contract_id=self.contract_id),
+                {'proposal': self.proposal('enter', incoming), 'missing_data': []}, Interrupted(),
+            )
+        saved = self.report(incoming)['agent']['calls'][-1]['output']
+        self.assertEqual(saved['action'], 'enter')
+        endpoint = self.serve(review())
+        self.assertEqual([request['model'] for request in endpoint.requests], ['test/critic'])
+        self.assertEqual(self.report(incoming)['result']['proposal'], saved)
         self.write_broker.assert_not_called()
 
     def test_category_selection_appears_before_company_routing_in_the_runtime_trace(self) -> None:
@@ -429,11 +470,7 @@ class RuntimeAcceptance(RiskFixture):
         def interrupt(body: dict[str, Any]) -> dict[str, Any]:
             raise Interrupted
 
-        with (
-            patch.object(CompanyContext, '__module__', 'news_futures.decisions'),
-            patch.object(CompanyProposal, '__module__', 'news_futures.decisions'),
-            self.assertRaises(Interrupted),
-        ):
+        with self.assertRaises(Interrupted):
             self.serve(self.proposal('enter', incoming), interrupt)
         self.market.differences.append(Difference(self.market.pts, [incoming]))
         self.assertEqual(self.serve(started_at=utc_now()).requests, [])

@@ -326,11 +326,12 @@ class OperatorTest(unittest.TestCase):
         archive = Archive(self.root / 'publications.sqlite3')
         with closing(archive.db):
             runtime_tables(archive)
-            save_result(archive, {'revision': revision, 'stage': 'review', 'status': 'rejected', 'decision_id': 1})
+            save_result(archive, {'revision': revision, 'stage': 'review', 'status': 'rejected', 'decision_id': 1,
+                                  'review_attempt': revision})
             save_result(archive, {'revision': unlinked.revision_key(), 'stage': 'event', 'status': 'skipped',
                                   'reason': 'no_allowed_company'})
         directory = self.root / 'decisions' / revision
-        review = directory / 'review'
+        review = directory / 'review' / revision
         review.mkdir(parents=True)
         context = {'candidates': [{'company_id': 'company', 'contract_id': 'old-future'},
                                   {'company_id': 'other', 'contract_id': 'other-future', 'ticker': 'XYZH6'}]}
@@ -589,21 +590,25 @@ class OperatorTest(unittest.TestCase):
             expect('document.querySelector("#trace-steps").innerText.includes("Пересмотр аналитика")')
             expect('window.scrollY === 550 && document.querySelector("#trace-steps details").open')
             expect('document.documentElement.scrollWidth === document.documentElement.clientWidth')
-            from news_futures.agents.tool_agent import VERSION
+            from news_futures.agents.tool_agent import TEAM_DIRECTORY
 
-            agent = self.root / 'decisions' / revision / VERSION
+            agent = self.root / 'decisions' / revision / TEAM_DIRECTORY
             agent.mkdir()
             replace_json(agent / 'trace.json', {'calls': [
                 {'id': '1', 'kind': 'coordinator', 'status': 'completed',
-                 'output': {'tool': 'ask_analyst'}, 'started_at': utc_now().isoformat()},
-                {'id': '2', 'kind': 'ask_analyst', 'status': 'completed',
+                 'handoff_to': 'analyst', 'started_at': utc_now().isoformat()},
+                {'id': '2', 'kind': 'analyst', 'status': 'completed', 'handoff_to': 'critic',
                  'output': {'reason': 'Аналитик проверил прогноз.'}, 'started_at': utc_now().isoformat()},
+                {'id': '3', 'kind': 'critic', 'status': 'completed',
+                 'output': {'approved': True}, 'started_at': utc_now().isoformat()},
             ]})
             archive = Archive(self.root / 'publications.sqlite3')
             with closing(archive.db):
                 save_result(archive, {'revision': revision, 'stage': 'agent', 'status': 'candidate',
-                                      'analysis_strategy': 'tool_agent', 'critic_status': 'not_reviewed'})
-            expect('document.querySelector(".agent-trace-summary")?.innerText.includes("Без заключения")')
+                                      'analysis_strategy': 'tool_agent', 'critic_status': 'approved'})
+            expect('document.querySelector(".agent-trace-summary")?.innerText.includes("Мультиагентный анализ")')
+            evaluate('document.querySelector("[data-id=\'0/agent/1\'] details").open = true')
+            expect('document.querySelector("[data-id=\'0/agent/1\']").innerText.includes("Аналитику")')
             evaluate('document.querySelector("[data-id=\'0/agent/2\'] details").open = true')
             expect('document.querySelector("[data-id=\'0/agent/2\']").innerText.includes("Аналитик проверил прогноз.")')
             evaluate('location.hash = "#trades"')

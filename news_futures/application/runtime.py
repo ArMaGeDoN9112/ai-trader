@@ -186,12 +186,8 @@ class Runtime:
         settings = self.settings
         testing = publication['source'] == TEST_SOURCE
         directory = settings.data_dir / 'decisions' / result['revision']
-        legacy = 'inputs_saved' not in result and directory.exists()
-        original = directory
-        if result.get('legacy'):
-            directory = directory / 'resumed'
-        if not testing and result['mode'] == 'sandbox' and (legacy or result.get('stage') == 'execution'):
-            approval = review_path(directory, result.get('review_attempt'))
+        if not testing and result['mode'] == 'sandbox' and result.get('stage') == 'execution':
+            approval = review_path(directory, result['review_attempt'])
             if self._recover_execution(events, approval, result):
                 return
         if not testing and datetime.fromisoformat(publication['published_at']) < self.started_at:
@@ -200,20 +196,16 @@ class Runtime:
         tool_agent = settings.analysis_strategy == 'tool_agent'
         if not self.broker_ready and not tool_agent:
             return
-        frozen = (original if legacy else directory) / 'runtime.json'
+        frozen = directory / 'runtime.json'
         previous = (RuntimeSettings.model_validate_json(frozen.read_bytes())
-                    if result.get('inputs_saved') or (legacy and frozen.is_file()) else settings)
+                    if result['inputs_saved'] else settings)
         if (result.get('analysis_strategy', 'fixed') != settings.analysis_strategy
                 or previous.order_transport != settings.order_transport
                 or result['mode'] != settings.mode or previous.account_id != settings.account_id
                 or previous.contracts != settings.contracts):
             result.update(status='skipped', reason='runtime_profile_changed')
             return
-        if legacy:
-            # Keep ticket 11's partial artifacts and broker approval path available for audit.
-            directory = original / 'resumed'
-            result['legacy'] = True
-        if not result.get('inputs_saved'):
+        if not result['inputs_saved']:
             saved = self.operator.saved() if self.on_controls is not None else {}
             if saved.get('account_id') != settings.account_id:
                 saved = {}

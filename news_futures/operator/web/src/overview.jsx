@@ -53,7 +53,7 @@ export function Overview({ status, news, online, busy, command, controls }) {
         <div className="kicker"><span /> УПРАВЛЕНИЕ СЕССИЕЙ</div>
         <h2>Обработчик новостей</h2>
         <p>{(nextStart?.analysis_strategy || status.analysis_strategy) === 'tool_agent'
-          ? 'Координатор выбирает инструменты анализа. Результаты сохраняются в трассе публикации.'
+          ? 'Координатор отбирает публикации, аналитик собирает данные, критик проверяет предложения.'
           : 'Сбор публикаций, проверка решений и сверка с брокером.'}</p>
         <div className="actions">
           {actions.includes('start') || worker !== 'running' ? <button className="button primary" type="button" data-action="start"

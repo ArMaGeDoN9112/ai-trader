@@ -23,8 +23,11 @@ Preserve the existing diagnostics as independent ways to inspect integrations.
 | Pydantic | Validation of model-facing proposals, reviews and external structured results. |
 | langgraph-checkpoint-sqlite | Persistent graph checkpoints for durable recovery. |
 
-Express the approved workflow as explicit nodes and conditional edges. Use the
-approved three roles; a new node or model call does not require a new agent role.
+Express the approved workflow as explicit nodes and conditional edges. The
+multi-agent route gives the coordinator, analyst and critic separate graph
+nodes. The analyst owns the read-tool loop. The critic reviews an exact
+proposal and can send it back to the analyst once. See the
+[multi-agent specification](../../.scratch/multi-agent-news/spec.md).
 Keep numerical risk checks and the execution lifecycle as ordinary Python code
 with independent tests. A validated schema does not establish factual correctness
 or permission to trade.

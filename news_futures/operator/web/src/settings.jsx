@@ -41,11 +41,11 @@ export function Settings({ settings, status, online, busy, command, error }) {
         <label className="field">Маршрут анализа<select id="analysis-strategy" value={values.analysis_strategy}
           onChange={event => set('analysis_strategy', event.target.value)}>
           <option value="fixed">Фиксированный маршрут</option>
-          <option value="tool_agent">Агент с инструментами</option>
+          <option value="tool_agent">{label('tool_agent')}</option>
         </select></label>
         <p className="muted">Маршрут применяется при запуске обработчика.</p>
         {values.mode === 'sandbox' && values.analysis_strategy === 'tool_agent' &&
-          <p className="muted">Агент готовит предложения для ручной отправки.</p>}
+          <p className="muted">Команда готовит предложения для ручной отправки.</p>}
         <label className="field">Разрешённые контракты<textarea rows={4} spellCheck={false} aria-invalid={error === 'invalid_contracts'}
           placeholder="UID = компания" value={values.contracts} onChange={event => set('contracts', event.target.value)} /></label>
         <p className="muted">Одна пара «UID контракта = идентификатор компании» в строке.</p>

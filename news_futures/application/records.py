@@ -7,7 +7,7 @@ import sqlite3
 from typing import Any
 
 from news_futures.agents.events import EventArchive
-from news_futures.agents.tool_agent import VERSION
+from news_futures.agents.tool_agent import TEAM_DIRECTORY
 from news_futures.news.publications import Archive, utc_now
 from news_futures.application.config import load_settings
 from news_futures.common.errors import RuntimeErrorInfo
@@ -41,10 +41,7 @@ def pending_revisions(archive: Archive) -> list[sqlite3.Row]:
           AND json_extract(publication, '$.change') != 'delete'
           AND trim(json_extract(publication, '$.text')) != ''
           AND (result IS NULL OR json_extract(result, '$.status') = 'processing'
-               OR json_extract(result, '$.reconcile_pending') = 1
-               OR (json_extract(result, '$.inputs_saved') IS NULL
-                   AND json_extract(result, '$.status') = 'blocked'
-                   AND json_extract(result, '$.execution.cycle_id') IS NOT NULL))
+               OR json_extract(result, '$.reconcile_pending') = 1)
         ORDER BY revisions.rowid
     """).fetchall()
 
@@ -64,15 +61,12 @@ def save_broker_status(archive: Archive, status: dict[str, Any], last_confirmed:
             if last_confirmed is None and all(old.get(key) == status[key] for key in
                                               ('mode', 'account_id', 'contracts')):
                 last_confirmed = old.get('last_confirmed')
-                if last_confirmed is None and old.get('broker') == 'connected':
-                    last_confirmed = {key: old[key] for key in ('checked_at', 'position', 'protection')}
         status['last_confirmed'] = last_confirmed
         archive.db.execute('INSERT OR REPLACE INTO runtime_status VALUES (1, ?)', (json.dumps(status),))
 
 
-def review_path(directory: Path, attempt: str | None) -> Path:
-    review = directory / 'review'
-    return review / attempt if attempt else review
+def review_path(directory: Path, attempt: str) -> Path:
+    return directory / 'review' / attempt
 
 
 def runtime_report(config: Path, decision: str | None) -> dict[str, Any]:
@@ -99,20 +93,21 @@ def runtime_report(config: Path, decision: str | None) -> dict[str, Any]:
             raise RuntimeErrorInfo('Решение не найдено. Возьмите decision_id или revision из runtime-status.')
         directory = settings.data_dir / 'decisions' / row['revision']
         result = json.loads(row['result'])
-        if result.get('legacy'):
-            directory = directory / 'resumed'
-        review = review_path(directory, result.get('review_attempt'))
+        attempt = result.get('review_attempt')
+        review = review_path(directory, attempt) if attempt else None
         report = {'result': result, 'publication': json.loads(row['publication'])}
         for name, file in (
             ('settings', directory / 'runtime.json'), ('category', directory / 'route' / 'category.json'),
             ('route', directory / 'route' / 'trace.json'),
             ('event', directory / 'event.json'), ('position_check', directory / 'position-status.json'),
-            ('context', review / 'context.json'),
-            ('review', review / 'trace.json'),
-            ('agent', directory / VERSION / 'trace.json'),
+            ('agent', directory / TEAM_DIRECTORY / 'trace.json'),
         ):
             if file.is_file():
                 report[name] = json.loads(file.read_bytes())
+        if review is not None:
+            for name, file in (('context', review / 'context.json'), ('review', review / 'trace.json')):
+                if file.is_file():
+                    report[name] = json.loads(file.read_bytes())
         if cycle_id := result.get('execution', {}).get('cycle_id'):
             report['trades'] = trade_journal(events.db, cycle_id=cycle_id)
         previous_reviews = [str(path) for path in (directory / 'review').glob('*/context.json') if path.parent != review]
