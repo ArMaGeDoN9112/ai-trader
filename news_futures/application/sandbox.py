@@ -17,6 +17,7 @@ def run_sandbox_trade(
     transport: Literal['rest', 'mcp'] = 'rest',
 ) -> dict[str, str]:
     with sandbox_client(ca_file, read_only=transport == 'mcp') as client:
+        broker: TBankSandbox | TBankMCPSandbox
         if transport == 'mcp':
             from news_futures.adapters.tbank.mcp_orders import TBankMCPSandbox
             broker = TBankMCPSandbox(client, account_id, contract_id, company_id, ca_file)

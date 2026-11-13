@@ -87,11 +87,11 @@ class TBankMCPSandbox(TBankMCPReader):
                     else:
                         raise ValueError('mcp_inventory_incomplete')
                     for tool_name in (FIELDS if name is None else (name,)):
-                        tool = tools.get(tool_name)
+                        reviewed_tool = tools.get(tool_name)
                         fields, output_field = FIELDS[tool_name]
-                        if (tool is None or not fields.issubset(tool.inputSchema.get('properties', {}))
-                                or not set(tool.inputSchema.get('required', ())).issubset(fields)
-                                or output_field not in (tool.outputSchema or {}).get('properties', {})):
+                        if (reviewed_tool is None or not fields.issubset(reviewed_tool.inputSchema.get('properties', {}))
+                                or not set(reviewed_tool.inputSchema.get('required', ())).issubset(fields)
+                                or output_field not in (reviewed_tool.outputSchema or {}).get('properties', {})):
                             raise ValueError('mcp_order_tool_schema_changed')
                     if name is None:
                         return {}

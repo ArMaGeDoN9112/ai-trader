@@ -225,6 +225,7 @@ class TBankExecutionTest(RiskFixture):
         with (httpx.Client(transport=httpx.MockTransport(reply),
                            event_hooks={'request': [restrict_to_reads]} if mcp else None) as client,
               EventArchive(self.events_db) as events, closing(archive.db)):
+            broker: TBankSandbox | TBankMCPSandbox
             if mcp:
                 async_client = httpx.AsyncClient
                 self.enterContext(patch('news_futures.adapters.tbank.mcp_orders.httpx.AsyncClient',
