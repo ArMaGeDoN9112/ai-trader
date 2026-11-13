@@ -24,7 +24,6 @@ from news_futures.news.publications import utc_now
 
 
 DECISIONS_URL = 'https://openrouter.ai/api/alpha/decisions'
-BATCH_SIZE = 40
 CRITERIA = {
     'direct': 'The publication directly reports a material fact about this specific company.',
     'industry': 'A concrete but unverified indirect effect through its industry or counterparties.',
@@ -52,9 +51,17 @@ class Input(BaseModel):
     model_config = ConfigDict(strict=True, str_strip_whitespace=True)
 
 
-class JevSettings(Input):
+class DecisionsSettings(Input):
     model_config = ConfigDict(extra='forbid', frozen=True)
-    model: str = Field(pattern=r'^(?:typesafe/jev-\d+\.\d+(?:-\d{8})?|parallel/decisions-fast:free)$')
+    model: str = Field(pattern=r'^[\w.-]+/[\w.-]+(?::free)?$')
+    timeout_ms: int = Field(default=60000, gt=0)
+    batch_size: int = Field(default=40, ge=1, le=100)
+    min_relevance: Probability = 0.5
+    min_basis_probability: Probability = 0.6
+
+    @property
+    def timeout(self) -> float:
+        return self.timeout_ms / 1000
 
 
 class PublicationInput(Input):
@@ -157,6 +164,7 @@ def load_catalog(content: bytes) -> dict[str, Company]:
 
 def assess_batch(
     client: httpx.Client, token: str, model: str, text: str, companies: dict[str, Company],
+    *, timeout: float,
 ) -> BatchDecision:
     keys = {f'company_{index}': company_id for index, company_id in enumerate(companies)}
     questions = {
@@ -176,11 +184,11 @@ def assess_batch(
         for key in keys
     }
     return request_choices(client, token, model, questions,
-                           {'publication': text, **{key: companies[cid] for key, cid in keys.items()}}, keys)
+                           {'publication': text, **{key: companies[cid] for key, cid in keys.items()}}, keys, timeout=timeout)
 
 
 def request_choices(client: httpx.Client, token: str, model: str, questions: dict[str, Any],
-                    state: dict[str, Any], keys: dict[str, str], *, timeout: float = 60.0) -> BatchDecision:
+                    state: dict[str, Any], keys: dict[str, str], *, timeout: float) -> BatchDecision:
     metadata = None
     try:
         response = client.post(
@@ -236,7 +244,8 @@ def model_matches(model: str, actual: str) -> bool:
 
 
 def select_contract(directory: Path, publication: str, contracts: dict[str, str]) -> dict[str, Any]:
-    model = JevSettings.model_validate_json((directory / 'jev.json').read_bytes()).model
+    settings = DecisionsSettings.model_validate_json((directory / 'decisions.json').read_bytes())
+    model = settings.model
     companies = load_catalog((directory / 'catalog.json').read_bytes())
     listed = listed_futures(json.loads((directory / 'futures-catalog.json').read_bytes()))
     available = ((uid, company) for uid, company in contracts.items() if uid in listed)
@@ -272,7 +281,8 @@ def select_contract(directory: Path, publication: str, contracts: dict[str, str]
         else:
             with httpx.Client() as client:
                 decision = request_choices(client, token, model, questions,
-                                           {'publication': publication, **candidates}, {'instrument': 'instrument'})
+                                           {'publication': publication, **candidates}, {'instrument': 'instrument'},
+                                           timeout=settings.timeout)
             error = decision.error
             if decision.metadata and decision.metadata.model and not model_matches(model, decision.metadata.model):
                 error = 'model_mismatch'
@@ -286,7 +296,8 @@ def select_contract(directory: Path, publication: str, contracts: dict[str, str]
 
 
 def select_candidates(client: httpx.Client, token: str, model: str, text: str, company_catalog: bytes,
-                      futures_catalog: Path, position_company: str | None, output: Path) -> dict[str, Any]:
+                      futures_catalog: Path, position_company: str | None, output: Path,
+                      *, timeout: float) -> dict[str, Any]:
     record: dict[str, Any] = {'status': 'processing', 'requested_model': model}
     try:
         snapshot = CategoryCatalog.model_validate_json(futures_catalog.read_bytes(), strict=True)
@@ -308,7 +319,8 @@ def select_candidates(client: httpx.Client, token: str, model: str, text: str, c
         'within the geography and activity described. Generic market sentiment is insufficient.'
     )} for key in keys}
     decision = request_choices(client, token, model, questions,
-                               {'publication': text, **{key: categories[category] for key, category in keys.items()}}, keys)
+                               {'publication': text, **{key: categories[category] for key, category in keys.items()}},
+                               keys, timeout=timeout)
     metadata = decision.metadata
     error = decision.error
     if metadata and metadata.model and not model_matches(model, metadata.model):
@@ -339,7 +351,7 @@ def route_publication(
     futures_catalog: Path | None = None, position_company: str | None = None,
 ) -> dict[str, Any]:
     """Keep publication, catalog and settings fixed for the whole routing cycle."""
-    settings = JevSettings.model_validate_json(config.read_bytes())
+    settings = DecisionsSettings.model_validate_json(config.read_bytes())
     snapshot = settings.model_dump(mode='json')
     settings_version = sha256(json.dumps(snapshot, sort_keys=True).encode()).hexdigest()
     original = publication_path.read_bytes()
@@ -366,8 +378,8 @@ def route_publication(
                    if candidates is None or key in candidates]
         actual_model = None
         model = state['requested_model']
-        for offset in range(0, len(entries), BATCH_SIZE):
-            batch = dict(entries[offset:offset + BATCH_SIZE])
+        for offset in range(0, len(entries), settings.batch_size):
+            batch = dict(entries[offset:offset + settings.batch_size])
             started = perf_counter()
             record: dict[str, Any] = {'company_ids': list(batch)}
             result = decide(model, state['publication_text'], batch)
@@ -390,11 +402,11 @@ def route_publication(
                 }
                 for company_id, answer in result.answers.items():
                     relevance = 1 - answer.probabilities['none']
-                    if answer.choice == 'none' and relevance <= 0.5:
+                    if answer.choice == 'none' and relevance <= settings.min_relevance:
                         continue
                     basis = answer.choice
                     # shortcut: provisional cutoff, calibrate on a larger labeled news sample.
-                    if basis in {'none', 'uncertain'} or answer.probabilities[basis] < 0.60:
+                    if basis in {'none', 'uncertain'} or answer.probabilities[basis] < settings.min_basis_probability:
                         kind = 'uncertain'
                     else:
                         kind = 'direct' if basis == 'direct' else 'inferred'
@@ -425,20 +437,21 @@ def route_publication(
             })
     else:
         graph: StateGraph[RoutingState, None, RoutingState, RoutingState] = StateGraph(RoutingState)
-        graph.add_node('jev', route)
-        graph.add_edge('jev', END)
+        graph.add_node('companies', route)
+        graph.add_edge('companies', END)
         with httpx.Client() if client is None else nullcontext(client) as transport:
-            decide = partial(assess_batch, transport, api_key)
+            decide = partial(assess_batch, transport, api_key, timeout=settings.timeout)
             if futures_catalog is not None:
                 def categorize(state: RoutingState) -> dict[str, Any]:
                     return select_candidates(transport, api_key, state['requested_model'], state['publication_text'],
-                                             catalog_content, futures_catalog, position_company, directory / 'category.json')
+                                             catalog_content, futures_catalog, position_company,
+                                             directory / 'category.json', timeout=settings.timeout)
 
                 graph.add_node('category', categorize)
                 graph.add_edge(START, 'category')
-                graph.add_conditional_edges('category', lambda state: END if state['error'] else 'jev')
+                graph.add_conditional_edges('category', lambda state: END if state['error'] else 'companies')
             else:
-                graph.add_edge(START, 'jev')
+                graph.add_edge(START, 'companies')
             with tracing_context(enabled=False):
                 state = graph.compile().invoke(initial)
     costs = [batch['usage']['cost'] for batch in state['batches']

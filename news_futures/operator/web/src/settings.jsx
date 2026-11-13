@@ -3,7 +3,7 @@ import { Bot, Radio, Save, SlidersHorizontal } from 'lucide-react';
 import { label, time } from './api';
 import { Empty, Facts, Notice, Panel } from './ui';
 
-const roles = [['jev', 'Привязка к компаниям · OpenRouter'], ['analyst', 'Аналитик'], ['critic', 'Критик']];
+const roles = [['analyst', 'Аналитик'], ['critic', 'Критик']];
 const aggregators = { openrouter: 'OpenRouter', groq: 'Groq' };
 const lines = value => value.split('\n').map(line => line.trim()).filter(Boolean);
 
@@ -53,10 +53,11 @@ export function Settings({ settings, status, online, busy, command, error }) {
         {restart && <Notice>Настройки профиля сохранены. Для применения перезапустите обработчик.</Notice>}
       </Panel>
     </div>
-    <Panel title="Модели ролей" icon={Bot} hint="Агрегатор и модели применяются со следующей редакции без перезапуска">
+    <Panel title="Модели ролей" icon={Bot} hint="Настройки чат-моделей применяются со следующей редакции без перезапуска">
       <div className="settings-grid">
         <div><h3 className="subheading">Применённые модели</h3><Facts rows={[
           ['Агрегатор чат-моделей', models_at ? aggregators[active.aggregator] : '—'],
+          ['OpenRouter Decisions', <span className="mono">{active.models.decisions}</span>],
           ...activeModels, ['Применено', time(models_at)],
         ]} /></div>
         <div className="stack compact">
@@ -66,7 +67,7 @@ export function Settings({ settings, status, online, busy, command, error }) {
             {Object.entries(aggregators).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
           </select></label>
           {roles.map(([id, name]) => {
-            const field = id !== 'jev' && values.aggregator === 'groq' ? 'groq_models' : 'models';
+            const field = values.aggregator === 'groq' ? 'groq_models' : 'models';
             return <label className="field" key={id}>{name}
               <input spellCheck={false} value={values[field][id]} required aria-invalid={error === 'invalid_models'} onChange={event =>
                 set(field, { ...values[field], [id]: event.target.value.trim() })} />

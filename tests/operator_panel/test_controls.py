@@ -54,7 +54,7 @@ class PreferencesTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'invalid_channels'):
             self.preferences.save(self.form(channels=['example', 'EXAMPLE']), stopped=False)
         with self.assertRaisesRegex(ValueError, 'invalid_models'):
-            self.preferences.save(self.form(models=original['models'] | {'jev': 'test/no-jev'}), stopped=False)
+            self.preferences.save(self.form(models=original['models'] | {'decisions': 'typesafe/jev-1.14'}), stopped=False)
         self.assertEqual(self.preferences.saved(), original)
         update = self.form(channels=['another'])
         self.preferences.save(update, stopped=False)

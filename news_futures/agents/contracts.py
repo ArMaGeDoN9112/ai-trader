@@ -34,6 +34,7 @@ class RoleSettings(Contract):
 class Settings(Contract):
     analyst: RoleSettings
     critic: RoleSettings
+    related_news_bytes: int = Field(default=40000, ge=0)
 
 
 class ProposalTerms(Contract):

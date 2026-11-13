@@ -1,0 +1,4 @@
+{
+  "analyst": "openai/gpt-oss-120b",
+  "critic": "openai/gpt-oss-120b"
+}

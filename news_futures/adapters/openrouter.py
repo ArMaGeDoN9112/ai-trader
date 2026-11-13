@@ -1,6 +1,6 @@
 """Compatibility integration: retain metadata dropped by ChatOpenRouter's SDK.
 
-See docs/agents/openrouter-compatibility.md for the pinned upstream limitation.
+See docs/runtime.md for the pinned upstream limitation.
 """
 
 from typing import Any

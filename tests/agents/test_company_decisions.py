@@ -241,9 +241,11 @@ class CompanyDecisionTest(unittest.TestCase):
 
     def test_context_limit_leaves_the_original_in_the_archive_and_keeps_entry_reason(self) -> None:
         self.open_position()
+        models = json.loads(self.config.read_bytes())
+        self.config.write_text(json.dumps(models | {'related_news_bytes': 200}), encoding='utf-8')
         thesis = 'Эта исходная причина входа должна остаться видимой целиком.'
         self.assertEqual(self.save_entry_reason(thesis), 0)
-        old_text = 'История раскрытия информации. ' * 2000
+        old_text = 'История раскрытия информации. ' * 20
         old = self.archive(old_text, 'sber')
         event = self.archive('Компания подтверждает ожидания по прибыли.', 'sber', prior=old)
         hold = self.proposal(event, 'hold', 'sber', [self.assessment('sber', event)])

@@ -6,6 +6,7 @@ import sys
 
 from news_futures.agents.routing import route_publication
 from news_futures.common.artifacts import write_json
+from news_futures.common.paths import DECISIONS_SETTINGS
 
 
 COMPANIES = {
@@ -65,4 +66,4 @@ def evaluate(directory: Path, config: Path) -> int:
 
 
 if __name__ == '__main__':
-    raise SystemExit(evaluate(Path(sys.argv[1]), Path('news_futures/agents/jev-model.json')))
+    raise SystemExit(evaluate(Path(sys.argv[1]), DECISIONS_SETTINGS))

@@ -227,7 +227,7 @@ class EventsTest(unittest.TestCase):
         catalog.write_text(json.dumps({'operations': {'catalog': {'availability': 'available', 'data': [
             {'company_id': 'sber', 'company_name': 'Сбербанк', 'ticker': 'SBER'},
         ]}}}), encoding='utf-8')
-        config = Path('news_futures/agents/jev-model.json')
+        config = Path('news_futures/agents/decisions-model.json')
 
         def respond(request: httpx.Request) -> httpx.Response:
             self.assertEqual(json.loads(request.content)['model'], 'parallel/decisions-fast:free')

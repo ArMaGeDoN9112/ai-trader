@@ -113,21 +113,21 @@ def run_cycle(
     context = (json.loads(context_path.read_text(encoding='utf-8'))
                if context_path else control_context())
     validated = AnalysisContext.model_validate(context)
-    trace = review_cycle(config_path, directory, validated, model_factory=model_factory)
+    settings = Settings.model_validate_json(config_path.read_bytes())
+    trace = review_cycle(settings, directory, validated, model_factory=model_factory)
     write_json(directory / 'trace.json', trace)
     return trace
 
 
 def review_cycle(
-    config_path: Path, directory: Path, context: ReviewContext, *,
+    settings: Settings, directory: Path, context: ReviewContext, *,
     model_factory: Callable[[RoleSettings], BaseChatModel],
     mode: str = 'openrouter-control', system: str = SYSTEM,
     proposal_schema: type[ProposalTerms] = Proposal,
     validate: Callable[[dict[str, Any], dict[str, Any]], None] = validate_proposal,
     checkpointer: BaseCheckpointSaver[str] | None = None, thread_id: str | None = None,
 ) -> dict[str, Any]:
-    """Read settings once; persist each result; return only reviewed proposals."""
-    settings = Settings.model_validate_json(config_path.read_bytes())
+    """Persist each result; return only reviewed proposals."""
     snapshot = settings.model_dump(mode='json')
     version = sha256(json.dumps(snapshot, sort_keys=True).encode()).hexdigest()
     cycle_id = thread_id or str(uuid4())

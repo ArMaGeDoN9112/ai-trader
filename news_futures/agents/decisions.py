@@ -8,7 +8,7 @@ from typing import Any, Literal
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from news_futures.agents.company import MAX_SNAPSHOT_AGE, CompanyContext, CompanyProposal, Snapshot
-from news_futures.agents.contracts import check_levels
+from news_futures.agents.contracts import Settings, check_levels
 from news_futures.agents.entry_context import entry_reason
 from news_futures.agents.review import chat_model, review_cycle
 from news_futures.agents.events import EventArchive, model_publication
@@ -16,9 +16,6 @@ from news_futures.agents.team_dto import ProposalEvidence
 from news_futures.common.artifacts import replace_json
 from news_futures.common.errors import RuntimeErrorInfo
 from news_futures.news.publications import utc_now
-
-
-RELATED_NEWS_BYTES = 40000
 
 
 CONTEXT_RULES = """Never change the configured instruments, settings or risk
@@ -74,7 +71,8 @@ def news_record(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def prepare_context(archive: EventArchive, decision_id: int, snapshot: Snapshot) -> CompanyContext:
+def prepare_context(archive: EventArchive, decision_id: int, snapshot: Snapshot,
+                    related_news_bytes: int) -> CompanyContext:
     now = utc_now()
     instruments = {instrument.contract_id: instrument for instrument in snapshot.instruments}
     if len(instruments) != len(snapshot.instruments) or any(
@@ -111,7 +109,7 @@ def prepare_context(archive: EventArchive, decision_id: int, snapshot: Snapshot)
 
     # shortcut: prefer recent material updates within a byte budget, calibrate retrieval on labeled decisions.
     ordered = sorted(history.values(), key=lambda row: (row['kind'] == 'repeat', -row['decision_id']))
-    remaining = RELATED_NEWS_BYTES
+    remaining = related_news_bytes
     related = []
     for row in ordered:
         evidence = news_record(row)
@@ -194,8 +192,9 @@ def analyze_event(archive: EventArchive, decision_id: int, snapshot_path: Path,
                   checkpointer: BaseCheckpointSaver[str] | None = None,
                   thread_id: str | None = None) -> dict[str, Any]:
     snapshot = Snapshot.model_validate_json(snapshot_path.read_bytes())
-    context = prepare_context(archive, decision_id, snapshot)
-    trace = review_cycle(config, directory, context, model_factory=chat_model, mode=mode,
+    settings = Settings.model_validate_json(config.read_bytes())
+    context = prepare_context(archive, decision_id, snapshot, settings.related_news_bytes)
+    trace = review_cycle(settings, directory, context, model_factory=chat_model, mode=mode,
                          system=SYSTEM, proposal_schema=CompanyProposal, validate=validate_company_proposal,
                          checkpointer=checkpointer, thread_id=thread_id)
     if not any(row['decision_id'] == decision_id for row in archive.history(current_only=True)):

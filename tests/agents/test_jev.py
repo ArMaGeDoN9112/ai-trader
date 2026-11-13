@@ -67,7 +67,8 @@ class JevTests(unittest.TestCase):
     def test_full_catalog_uses_one_question_per_company_and_freezes_the_model(self) -> None:
         with TemporaryDirectory() as temp:
             root = Path(temp)
-            publication, catalog, config = self.inputs(root, 81)
+            publication, catalog, config = self.inputs(root, 5)
+            config.write_text('{"model":"typesafe/jev-1.14","batch_size":2,"timeout_ms":1200}', encoding='utf-8')
             requested_models: list[str] = []
             requested_tickers: list[str] = []
 
@@ -77,11 +78,12 @@ class JevTests(unittest.TestCase):
                 requested_models.append(model)
                 for key in body['questions']:
                     requested_tickers.extend(body['state'][key]['tickers'])
-                config.write_text('{"model":"typesafe/jev-1.13"}', encoding='utf-8')
+                self.assertEqual(request.extensions['timeout']['read'], 1.2)
+                config.write_text('{"model":"typesafe/jev-1.13","batch_size":2,"timeout_ms":1200}', encoding='utf-8')
                 return httpx.Response(200, json={
                     'model': model, 'id': 'gen-dec-1',
                     'answers': {
-                        key: answer('direct' if body['state'][key]['tickers'] == ['T80'] else 'none')
+                        key: answer('direct' if body['state'][key]['tickers'] == ['T4'] else 'none')
                         for key in body['questions']
                     },
                 })
@@ -89,9 +91,9 @@ class JevTests(unittest.TestCase):
             with httpx.Client(transport=httpx.MockTransport(respond)) as client:
                 first = route_publication(config, publication, catalog, root / 'first', client=client, token='secret')
                 self.assertEqual(requested_models, ['typesafe/jev-1.14'] * 3)
-                self.assertEqual(requested_tickers, [f'T{i}' for i in range(81)])
+                self.assertEqual(requested_tickers, [f'T{i}' for i in range(5)])
                 self.assertEqual([(link['company_id'], link['kind']) for link in first['links']],
-                                 [('asset-80', 'direct')])
+                                 [('asset-4', 'direct')])
                 second = route_publication(config, publication, catalog, root / 'second', client=client, token='secret')
             self.assertEqual(requested_models[3:], ['typesafe/jev-1.13'] * 3)
             self.assertNotEqual(first['settings_version'], second['settings_version'])

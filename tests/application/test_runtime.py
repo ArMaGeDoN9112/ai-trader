@@ -30,7 +30,7 @@ from news_futures.adapters.groq import GroqChat
 from news_futures.agents.contracts import Review
 from news_futures.agents.events import EventArchive
 from news_futures.application.checkpoints import checkpoint_serializer
-from news_futures.common.paths import EVENT_SETTINGS, JEV_SETTINGS, REVIEW_SETTINGS, TELEGRAM_SOURCES
+from news_futures.common.paths import DECISIONS_SETTINGS, GROQ_SETTINGS, REVIEW_SETTINGS, TELEGRAM_SOURCES
 from news_futures.trading.broker import Fill, UnsupportedFuturesUnits
 from news_futures.agents.routing import request_choices
 from news_futures.common.artifacts import replace_json, write_json
@@ -53,7 +53,7 @@ class Interrupted(BaseException):
 
 class RuntimeTest(unittest.TestCase):
     def test_profile_loads_packaged_defaults(self) -> None:
-        packaged = {'sources': TELEGRAM_SOURCES, 'jev': JEV_SETTINGS, 'matcher': EVENT_SETTINGS, 'review': REVIEW_SETTINGS}
+        packaged = {'sources': TELEGRAM_SOURCES, 'decisions': DECISIONS_SETTINGS, 'groq': GROQ_SETTINGS, 'review': REVIEW_SETTINGS}
         with TemporaryDirectory() as directory:
             profile = Path(directory) / 'runtime.json'
             write_json(profile, {
@@ -138,13 +138,14 @@ class RuntimeAcceptance(RiskFixture):
         self.write_broker = self.enterContext(patch('news_futures.application.runtime.TBankSandbox', return_value=self.broker))
         self.jev_requests: list[dict[str, Any]] = []
         self.category_requests: list[dict[str, Any]] = []
+        self.expected_decisions_model = 'parallel/decisions-fast:free'
         self.instrument_requests: list[dict[str, Any]] = []
         self.instrument_choice = 'contract_0'
         self.tool_requests: list[dict[str, Any]] = []
         self.tool_choices = iter(['get_market_context', 'analyze', 'analyze'])
         jev_client = self.enterContext(httpx.Client(transport=httpx.MockTransport(self.jev_reply)))
         self.enterContext(patch('news_futures.agents.routing.request_choices',
-                                side_effect=lambda _client, *args: request_choices(jev_client, *args)))
+                                side_effect=lambda _client, *args, **kw: request_choices(jev_client, *args, **kw)))
         self.enterContext(patch('news_futures.agents.tool_agent.request_choices',
                                 side_effect=lambda _client, *args, **kwargs: request_choices(jev_client, *args, **kwargs)))
         self.catalog = self.root / 'catalog.json'
@@ -156,19 +157,19 @@ class RuntimeAcceptance(RiskFixture):
         self.profile = self.root / 'runtime.json'
         self.profile_data = {
             'data_dir': '.', 'catalog': self.catalog.name, 'account_id': self.account_id,
-            'session': 'telegram.session', 'review': self.config.name, 'matcher': 'unused-event-model.json',
+            'session': 'telegram.session', 'review': self.config.name,
         }
         write_json(self.profile, self.profile_data)
 
     def jev_reply(self, request: httpx.Request) -> httpx.Response:
         data = json.loads(request.content)
+        self.assertEqual(data['model'], self.expected_decisions_model)
         if 'next_step' in data['questions']:
             self.assertEqual(str(request.url), 'https://openrouter.ai/api/alpha/decisions')
-            self.assertEqual(data['model'], 'typesafe/jev-1.14')
             self.tool_requests.append(data)
             choice = next(self.tool_choices)
             return httpx.Response(200, json={
-                'id': 'tool-result', 'model': data['model'], 'provider': 'TypeSafe', 'answers': {
+                'id': 'tool-result', 'model': data['model'], 'provider': 'Parallel', 'answers': {
                     'next_step': {'type': 'choice', 'choice': choice, 'confidence': 1.0,
                                   'probabilities': {key: float(key == choice)
                                                     for key in data['questions']['next_step']['criteria']}},
@@ -338,8 +339,8 @@ class RuntimeAcceptance(RiskFixture):
             'tool_selection', 'analyst', 'critic', 'tool_selection', 'analyst', 'critic',
         ])
         self.assertEqual(calls[1]['output'], {'tool': 'get_company_news'})
-        self.assertEqual(calls[1]['actual_model'], 'typesafe/jev-1.14')
-        self.assertEqual(calls[1]['provider'], 'TypeSafe')
+        self.assertEqual(calls[1]['actual_model'], 'parallel/decisions-fast:free')
+        self.assertEqual(calls[1]['provider'], 'Parallel')
         self.assertEqual(calls[2]['arguments'], {'company_id': 'sber'})
         self.assertEqual(calls[4]['arguments'], {'contract_id': self.contract_id})
         self.assertNotIn('get_company_news', self.tool_requests[1]['questions']['next_step']['criteria'])
@@ -398,6 +399,10 @@ class RuntimeAcceptance(RiskFixture):
 
     def test_tool_agent_rejects_unknown_tool_from_decisions(self) -> None:
         self.tool_agent()
+        self.expected_decisions_model = 'example/custom-decisions:free'
+        config = self.root / 'custom-decisions.json'
+        write_json(config, {'model': self.expected_decisions_model})
+        replace_json(self.profile, json.loads(self.profile.read_bytes()) | {'decisions': config.name})
         self.tool_choices = iter(['request_entry'])
         incoming = self.news(self.market, 'SBER опубликовал прогноз.')
         with patch.object(self.broker, 'read_risk') as read_risk:
@@ -406,6 +411,7 @@ class RuntimeAcceptance(RiskFixture):
         report = self.report(incoming)
         self.assertEqual(report['result']['status'], 'failed')
         self.assertEqual(report['agent']['calls'][-1]['error'], 'invalid_decision')
+        self.assertEqual(report['agent']['calls'][-1]['requested_model'], self.expected_decisions_model)
         self.assertNotIn('proposal', report['result'])
         self.write_broker.assert_not_called()
 
@@ -555,10 +561,10 @@ class RuntimeAcceptance(RiskFixture):
                     await asyncio.sleep(0.01)
             return 0
 
-        with (patch('news_futures.application.runtime.FUTURES_REFRESH_SECONDS', 0.05),
-              patch('news_futures.application.runtime.run_telegram', side_effect=wait_for_refresh),
+        write_json(self.profile.with_name('refresh.json'), self.profile_data | {'futures_refresh_seconds': 1})
+        with (patch('news_futures.application.runtime.run_telegram', side_effect=wait_for_refresh),
               patch('builtins.print')):
-            self.assertEqual(asyncio.run(run_runtime(self.profile, False)), 0)
+            self.assertEqual(asyncio.run(run_runtime(self.profile.with_name('refresh.json'), False)), 0)
         self.assertGreaterEqual(self.fetch_futures.call_count, 2)
 
     def test_restart_during_critic_skips_the_old_proposal_without_more_model_calls(self) -> None:
@@ -632,9 +638,7 @@ class RuntimeAcceptance(RiskFixture):
             first_result = {'revision': first.revision_key(), 'mode': 'observation', 'inputs_saved': False}
             with self.assertRaises(Shutdown):
                 runtime.process_revision(archive, events, first.record(), first_result)
-            frozen = self.root / 'decisions' / first.revision_key()
             models = {
-                'jev': json.loads((frozen / 'jev.json').read_bytes())['model'],
                 'analyst': 'test/new-analyst', 'critic': 'test/critic',
             }
             controls.save_settings({'account_id': self.account_id, 'aggregator': 'groq', 'models': models})
@@ -656,6 +660,8 @@ class RuntimeAcceptance(RiskFixture):
         with patch('news_futures.operator.settings.load_token', return_value='groq-test-key') as token:
             preferences.save(form, stopped=False)
             token.assert_called_once_with('groq', 'api_key')
+        stored = controls.saved()
+        controls.save_settings(stored | {'models': stored['models'] | {'jev': 'typesafe/jev-1.14'}})
 
         first = self.news(self.market, 'SBER raised its profit forecast.')
         second = self.news(self.market, 'SBER raised its dividend.')
@@ -693,12 +699,12 @@ class RuntimeAcceptance(RiskFixture):
             'openai/gpt-oss-120b', 'openai/gpt-oss-120b',
             'openai/gpt-oss-120b', 'openai/gpt-oss-120b',
         ])
-        self.assertEqual([request['model'] for request in self.jev_requests], [saved['models']['jev']] * 2)
+        self.assertEqual([request['model'] for request in self.jev_requests], ['parallel/decisions-fast:free'] * 2)
         decision = self.report(second)
         self.assertEqual(decision['result']['status'], 'no_action')
         self.assertEqual([call['provider'] for call in decision['review']['calls']], ['Groq', 'Groq'])
         self.assertEqual(applied[-1]['aggregator'], 'groq')
-        self.assertEqual(applied[-1]['models']['jev'], saved['models']['jev'])
+        self.assertEqual(applied[-1]['models']['decisions'], 'parallel/decisions-fast:free')
 
     def test_failed_reconciliation_keeps_the_last_confirmed_broker_state(self) -> None:
         self.sandbox()

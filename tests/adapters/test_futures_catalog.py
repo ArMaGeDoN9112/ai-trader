@@ -4,7 +4,8 @@ import unittest
 
 import httpx
 
-from news_futures.adapters.tbank.futures_catalog import fetch_catalog, group_futures, save_catalog
+from news_futures.adapters.tbank.futures_catalog import CategorySettings, fetch_catalog, group_futures, save_catalog
+from news_futures.common.paths import FUTURES_CATEGORIES
 from news_futures.adapters.tbank.rest import SANDBOX_REST, restrict_to_reads
 
 
@@ -60,10 +61,11 @@ class FuturesCatalogTest(unittest.TestCase):
             self.assertIn('| SBER | `SRZ6` | 1 |', report)
             self.assertIn('## Без категории', report)
             self.assertNotIn('SRU6', report)
-            refreshed = catalog | {'assets': group_futures(futures[1:], shares)}
+            settings = CategorySettings.model_validate_json(FUTURES_CATEGORIES.read_bytes())
+            refreshed = catalog | {'assets': group_futures(futures[1:], shares, settings)}
             save_catalog(output, refreshed)
             self.assertNotIn('SRZ6', (output / 'catalog.json').read_text(encoding='utf-8'))
             self.assertNotIn('SRZ6', (output / 'groups.md').read_text(encoding='utf-8'))
             self.assertEqual(sorted(path.name for path in output.iterdir()), ['catalog.json', 'groups.md'])
         with self.assertRaisesRegex(ValueError, 'invalid_future_identity'):
-            group_futures(futures + futures[:1], shares)
+            group_futures(futures + futures[:1], shares, settings)

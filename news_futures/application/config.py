@@ -4,14 +4,17 @@ import json
 from pathlib import Path
 from typing import Literal
 
+from pydantic import Field
+
 from news_futures.agents.company import Nonempty
 from news_futures.agents.contracts import Aggregator, Contract, RoleSettings, Settings
-from news_futures.agents.routing import JevSettings, load_catalog
+from news_futures.agents.routing import DecisionsSettings, load_catalog
+from news_futures.agents.tool_agent import AgentLimits
 from news_futures.common.errors import RuntimeErrorInfo
-from news_futures.common.paths import EVENT_SETTINGS, JEV_SETTINGS, REVIEW_SETTINGS, TELEGRAM_SOURCES
+from news_futures.common.paths import DECISIONS_SETTINGS, FUTURES_CATEGORIES, GROQ_SETTINGS, REVIEW_SETTINGS, TELEGRAM_SOURCES
 
 
-GROQ_MODELS = {'analyst': 'openai/gpt-oss-120b', 'critic': 'openai/gpt-oss-120b'}
+CHAT_ROLES = ('analyst', 'critic')
 
 
 class RuntimeSettings(Contract):
@@ -21,12 +24,17 @@ class RuntimeSettings(Contract):
     mode: Literal['observation', 'sandbox'] = 'observation'
     analysis_strategy: Literal['fixed', 'tool_agent'] = 'fixed'
     order_transport: Literal['rest', 'mcp'] = 'rest'
+    chat_aggregator: Aggregator = 'openrouter'
     coordinator: RoleSettings | None = None
     sources: Path = TELEGRAM_SOURCES
     session: Path | None = None
-    jev: Path = JEV_SETTINGS
-    matcher: Path = EVENT_SETTINGS
+    decisions: Path = DECISIONS_SETTINGS
     review: Path = REVIEW_SETTINGS
+    groq: Path = GROQ_SETTINGS
+    futures_categories: Path = FUTURES_CATEGORIES
+    agent_limits: AgentLimits = AgentLimits()
+    futures_refresh_seconds: int = Field(default=86400, gt=0)
+    broker_refresh_seconds: int = Field(default=15, gt=0)
     ca_file: Path | None = None
 
     @property
@@ -57,15 +65,27 @@ def load_settings(config: Path) -> RuntimeSettings:
 
 def role_models(inputs: dict[str, bytes]) -> dict[str, str]:
     review = json.loads(inputs['review'])
-    return {'jev': json.loads(inputs['jev'])['model'],
-            **{role: review[role]['model'] for role in ('analyst', 'critic')}}
+    return {'decisions': json.loads(inputs['decisions'])['model'],
+            **{role: review[role]['model'] for role in CHAT_ROLES}}
+
+
+def groq_models(settings: RuntimeSettings) -> dict[str, str]:
+    try:
+        models = json.loads(settings.groq.read_bytes())
+        if not isinstance(models, dict) or models.keys() != set(CHAT_ROLES):
+            raise ValueError('invalid_groq_models')
+        for model in models.values():
+            RoleSettings.model_validate({'model': model, 'aggregator': 'groq'})
+        return {role: models[role] for role in CHAT_ROLES}
+    except (OSError, ValueError) as error:
+        raise RuntimeErrorInfo('Проверьте файл настройки groq.') from error
 
 
 def cycle_inputs(settings: RuntimeSettings, models: dict[str, str] | None = None, *,
                  aggregator: Aggregator | None = None) -> dict[str, bytes]:
     inputs = {}
     for field, validate in (
-        ('catalog', load_catalog), ('jev', JevSettings.model_validate_json),
+        ('catalog', load_catalog), ('decisions', DecisionsSettings.model_validate_json),
         ('review', Settings.model_validate_json),
     ):
         try:
@@ -76,16 +96,11 @@ def cycle_inputs(settings: RuntimeSettings, models: dict[str, str] | None = None
         inputs[field] = content
     if models is None and aggregator is None:
         return inputs
-    models = models or {}
-    aggregator = aggregator or 'openrouter'
-    for field in ('jev', 'review'):
-        options = json.loads(inputs[field])
-        if field == 'review':
-            for role in ('analyst', 'critic'):
-                options[role].update(model=models.get(role, options[role]['model']), aggregator=aggregator)
-            Settings.model_validate(options)
-        else:
-            options['model'] = models.get(field, options['model'])
-            JevSettings.model_validate(options)
-        inputs[field] = json.dumps(options).encode()
+    options = json.loads(inputs['review'])
+    for role in CHAT_ROLES:
+        options[role]['model'] = (models or {}).get(role, options[role]['model'])
+        if aggregator is not None:
+            options[role]['aggregator'] = aggregator
+    Settings.model_validate(options)
+    inputs['review'] = json.dumps(options).encode()
     return inputs

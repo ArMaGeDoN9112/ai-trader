@@ -65,7 +65,7 @@ def analyze_news(
         if route_dir.exists():
             move_artifact(route_dir, directory / f'route-interrupted-{uuid4().hex}')
         position = current_position()
-        routed = route_publication(directory / 'jev.json', directory / 'publication.json',
+        routed = route_publication(directory / 'decisions.json', directory / 'publication.json',
                                    directory / 'catalog.json', route_dir,
                                    futures_catalog=directory / 'futures-catalog.json',
                                    position_company=contracts.get(position.contract_id) if position else None)
@@ -162,7 +162,7 @@ def analyze_news(
             outcome = run_tool_agent(
                 directory, revision, event, settings.account_id, {uid: contracts[uid]}, events,
                 lambda uid, seconds: read_market(events, uid, seconds),
-                check_current, check_stop, checkpointer, settings.coordinator,
+                check_current, check_stop, checkpointer, settings.coordinator, settings.agent_limits,
             )
             result: NewsState = {'status': outcome.status, 'reason': outcome.reason}
             if outcome.proposal is not None:

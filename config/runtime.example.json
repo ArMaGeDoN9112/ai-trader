@@ -1,6 +1,22 @@
 {
   "mode": "observation",
+  "analysis_strategy": "fixed",
+  "order_transport": "rest",
+  "chat_aggregator": "openrouter",
   "data_dir": "runtime",
   "catalog": "catalog/diagnostics.json",
-  "account_id": "SANDBOX_ACCOUNT_ID"
+  "account_id": "SANDBOX_ACCOUNT_ID",
+  "futures_refresh_seconds": 86400,
+  "broker_refresh_seconds": 15,
+  "agent_limits": {
+    "max_turns": 8,
+    "max_reads": 7,
+    "max_reviews": 2,
+    "input_budget": 24000,
+    "output_budget": 4000,
+    "run_seconds": 45,
+    "call_timeout_ms": 10000,
+    "news_limit": 8,
+    "news_bytes": 5000
+  }
 }

@@ -8,7 +8,7 @@ from typing import Any
 
 from news_futures.adapters.tbank.rest import TBankReader, sandbox_client
 from news_futures.adapters.telegram import validate_channels
-from news_futures.application.config import GROQ_MODELS, RuntimeSettings, cycle_inputs, role_models
+from news_futures.application.config import CHAT_ROLES, RuntimeSettings, cycle_inputs, groq_models, role_models
 from news_futures.application.operator_state import OperatorState
 from news_futures.common.credentials import CredentialsError, load_token
 from news_futures.news.publications import utc_now
@@ -27,13 +27,19 @@ class Preferences:
     def __init__(self, settings: RuntimeSettings, channels: list[str], state: OperatorState):
         self.base = settings
         self.state = state
+        models = role_models(cycle_inputs(settings))
+        self.decisions_model = models.pop('decisions')
         self.default: dict[str, Any] = {'mode': settings.mode, 'channels': channels,
                                        'analysis_strategy': settings.analysis_strategy,
-                                       'models': role_models(cycle_inputs(settings)),
-                                       'aggregator': 'openrouter', 'groq_models': GROQ_MODELS}
-        self.active = self.saved() | {'models': self.default['models'], 'aggregator': self.default['aggregator']}
+                                       'models': models, 'aggregator': settings.chat_aggregator,
+                                       'groq_models': groq_models(settings)}
+        self.active = self.initial_active(self.saved())
         self.profile_at: str | None = None
         self.models_at: str | None = None
+
+    def initial_active(self, values: dict[str, Any]) -> dict[str, Any]:
+        key = 'groq_models' if values['aggregator'] == 'groq' else 'models'
+        return values | {'models': values[key] | {'decisions': self.decisions_model}}
 
     def saved(self, values: dict[str, Any] | None = None) -> dict[str, Any]:
         if values is None:
@@ -57,7 +63,7 @@ class Preferences:
     def prepare(self) -> tuple[dict[str, Any], list[str], bytes]:
         values = self.saved()
         runtime = self.runtime(values)
-        self.active = values | {'models': self.default['models'], 'aggregator': self.default['aggregator']}
+        self.active = self.initial_active(values)
         self.models_at = None
         self.profile_at = None
         return profile_view(runtime), values['channels'], json.dumps({
@@ -113,16 +119,16 @@ class Preferences:
             raise ValueError('invalid_aggregator')
         models = body.get('models')
         groq_models = body.get('groq_models', saved['groq_models'])
-        for choices, defaults in ((models, self.default['models']), (groq_models, GROQ_MODELS)):
-            if (not isinstance(choices, dict) or choices.keys() != defaults.keys()
+        for choices in (models, groq_models):
+            if (not isinstance(choices, dict) or choices.keys() != set(CHAT_ROLES)
                     or not all(isinstance(model, str) and len(model) <= 200 for model in choices.values())):
                 raise ValueError('invalid_models')
         values = {'mode': mode, 'analysis_strategy': strategy, 'channels': channels, 'models': models,
                   'aggregator': aggregator, 'groq_models': groq_models, 'account_id': self.base.account_id}
         candidate = self.runtime(values)
         try:
-            cycle_inputs(candidate, models)
-            cycle_inputs(candidate, models | groq_models, aggregator='groq')
+            cycle_inputs(candidate, models, aggregator='openrouter')
+            cycle_inputs(candidate, groq_models, aggregator='groq')
         except ValueError as error:
             raise ValueError('invalid_models') from error
         if aggregator == 'groq' and aggregator != saved['aggregator']:

@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from news_futures.common.credentials import CredentialsError
 from news_futures.common.paths import (
-    EVENT_SETTINGS, JEV_SETTINGS, REVIEW_SETTINGS, SANDBOX_SETTINGS, TELEGRAM_SOURCES,
+    DECISIONS_SETTINGS, EVENT_SETTINGS, FUTURES_CATEGORIES, REVIEW_SETTINGS, SANDBOX_SETTINGS, TELEGRAM_SOURCES,
 )
 from news_futures.simulation.scenario import run
 
@@ -22,6 +22,7 @@ def main() -> int:
     futures_command = commands.add_parser('futures-catalog', help='Выгрузить каталог фьючерсов по категориям')
     futures_command.add_argument('directory', type=Path)
     futures_command.add_argument('--ca-file', type=Path)
+    futures_command.add_argument('--config', type=Path, default=FUTURES_CATEGORIES)
     run_command = commands.add_parser('run', help='Сохранить новый контрольный запуск')
     run_command.add_argument('directory', nargs='?', type=Path)
     show_command = commands.add_parser('show', help='Прочитать сохранённую трассу')
@@ -30,11 +31,11 @@ def main() -> int:
     analyze_command.add_argument('directory', nargs='?', type=Path)
     analyze_command.add_argument('--config', type=Path, default=REVIEW_SETTINGS)
     analyze_command.add_argument('--context', type=Path)
-    route_command = commands.add_parser('route', help='Привязки публикации к компаниям через Jev')
+    route_command = commands.add_parser('route', help='Привязки публикации к компаниям через OpenRouter Decisions')
     route_command.add_argument('directory', nargs='?', type=Path)
     route_command.add_argument('--publication', type=Path, required=True)
     route_command.add_argument('--catalog', type=Path, required=True)
-    route_command.add_argument('--config', type=Path, default=JEV_SETTINGS)
+    route_command.add_argument('--config', type=Path, default=DECISIONS_SETTINGS)
     login_command = commands.add_parser('telegram-login', help='Локальная пользовательская авторизация')
     login_command.add_argument('--session', type=Path)
     telegram_command = commands.add_parser('telegram', help='Непрерывный приём Telegram, обработка — имитация')
@@ -132,7 +133,7 @@ def main() -> int:
             except CredentialsError:
                 raise
             except Exception:
-                print('Sandbox: подключение или настройки не подтверждены. См. docs/sandbox.md.', file=sys.stderr)
+                print('Sandbox: подключение или настройки не подтверждены. См. docs/runtime.md.', file=sys.stderr)
                 return 1
             finally:
                 logging.disable(previous_logging)
@@ -143,7 +144,7 @@ def main() -> int:
 
             try:
                 with sandbox_client(args.ca_file, read_only=True) as client:
-                    catalog = fetch_catalog(client)
+                    catalog = fetch_catalog(client, args.config)
             except CredentialsError:
                 raise
             except (httpx.HTTPError, KeyError, TypeError, ValueError):
@@ -164,7 +165,7 @@ def main() -> int:
                 }, ensure_ascii=False, indent=2))
                 return 0 if trace['status'] == 'completed' else 1
             except Exception as error:
-                print(f'Jev: {type(error).__name__}. См. docs/jev.md.', file=sys.stderr)
+                print(f'OpenRouter Decisions: {type(error).__name__}. См. docs/runtime.md.', file=sys.stderr)
                 return 1
         if args.command in {'analyze', 'analyze-event'}:
             try:
@@ -191,7 +192,7 @@ def main() -> int:
             except Exception as error:
                 if args.command == 'analyze-event':
                     detail = str(error) if type(error) is ValueError else type(error).__name__
-                    print(f'Анализ события: {detail}. См. docs/company-decisions.md.', file=sys.stderr)
+                    print(f'Анализ события: {detail}. См. docs/runtime.md#путь-публикации-и-полномочия.', file=sys.stderr)
                     return 1
                 print(f'OpenRouter: {type(error).__name__}. См. локальную инструкцию README.', file=sys.stderr)
                 return 1
@@ -202,7 +203,7 @@ def main() -> int:
             try:
                 entry = EntryReason.model_validate_json(args.record.read_bytes())
             except ValueError as error:
-                raise ValueError('Проверьте формат причины входа в docs/company-decisions.md') from error
+                raise ValueError('Проверьте формат причины входа в docs/runtime.md#путь-публикации-и-полномочия') from error
             try:
                 with EventArchive(args.database) as events:
                     record_entry_reason(events, entry)
@@ -265,7 +266,7 @@ def main() -> int:
             except CredentialsError:
                 raise
             except Exception:
-                print('Sandbox: подключение или настройки не подтверждены. См. docs/sandbox-execution.md.',
+                print('Sandbox: подключение или настройки не подтверждены. См. docs/runtime.md.',
                       file=sys.stderr)
                 return 1
             print(json.dumps(result, ensure_ascii=False, indent=2))

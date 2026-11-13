@@ -1,0 +1,198 @@
+{
+  "categories": {
+    "financial": "Финансы",
+    "oil_gas": "Нефтегаз",
+    "metals_mining": "Металлургия и добыча",
+    "chemicals": "Химия и удобрения",
+    "materials": "Прочие материалы",
+    "it": "Технологии",
+    "telecom": "Связь и медиа",
+    "consumer": "Потребительский сектор",
+    "industrials": "Промышленность и транспорт",
+    "utilities": "Электроэнергетика",
+    "health_care": "Здравоохранение",
+    "real_estate": "Недвижимость",
+    "currency": "Валюты",
+    "index": "Индексы и фонды",
+    "rates": "Ставки и облигации",
+    "crypto": "Криптоактивы",
+    "energy_commodity": "Нефть, газ и топливо",
+    "metal_commodity": "Металлы",
+    "agriculture": "Агросырьё",
+    "unclassified": "Без категории"
+  },
+  "sector_categories": {
+    "financial": "financial",
+    "energy": "oil_gas",
+    "green_energy": "utilities",
+    "utilities": "utilities",
+    "materials": "materials",
+    "it": "it",
+    "telecom": "telecom",
+    "consumer": "consumer",
+    "industrials": "industrials",
+    "health_care": "health_care",
+    "real_estate": "real_estate"
+  },
+  "share_overrides": {
+    "ALRS": "metals_mining",
+    "CHMF": "metals_mining",
+    "ENPG": "metals_mining",
+    "GMKN": "metals_mining",
+    "MAGN": "metals_mining",
+    "MTLR": "metals_mining",
+    "NLMK": "metals_mining",
+    "PLZL": "metals_mining",
+    "POLY": "metals_mining",
+    "RASP": "metals_mining",
+    "RUAL": "metals_mining",
+    "AAOI": "it",
+    "ARM": "it",
+    "COHR": "it",
+    "CRDO": "it",
+    "CRWV": "it",
+    "INOD": "it",
+    "IONQ": "it",
+    "SMCI": "it",
+    "SNDK": "it",
+    "ASML HOLDING NV": "it",
+    "РАСЧЕТНОЕ ЗНАЧЕНИЕ АКЦИИ SK HYNIX INC.": "it",
+    "APPLIED OPTOELECTRONICS, INC.": "it",
+    "IONQ, INC.": "it",
+    "PHOR": "chemicals",
+    "BE": "utilities",
+    "OKLO": "utilities",
+    "TEM": "health_care",
+    "IREN": "it",
+    "RDDT": "telecom",
+    "CRCL": "financial"
+  },
+  "asset_aliases": {
+    "TYPE_COMMODITY": {
+      "ALMN": "Алюминий",
+      "Co": "Медь",
+      "Nl": "Никель",
+      "TTF": "Газ (Европа)",
+      "Газ микро (США)": "Газ (США)"
+    },
+    "TYPE_INDEX": {
+      "NDX": "Nasdaq 100",
+      "RTSI мини": "RTSI",
+      "Индекс московской биржи": "IMOEX"
+    }
+  },
+  "commodity_groups": {
+    "Brent": "energy_commodity",
+    "CL": "energy_commodity",
+    "Нефть WTI": "energy_commodity",
+    "Газ (Европа)": "energy_commodity",
+    "Газ (США)": "energy_commodity",
+    "Бензин АИ-92": "energy_commodity",
+    "Бензин АИ-95": "energy_commodity",
+    "Дизельное топливо летнее": "energy_commodity",
+    "Алюминий": "metal_commodity",
+    "Золото": "metal_commodity",
+    "Золото в долларах": "metal_commodity",
+    "Золото в рублях": "metal_commodity",
+    "Медь": "metal_commodity",
+    "Никель": "metal_commodity",
+    "Палладий": "metal_commodity",
+    "Платина": "metal_commodity",
+    "Серебро": "metal_commodity",
+    "Цинк": "metal_commodity",
+    "Апельсиновый сок": "agriculture",
+    "Какао": "agriculture",
+    "Кофе": "agriculture",
+    "Пшеница": "agriculture",
+    "Сахар мировой": "agriculture",
+    "Сахар российский": "agriculture"
+  },
+  "index_categories": {
+    "Индекс RUONIA": [
+      "rates"
+    ],
+    "Индекс ключевой ставки": [
+      "rates"
+    ],
+    "RGBILP": [
+      "rates"
+    ],
+    "Индекс государственных облигаций": [
+      "rates"
+    ],
+    "Индекс казначейских облигаций США": [
+      "rates"
+    ],
+    "BTCUSDT": [
+      "crypto"
+    ],
+    "ETHUSDT": [
+      "crypto"
+    ],
+    "SOLUSDT": [
+      "crypto"
+    ],
+    "TRXUSDT": [
+      "crypto"
+    ],
+    "XRPUSDT": [
+      "crypto"
+    ],
+    "Bitcoin-фонд IBIT": [
+      "crypto"
+    ],
+    "iShares Ethereum Trust ETF": [
+      "crypto"
+    ],
+    "Индекс Bitcoin": [
+      "crypto"
+    ],
+    "Индекс Ethereum": [
+      "crypto"
+    ],
+    "Индекс Ripple": [
+      "crypto"
+    ],
+    "Индекс Solana": [
+      "crypto"
+    ],
+    "Индекс Tron": [
+      "crypto"
+    ],
+    "Индекс МосБиржи Биткоина": [
+      "crypto"
+    ],
+    "Индекс МосБиржи Рипла": [
+      "crypto"
+    ],
+    "Индекс МосБиржи Соланы": [
+      "crypto"
+    ],
+    "Индекс МосБиржи Трона": [
+      "crypto"
+    ],
+    "Индекс МосБиржи Эфира": [
+      "crypto"
+    ],
+    "Индекс нефти и газа": [
+      "index",
+      "oil_gas"
+    ],
+    "Индекс металлов и добычи": [
+      "index",
+      "metals_mining"
+    ],
+    "Индекс потребительского сектора": [
+      "index",
+      "consumer"
+    ],
+    "Индекс финансов": [
+      "index",
+      "financial"
+    ],
+    "Invesco PHLX Semiconductor ETF": [
+      "index",
+      "it"
+    ]
+  }
+}

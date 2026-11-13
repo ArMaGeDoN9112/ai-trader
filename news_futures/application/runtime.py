@@ -23,7 +23,7 @@ from news_futures.agents.routing import catalog_contracts
 from news_futures.common.artifacts import replace_json
 from news_futures.application.workflow import Shutdown, analyze_news
 from news_futures.news.publications import Archive, TEST_SOURCE, utc_now
-from news_futures.application.config import GROQ_MODELS, RuntimeSettings, cycle_inputs, load_settings, role_models
+from news_futures.application.config import RuntimeSettings, cycle_inputs, groq_models, load_settings, role_models
 from news_futures.application.operator_state import OperatorState
 from news_futures.common.errors import RuntimeErrorInfo, error_code
 from news_futures.application.records import pending_revisions, review_path, runtime_tables, save_broker_status, save_result
@@ -33,9 +33,6 @@ from news_futures.adapters.tbank.rest import TBankReader, TBankSandbox, limit_br
 from news_futures.adapters.telegram import configured_channels, default_session, run_telegram, session_path
 from news_futures.trading.journal import trade_journal
 from news_futures.trading.terms import CloseIntent, ContractSnapshot
-
-
-FUTURES_REFRESH_SECONDS = 24 * 60 * 60
 
 
 class Runtime:
@@ -204,11 +201,10 @@ class Runtime:
             if saved.get('account_id') != settings.account_id:
                 saved = {}
             models = saved.get('models')
-            aggregator: Aggregator = 'openrouter'
-            if saved.get('aggregator') == 'groq':
-                aggregator = 'groq'
-                models = (models or {}) | saved.get('groq_models', GROQ_MODELS)
-            inputs = cycle_inputs(settings, models, aggregator=aggregator if self.on_controls is not None else None)
+            aggregator: Aggregator = saved.get('aggregator', settings.chat_aggregator)
+            if aggregator == 'groq':
+                models = saved.get('groq_models') or groq_models(settings)
+            inputs = cycle_inputs(settings, models, aggregator=aggregator)
             result['entry_pause_version'] = self._pause()['changed_at']
             directory.mkdir(parents=True, exist_ok=True)
             replace_json(directory / 'runtime.json', settings.model_dump(mode='json'))
@@ -345,6 +341,7 @@ async def run_runtime(
     started_at = utc_now()
     settings = load_settings(config) if isinstance(config, Path) else config
     cycle_inputs(settings)
+    groq_models(settings)
     try:
         if channels is None:
             channels = configured_channels(settings.sources)
@@ -412,27 +409,28 @@ async def run_runtime(
                 try:
                     if loop.time() >= next_check:
                         await in_worker(runtime.refresh)
-                        next_check = loop.time() + 15
+                        next_check = loop.time() + settings.broker_refresh_seconds
                     elif on_controls is not None:
                         await in_worker(runtime.poll_controls)
                 except Exception as error:
                     print(json.dumps({'broker_monitor_error': error_code(error)}), flush=True)
-                await asyncio.sleep(1 if on_controls is not None else 15)
+                await asyncio.sleep(min(1, settings.broker_refresh_seconds) if on_controls is not None
+                                    else settings.broker_refresh_seconds)
 
         def refresh_futures_catalog() -> None:
             try:
-                save_catalog(settings.futures_catalog.parent, fetch_catalog(client))
+                save_catalog(settings.futures_catalog.parent, fetch_catalog(client, settings.futures_categories))
             except (httpx.HTTPError, OSError, ValueError, KeyError, TypeError) as error:
                 print(json.dumps({'futures_catalog_error': error_code(error)}), flush=True)
 
-        async def refresh_catalog_daily() -> None:
+        async def refresh_catalog() -> None:
             while not runtime.stop.is_set():
-                await asyncio.sleep(FUTURES_REFRESH_SECONDS)
+                await asyncio.sleep(settings.futures_refresh_seconds)
                 await in_worker(refresh_futures_catalog)
 
         await in_worker(runtime.refresh)
         await in_worker(refresh_futures_catalog)
-        catalog_task = None if once else asyncio.create_task(refresh_catalog_daily())
+        catalog_task = None if once else asyncio.create_task(refresh_catalog())
         observer = None if once else asyncio.create_task(monitor())
         try:
             if on_phase is not None:
