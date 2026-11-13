@@ -10,8 +10,10 @@ import sqlite3
 from typing import Any
 from uuid import uuid4
 
+from pydantic import Field
+
 from news_futures.agents.approval import read_approval
-from news_futures.agents.contracts import validate_levels
+from news_futures.agents.contracts import Contract, validate_levels
 from news_futures.agents.company import CompanyProposal
 from news_futures.agents.events import EventArchive, model_publication
 from news_futures.common.errors import Rejected
@@ -19,11 +21,18 @@ from news_futures.news.publications import Archive, TEST_SOURCE, utc_now
 from news_futures.trading.terms import EntryReservation, RiskSnapshot
 
 
-MAX_NEWS_AGE = timedelta(minutes=15)
-MAX_PROPOSAL_AGE = timedelta(seconds=60)
-MAX_RISK_DATA_AGE = timedelta(seconds=60)
-MAX_PLANNED_RISK = 500
-MAX_LEVERAGE = 2
+class RiskPolicy(Contract):
+    max_news_age_seconds: int = Field(gt=0)
+    max_proposal_age_seconds: int = Field(gt=0)
+    max_risk_data_age_seconds: int = Field(gt=0)
+    max_planned_risk_rub: Decimal = Field(gt=0)
+    max_leverage: Decimal = Field(gt=0)
+
+
+POLICY = RiskPolicy.model_validate_json(Path(__file__).with_name('risk-policy.json').read_bytes())
+MAX_NEWS_AGE = timedelta(seconds=POLICY.max_news_age_seconds)
+MAX_PROPOSAL_AGE = timedelta(seconds=POLICY.max_proposal_age_seconds)
+MAX_RISK_DATA_AGE = timedelta(seconds=POLICY.max_risk_data_age_seconds)
 
 
 @dataclass(frozen=True)
@@ -121,8 +130,8 @@ def _size(
     exposure = exposure_ticks * tick_value_per_lot
     margin = contract.margin_per_lot_buy if side == 'long' else contract.margin_per_lot_sell
     limits = {
-        'risk_budget_exceeded': MAX_PLANNED_RISK // risk,
-        'leverage_limit_exceeded': MAX_LEVERAGE * Fraction(snapshot.equity) // exposure,
+        'risk_budget_exceeded': Fraction(POLICY.max_planned_risk_rub) // risk,
+        'leverage_limit_exceeded': Fraction(POLICY.max_leverage) * Fraction(snapshot.equity) // exposure,
         'insufficient_margin': Fraction(snapshot.available_margin) // Fraction(margin),
     }
     lots = min(limits.values())

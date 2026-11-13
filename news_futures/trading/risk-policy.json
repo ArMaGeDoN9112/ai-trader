@@ -1,0 +1,7 @@
+{
+  "max_news_age_seconds": 900,
+  "max_proposal_age_seconds": 60,
+  "max_risk_data_age_seconds": 60,
+  "max_planned_risk_rub": "500",
+  "max_leverage": "2"
+}
