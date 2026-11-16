@@ -1,9 +1,22 @@
 import { useEffect, useState } from 'react';
 
-const session = document.querySelector('meta[name="operator-session"]').content;
+let session;
+
+function operatorSession() {
+  session ??= fetch('/api/session', { cache: 'no-store', signal: AbortSignal.timeout(5000) })
+    .then(async response => {
+      if (!response.ok) throw new Error('archive_unavailable');
+      return (await response.json()).session;
+    })
+    .catch(error => {
+      session = undefined;
+      throw error;
+    });
+  return session;
+}
 
 export async function request(path, body, signal = AbortSignal.timeout(8000)) {
-  const headers = { 'X-Operator-Session': session };
+  const headers = { 'X-Operator-Session': await operatorSession() };
   const options = { headers, signal, cache: 'no-store' };
   if (body !== undefined) {
     options.method = 'POST';

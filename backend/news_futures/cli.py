@@ -66,9 +66,10 @@ def main() -> int:
     serve_command = commands.add_parser('serve', help='Непрерывный цикл от новости до решения')
     serve_command.add_argument('config', type=Path)
     serve_command.add_argument('--once', action='store_true', help='Получить доступные новости и обработать очередь')
-    operator_command = commands.add_parser('operator-ui', help='Локальная панель и управление обработчиком')
+    operator_command = commands.add_parser('operator-api', help='API панели и управление обработчиком')
     operator_command.add_argument('config', type=Path)
     operator_command.add_argument('--port', type=int, default=8765)
+    operator_command.add_argument('--bind', choices=('127.0.0.1', '0.0.0.0'), default='127.0.0.1')
     status_command = commands.add_parser('runtime-status', help='Состояние рабочего запуска и решения')
     status_command.add_argument('config', type=Path)
     status_command.add_argument('--decision')
@@ -87,12 +88,12 @@ def main() -> int:
         command.add_argument('--database', type=Path, default=Path('.local/events.sqlite3'))
     args = parser.parse_args()
     try:
-        if args.command == 'operator-ui':
+        if args.command == 'operator-api':
             if not 0 <= args.port <= 65535:
                 operator_command.error('Укажите порт от 0 до 65535.')
             from news_futures.operator.server import serve_operator
             try:
-                return serve_operator(args.config, args.port)
+                return serve_operator(args.config, args.port, args.bind)
             except ImportError:
                 print('Установите зависимости по docs/runtime.md.', file=sys.stderr)
                 return 1

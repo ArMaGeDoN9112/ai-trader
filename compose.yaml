@@ -1,0 +1,32 @@
+services:
+  backend:
+    build: ./backend
+    command: ["operator-api", ".local/runtime.json", "--bind", "0.0.0.0"]
+    init: true
+    stop_signal: SIGINT
+    stop_grace_period: 60s
+    environment:
+      XDG_STATE_HOME: /state
+    volumes:
+      - type: bind
+        source: ./.local
+        target: /app/backend/.local
+        bind:
+          create_host_path: false
+      - telegram:/state
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8765/api/session', timeout=2).close()"]
+      interval: 5s
+      timeout: 3s
+      retries: 6
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8765:80"
+
+volumes:
+  telegram:

@@ -5,7 +5,6 @@ from http.client import HTTPConnection
 import json
 from pathlib import Path
 import os
-import re
 import sqlite3
 import subprocess
 import sys
@@ -21,7 +20,7 @@ from uuid import uuid4
 import httpx
 from websockets.sync.client import connect
 
-from news_futures.operator.server import WEB, OperatorServer
+from news_futures.operator.server import OperatorHandler, OperatorServer
 from news_futures.operator.settings import Preferences
 from news_futures.operator.supervisor import Worker
 from news_futures.agents.events import EventArchive
@@ -87,6 +86,19 @@ with (directory / 'stops').open('a') as stops:
 """
 
 
+class BrowserHandler(OperatorHandler):
+    web = Path(__file__).resolve().parents[3] / 'frontend' / 'dist'
+
+    def do_GET(self) -> None:
+        # Serve the built UI without Compose in the browser regression test.
+        path = self.web / ('index.html' if self.path == '/' else self.path.removeprefix('/'))
+        mime = {'.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css'}.get(path.suffix)
+        if self.local() and mime and path.resolve().is_relative_to(self.web) and path.is_file():
+            self.reply(200, path.read_bytes(), mime=mime)
+        else:
+            super().do_GET()
+
+
 class OperatorTest(unittest.TestCase):
     def setUp(self) -> None:
         directory = self.enterContext(TemporaryDirectory())
@@ -95,15 +107,12 @@ class OperatorTest(unittest.TestCase):
         (self.root / 'control').write_text('position', encoding='utf-8')
         worker = Worker(self.root, self.profile, [sys.executable, '-c', CONTROLLED_WORKER, str(self.root)],
                         json.dumps(self.profile).encode())
-        web = WEB
-        if not (WEB / 'index.html').is_file() and not os.environ.get('OPERATOR_TEST_CHROME'):
-            web = self.root / 'web'
-            (web / 'assets').mkdir(parents=True)
-            (web / 'index.html').write_text('<meta name="operator-session" content="__SESSION__">', encoding='utf-8')
         self.server = self.enterContext(OperatorServer(worker, ['example'], 0, {
             'company': {'names': ['Компания А'], 'tickers': ['ABC']},
             'other': {'names': ['Компания Б'], 'tickers': ['XYZ']},
-        }, web=web))
+        }))
+        if os.environ.get('OPERATOR_TEST_CHROME'):
+            self.server.RequestHandlerClass = BrowserHandler
         thread = Thread(target=self.server.serve_forever, kwargs={'poll_interval': 0.01})
         thread.start()
         self.addCleanup(thread.join)
@@ -111,9 +120,9 @@ class OperatorTest(unittest.TestCase):
         self.addCleanup(worker.close)
         self.port = self.server.server_port
         self.origin = f'http://127.0.0.1:{self.port}'
-        status, page = self.request('GET', '/')
+        status, body = self.request('GET', '/api/session')
         self.assertEqual(status, 200)
-        self.session = re.findall(r'<meta name="operator-session" content="([^"]+)"', page)[0]
+        self.session = json.loads(body)['session']
 
     def mock_market(self) -> None:
         self.server.share_companies = {'share-a': 'company', 'share-b': 'other'}
@@ -239,7 +248,7 @@ class OperatorTest(unittest.TestCase):
         self.assertEqual(self.request('POST', '/api/testing', Origin='https://example.org',
                                       body={'text': 'Новость'}, **session)[0], 403)
         self.assertEqual(self.request('POST', '/api/testing', Origin=self.origin, body={'text': ' '}, **session)[0], 400)
-        self.assertEqual(self.request('GET', '/', Host='example.org')[0], 403)
+        self.assertEqual(self.request('GET', '/api/session', Host='example.org')[0], 403)
         self.assertEqual(self.request('GET', '/api/start', **session)[0], 404)
         self.assertEqual(self.overview()['worker'], 'stopped')
         self.assertFalse((self.root / 'operator-commands.jsonl').exists())
@@ -272,9 +281,9 @@ class OperatorTest(unittest.TestCase):
     def test_two_tabs_share_one_worker_and_stop_waits_for_its_exit(self) -> None:
         self.assertEqual(self.command('start')[0], 202)
         self.assertEqual(self.overview()['worker'], 'starting')
-        code, page = self.request('GET', '/')
+        code, body = self.request('GET', '/api/session')
         self.assertEqual(code, 200)
-        second_session = re.findall(r'<meta name="operator-session" content="([^"]+)"', page)[0]
+        second_session = json.loads(body)['session']
         self.assertEqual(self.command('start', second_session)[0], 409)
         (self.root / 'ready').touch()
         status = self.wait_for(lambda view: view['worker'] == 'running')

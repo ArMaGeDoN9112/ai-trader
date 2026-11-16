@@ -1,0 +1,8 @@
+*
+!Dockerfile
+!nginx.conf
+!package.json
+!package-lock.json
+!index.html
+!src/
+!src/**

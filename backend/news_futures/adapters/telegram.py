@@ -165,7 +165,7 @@ def default_session() -> Path:
 
 def session_path(path: Path) -> Path:
     path = path.resolve()
-    repository = PACKAGE.parent
+    repository = PACKAGE.parents[1]
     if path.is_relative_to(repository):
         raise ValueError('MTProto session must be outside the repository')
     return path if path.suffix == '.session' else Path(str(path) + '.session')

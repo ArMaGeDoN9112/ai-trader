@@ -148,8 +148,10 @@ class CollectionTest(unittest.IsolatedAsyncioTestCase):
                 configured_channels(path)
 
     def test_session_cannot_be_saved_in_repository(self) -> None:
-        with self.assertRaises(ValueError):
-            session_path(Path('.local/secret.session'))
+        repository = Path(__file__).resolve().parents[3]
+        for directory in (repository, repository / 'backend'):
+            with self.subTest(directory=directory), self.assertRaises(ValueError):
+                session_path(directory / '.local' / 'secret.session')
 
 
 @unittest.skipUnless(importlib.util.find_spec('telethon'), 'Install requirements-telegram.txt for SDK tests')

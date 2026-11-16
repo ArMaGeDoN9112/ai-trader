@@ -9,4 +9,4 @@ credentials.toml
 .env.*
 !.env.example
 node_modules/
-news_futures/operator/web/dist/
+frontend/dist/

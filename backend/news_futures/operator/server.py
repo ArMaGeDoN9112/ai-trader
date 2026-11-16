@@ -1,9 +1,8 @@
-"""Serve the operator panel over loopback HTTP."""
+"""Serve the local operator API."""
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
-import re
 from secrets import compare_digest, token_urlsafe
 import sqlite3
 import sys
@@ -23,10 +22,6 @@ from news_futures.operator.news import (
 from news_futures.operator.settings import Preferences
 from news_futures.operator.supervisor import Worker
 from news_futures.operator.trades import trades_view
-
-
-WEB = Path(__file__).with_name('web') / 'dist'
-ASSET = re.compile(r'/assets/([\w-]+\.(js|css))', re.ASCII)
 
 
 class OperatorHandler(BaseHTTPRequestHandler):
@@ -63,14 +58,8 @@ class OperatorHandler(BaseHTTPRequestHandler):
         path, _, query_string = self.path.partition('?')
         if not self.local():
             self.reply(403, {'result': 'forbidden'})
-        elif self.path == '/':
-            self.reply(200, self.server.page, mime='text/html')
-        elif asset := ASSET.fullmatch(path):
-            body = self.server.assets.get(asset[1])
-            if body is None:
-                self.reply(404, {'result': 'not_found'})
-            else:
-                self.reply(200, body, mime={'js': 'text/javascript', 'css': 'text/css'}[asset[2]])
+        elif self.path == '/api/session':
+            self.reply(200, {'session': self.server.session})
         elif path in ('/api/overview', '/api/news', '/api/trace', '/api/trades', '/api/controls', '/api/tickers',
                       '/api/testing', '/api/account-balance'):
             if not self.authorized():
@@ -141,7 +130,7 @@ class OperatorHandler(BaseHTTPRequestHandler):
 
 class OperatorServer(ThreadingHTTPServer):
     def __init__(self, worker: Worker, channels: list[str], port: int, catalog: dict[str, Any] | None = None,
-                 series: dict[str, Any] | None = None, *, web: Path = WEB,
+                 series: dict[str, Any] | None = None, *, bind: str = '127.0.0.1',
                  share_companies: dict[str, str] | None = None, ca_file: Path | None = None):
         self.worker = worker
         self.worker.channels = channels
@@ -153,10 +142,7 @@ class OperatorServer(ThreadingHTTPServer):
         self.market_cache: dict[str, Any] = {}
         self.market_until = 0.0
         self.session = token_urlsafe(32)
-        self.page = (web / 'index.html').read_text(encoding='utf-8').replace('__SESSION__', self.session)
-        self.assets = {file.name: file.read_bytes() for file in (web / 'assets').iterdir()
-                       if ASSET.fullmatch('/assets/' + file.name)}
-        super().__init__(('127.0.0.1', port), OperatorHandler)
+        super().__init__((bind, port), OperatorHandler)
         self.host = f'127.0.0.1:{self.server_port}'
 
     def account_balance(self) -> dict[str, Any]:
@@ -185,7 +171,7 @@ class OperatorServer(ThreadingHTTPServer):
         pass
 
 
-def serve_operator(config: Path, port: int) -> int:
+def serve_operator(config: Path, port: int, bind: str) -> int:
     from news_futures.agents.routing import catalog_rows, load_catalog
     from news_futures.application.config import load_settings
     from news_futures.application.operator_state import OperatorState
@@ -212,15 +198,12 @@ def serve_operator(config: Path, port: int) -> int:
     except (OSError, ValueError, KeyError, TypeError):
         pass
     try:
-        with OperatorServer(worker, channels, port, catalog, series, share_companies=share_companies,
+        with OperatorServer(worker, channels, port, catalog, series, bind=bind, share_companies=share_companies,
                             ca_file=settings.ca_file) as server:
-            print(f'Панель оператора: http://{server.host}/', flush=True)
+            print(f'API оператора: {bind}:{server.server_port}', flush=True)
             server.serve_forever()
     except KeyboardInterrupt:
         return 0
-    except FileNotFoundError:
-        print('Соберите панель командой npm --prefix news_futures/operator/web run build.', file=sys.stderr)
-        return 1
     except OSError:
         print('Не удалось запустить панель. Проверьте локальный порт и файлы приложения.', file=sys.stderr)
         return 1
