@@ -1,1 +1,5 @@
-mypy==1.19.1
+-r requirements.txt
+langchain-openrouter
+mypy
+openrouter
+websockets

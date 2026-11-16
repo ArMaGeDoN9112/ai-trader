@@ -6,11 +6,8 @@ from tempfile import TemporaryDirectory
 from typing import Any
 import unittest
 
-try:
-    import httpx
-    from langchain_core.language_models import BaseChatModel
-except ImportError:
-    raise unittest.SkipTest('Install requirements-openrouter.txt for ticket 06 tests')
+import httpx
+from langchain_core.language_models import BaseChatModel
 
 from news_futures.domain.contracts import RoleSettings
 from news_futures.adapters.sqlite.events import EventArchive

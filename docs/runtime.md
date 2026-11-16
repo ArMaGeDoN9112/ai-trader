@@ -43,6 +43,7 @@ docker compose run --rm backend sandbox-diagnostics .local/catalog --config .loc
 
 - Начни с `docker compose exec backend python -m news_futures runtime-status .local/runtime.json --decision ID` или трассы в панели: проверь статус, причину остановки и запрошенную и фактическую модели. Трассы и контрольные точки лежат в `data_dir`; для восстановления используй тот же каталог.
 - Аргументы команд доступны через `docker compose run --rm backend <команда> --help`.
-- Офлайн-проверки: из `backend/` установи зависимости в окружение Python 3.11 (`python -m pip install -r requirements-telegram.txt -r requirements-openrouter.txt -r requirements-sandbox.txt -r requirements-dev.txt`), затем выполни `python -m unittest discover -s tests -v` и `python -m mypy --strict news_futures tests`. Для проверки в Chrome собери фронтенд (`npm ci` и `npm run build` из `frontend/`) и перед запуском тестов укажи путь к браузеру в `OPERATOR_TEST_CHROME`. При правке Decisions проверь ID во всех четырёх шагах и отказ без подмены.
+- Образ бэкенда устанавливает [requirements.txt](../backend/requirements.txt). Файл [constraints.txt](../backend/constraints.txt) фиксирует версии для Docker и локальной установки.
+- Для офлайн-проверок выполни `python -m pip install -r requirements-dev.txt` из `backend/` в окружении Python 3.11. Этот список включает зависимости приложения. Затем выполни `python -m unittest discover -s tests -v` и `python -m mypy --strict news_futures tests`. Для проверки в Chrome собери фронтенд (`npm ci` и `npm run build` из `frontend/`) и перед запуском тестов укажи путь к браузеру в `OPERATOR_TEST_CHROME`. При правке Decisions проверь ID во всех четырёх шагах и отказ без подмены.
 
 История изменений — в [тикетах](../.scratch/news-futures/issues/) и [ADR](adr/).

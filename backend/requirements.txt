@@ -1,0 +1,14 @@
+-c constraints.txt
+httpx
+jsonschema
+langchain-core
+langchain-openai
+langgraph
+langgraph-checkpoint
+langgraph-checkpoint-sqlite
+langsmith
+mcp
+openai
+pydantic
+referencing
+telethon

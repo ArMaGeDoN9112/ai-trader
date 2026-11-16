@@ -1,7 +1,6 @@
 import asyncio
 from dataclasses import replace
 from datetime import timedelta
-import importlib.util
 from io import StringIO
 import json
 from pathlib import Path
@@ -156,7 +155,6 @@ class CollectionTest(unittest.IsolatedAsyncioTestCase):
                 session_path(directory / '.local' / 'secret.session')
 
 
-@unittest.skipUnless(importlib.util.find_spec('telethon'), 'Install requirements-telegram.txt for SDK tests')
 class TelethonAdapterTest(unittest.IsolatedAsyncioTestCase):
     async def test_login_requires_user_session_and_safe_local_terminal(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

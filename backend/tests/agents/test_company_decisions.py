@@ -6,12 +6,6 @@ from typing import Any
 import unittest
 from unittest.mock import patch
 
-try:
-    import httpx  # noqa: F401
-    import langgraph  # noqa: F401
-except ImportError:
-    raise unittest.SkipTest('Install requirements-openrouter.txt for ticket 07 tests')
-
 from news_futures.adapters.cli import main
 from news_futures.domain.contracts import RoleSettings
 from news_futures.adapters.sqlite.events import EventArchive

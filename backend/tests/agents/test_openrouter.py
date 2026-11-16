@@ -8,18 +8,15 @@ from typing import Any
 import unittest
 from unittest.mock import patch
 
-try:
-    import httpx
-    from langchain_openrouter import ChatOpenRouter
-    from openrouter import OpenRouter
-    from pydantic import SecretStr
-    from news_futures.adapters.models.openrouter import OpenRouterChat
-except ImportError:
-    raise unittest.SkipTest('Install requirements-openrouter.txt for ticket 03 tests')
+import httpx
+from langchain_openrouter import ChatOpenRouter
+from openrouter import OpenRouter
+from pydantic import SecretStr
 
-from news_futures.domain.contracts import RoleSettings
 from news_futures.adapters.models.chat import chat_model
+from news_futures.adapters.models.openrouter import OpenRouterChat
 from news_futures.application.analysis.review import control_context, run_cycle
+from news_futures.domain.contracts import RoleSettings
 from tests.support.models import ScriptedEndpoint, review
 
 

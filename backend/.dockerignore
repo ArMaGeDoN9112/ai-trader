@@ -1,7 +1,7 @@
 *
 !Dockerfile
-!requirements*.txt
-!requirements*.lock
+!requirements.txt
+!constraints.txt
 !news_futures/
 !news_futures/**
 **/__pycache__/

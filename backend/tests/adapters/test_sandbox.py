@@ -1,7 +1,6 @@
 import asyncio
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
-import importlib.util
 from io import StringIO
 import json
 import logging
@@ -10,9 +9,6 @@ import tempfile
 from typing import Any
 import unittest
 from unittest.mock import patch
-
-if importlib.util.find_spec('mcp') is None:
-    raise unittest.SkipTest('Install requirements-sandbox.txt for ticket 04 tests')
 
 import httpx
 from mcp import types
