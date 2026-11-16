@@ -17,7 +17,7 @@ if importlib.util.find_spec('mcp') is None:
 import httpx
 from mcp import types
 
-from news_futures.cli import main
+from news_futures.adapters.cli import main
 from news_futures.adapters.tbank.diagnostics import (
     Binding, CAPABILITIES, READS, SANDBOX_URL, Settings, diagnose, run_sandbox,
 )
@@ -339,7 +339,7 @@ class SandboxTest(unittest.TestCase):
             config.write_text(Settings(environment='sandbox', endpoint=SANDBOX_URL).model_dump_json(), encoding='utf-8')
             credentials = Path(temporary) / 'credentials.toml'
             credentials.write_text(f'[sandbox]\ntoken = "{TOKEN}"\n', encoding='utf-8')
-            with patch('news_futures.common.credentials.CREDENTIALS_PATH', credentials), patch(
+            with patch('news_futures.adapters.credentials.CREDENTIALS_PATH', credentials), patch(
                 'news_futures.adapters.tbank.diagnostics.httpx.AsyncClient', side_effect=client,
             ):
                 report = asyncio.run(run_sandbox(config, Path(temporary) / 'report'))

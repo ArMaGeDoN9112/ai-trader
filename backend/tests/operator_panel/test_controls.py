@@ -11,21 +11,25 @@ from uuid import uuid4
 
 import httpx
 
-from news_futures.agents.events import EventArchive
+from news_futures.adapters.sqlite.events import EventArchive
 from news_futures.application.config import RuntimeSettings, cycle_inputs
-from news_futures.application.operator_state import OperatorState
-from news_futures.application.records import runtime_tables
+from news_futures.adapters.sqlite.operator_state import OperatorState
+from news_futures.adapters.models.chat import chat_model
+from news_futures.adapters.models.decisions import choices
+from news_futures.adapters.sqlite.runtime import SQLiteRuntimeStorage
+from news_futures.adapters.tbank.rest import limit_broker_read
+from news_futures.application.ports.models import AnalysisModels
 from news_futures.application.runtime import Runtime
 from news_futures.common.artifacts import write_json
-from news_futures.common.credentials import CredentialsError
-from news_futures.news.publications import Archive
-from news_futures.operator.news import trace_view
-from news_futures.operator.settings import Preferences, profile_view
-from news_futures.operator.supervisor import Worker
-from news_futures.operator.trades import trades_view
-from news_futures.trading.broker import Fill
-from news_futures.trading.executor import SandboxExecutor
-from news_futures.trading.terms import CloseIntent, EntryReservation
+from news_futures.common.errors import CredentialsError
+from news_futures.adapters.sqlite.publications import Archive
+from news_futures.adapters.http.news import trace_view
+from news_futures.adapters.http.settings import Preferences, profile_view
+from news_futures.adapters.http.supervisor import Worker
+from news_futures.adapters.http.trades import trades_view
+from news_futures.domain.execution import Fill
+from news_futures.application.trading.executor import SandboxExecutor
+from news_futures.domain.terms import CloseIntent, EntryReservation
 from tests.support.broker import ControlBroker
 from tests.support.risk import RiskFixture
 
@@ -67,8 +71,8 @@ class PreferencesTest(unittest.TestCase):
         update = self.form(mode='sandbox', analysis_strategy='tool_agent')
         with self.assertRaisesRegex(ValueError, 'mode_requires_stop'):
             self.preferences.save(update, stopped=False)
-        with patch('news_futures.operator.settings.sandbox_client', side_effect=lambda *args, **kw: httpx.Client()), patch(
-            'news_futures.operator.settings.TBankReader.account_activity',
+        with patch('news_futures.adapters.http.settings.sandbox_client', side_effect=lambda *args, **kw: httpx.Client()), patch(
+            'news_futures.adapters.http.settings.TBankReader.account_activity',
         ) as activity:
             activity.side_effect = TimeoutError
             with self.assertRaisesRegex(ValueError, 'account_unconfirmed'):
@@ -99,12 +103,12 @@ class PreferencesTest(unittest.TestCase):
             self.preferences.save(self.form(aggregator='groq', groq_models=original['groq_models'] | {
                 'critic': 'test/model:free',
             }), stopped=False)
-        with patch('news_futures.operator.settings.load_token', side_effect=CredentialsError):
+        with patch('news_futures.adapters.http.settings.load_token', side_effect=CredentialsError):
             with self.assertRaisesRegex(ValueError, 'invalid_groq_credentials'):
                 self.preferences.save(self.form(aggregator='groq'), stopped=False)
         self.assertEqual(self.preferences.saved(), original)
 
-        with patch('news_futures.operator.settings.load_token', return_value='test-key'):
+        with patch('news_futures.adapters.http.settings.load_token', return_value='test-key'):
             self.preferences.save(self.form(aggregator='groq', groq_models=original['groq_models'] | {
                 'critic': 'openai/gpt-oss-20b',
             }), stopped=False)
@@ -152,7 +156,7 @@ class ManualCloseTest(RiskFixture):
         approval.rename(saved)
         archive = Archive(self.publications_db)
         with EventArchive(self.events_db) as events, closing(archive.db):
-            runtime_tables(archive)
+            archive.initialize_runtime()
             result = SandboxExecutor(events, self.broker).start(
                 archive, saved, allowed_contracts={self.contract_id}, allow_independent_stops=True,
             )
@@ -161,7 +165,8 @@ class ManualCloseTest(RiskFixture):
 
     def apply_close(self) -> None:
         runtime = Runtime(self.settings, lambda *_: self.broker, lambda *_: self.broker,
-                          run_id='controlled-run', on_controls=lambda **event: None)
+                          models=AnalysisModels(chat_model, choices), storage=SQLiteRuntimeStorage(self.settings),
+                          read_limit=limit_broker_read, run_id='controlled-run', on_controls=lambda **event: None)
         with patch('builtins.print'):
             runtime.refresh()
 

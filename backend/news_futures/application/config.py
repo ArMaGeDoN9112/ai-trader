@@ -6,12 +6,13 @@ from typing import Literal
 
 from pydantic import Field
 
-from news_futures.agents.company import Nonempty
-from news_futures.agents.contracts import Aggregator, Contract, RoleSettings, Settings
-from news_futures.agents.routing import DecisionsSettings, load_catalog
-from news_futures.agents.tool_agent import AgentLimits
+from news_futures.application.catalog import load_catalog
+from news_futures.application.analysis.routing import DecisionsSettings
+from news_futures.application.analysis.tool_agent import AgentLimits
 from news_futures.common.errors import RuntimeErrorInfo
 from news_futures.common.paths import DECISIONS_SETTINGS, FUTURES_CATEGORIES, GROQ_SETTINGS, REVIEW_SETTINGS, TELEGRAM_SOURCES
+from news_futures.domain.company import Nonempty
+from news_futures.domain.contracts import Aggregator, Contract, RoleSettings, Settings
 
 
 CHAT_ROLES = ('analyst', 'critic')

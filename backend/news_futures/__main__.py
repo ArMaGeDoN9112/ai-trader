@@ -4,7 +4,7 @@ from io import TextIOWrapper
 import sys
 from typing import cast
 
-from news_futures.cli import main
+from news_futures.adapters.cli import main
 
 
 if __name__ == '__main__':

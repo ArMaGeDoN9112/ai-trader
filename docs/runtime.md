@@ -21,9 +21,9 @@ docker compose run --rm backend sandbox-diagnostics .local/catalog --config .loc
 ## Настройки
 
 - [Профиль](../config/runtime.example.json): режим, счёт, каталог, `data_dir`, интервалы и лимиты агента. Пути считаются от файла профиля; его правки требуют перезапуска.
-- [Decisions](../backend/news_futures/agents/decisions-model.json): один `model` для категорий, компаний, выбора фьючерса и следующего чтения в `tool_agent`. По умолчанию `parallel/decisions-fast:free`; при ошибке запасная модель не вызывается. Для своего профиля скопируй файл в `.local` и укажи его в поле `decisions`. Панель отображает эту модель, а изменения в панели относятся только к чат-ролям.
-- Чат-роли: [OpenRouter](../backend/news_futures/agents/openrouter-models.json) или [Groq](../backend/news_futures/agents/groq-models.json); отдельная модель координатора задаётся в `coordinator`. Модели фиксируются на редакцию, изменения применяются к следующей.
-- Остальные справочники: [каналы Telegram](../backend/news_futures/adapters/telegram-sources.json), [категории фьючерсов](../backend/news_futures/adapters/tbank/futures-categories.json), [лимиты риска](../backend/news_futures/trading/risk-policy.json).
+- [Decisions](../backend/news_futures/application/analysis/decisions-model.json): один `model` для категорий, компаний, выбора фьючерса и следующего чтения в `tool_agent`. По умолчанию `parallel/decisions-fast:free`; при ошибке запасная модель не вызывается. Для своего профиля скопируй файл в `.local` и укажи его в поле `decisions`. Панель отображает эту модель, а изменения в панели относятся только к чат-ролям.
+- Чат-роли: [OpenRouter](../backend/news_futures/application/analysis/openrouter-models.json) или [Groq](../backend/news_futures/application/analysis/groq-models.json); отдельная модель координатора задаётся в `coordinator`. Модели фиксируются на редакцию, изменения применяются к следующей.
+- Остальные справочники: [каналы Telegram](../backend/news_futures/adapters/telegram-sources.json), [категории фьючерсов](../backend/news_futures/adapters/tbank/futures-categories.json), [лимиты риска](../backend/news_futures/domain/risk-policy.json).
 
 ## Путь публикации и полномочия
 
@@ -31,10 +31,18 @@ docker compose run --rm backend sandbox-diagnostics .local/catalog --config .loc
 
 `observation` читает брокера. Запись в песочнице доступна только отдельному исполнителю после независимых проверок риска. Автономный вход заблокирован, пока не подтверждена защита от двойного исполнения SL/TP. При неизвестном исходе исполнитель сверяет журнал и брокера перед любым повторным действием. Тестовые новости из панели не допускаются к исполнению.
 
+## Архитектура бэкенда
+
+- [domain](../backend/news_futures/domain/) содержит модель публикации, контракт анализа, правила расчёта объёма и сверки исполнения.
+- [application](../backend/news_futures/application/) ведёт очередь редакций, анализ и торговые сценарии. Интерфейсы брокера, моделей и хранилищ описаны в [ports](../backend/news_futures/application/ports/). Графы LangGraph управляют шагами анализа, а решения и трассы хранятся в локальных JSON-артефактах.
+- [adapters](../backend/news_futures/adapters/) содержит CLI, HTTP, SQLite и интеграции с Telegram, моделями и T‑Bank. [bootstrap](../backend/news_futures/bootstrap/) подключает реализации к сценариям. При сохранении резерва и подтверждении закрытия SQLite удерживает блокировку ревизии до фиксации торгового намерения.
+
+Контрольные точки LangGraph используют имена Python-классов. Перед обновлением завершите текущий анализ и остановите воркер. Архивы публикаций и событий, журнал сделок и готовые отчёты используют прежние форматы.
+
 ## Диагностика и проверка
 
 - Начни с `docker compose exec backend python -m news_futures runtime-status .local/runtime.json --decision ID` или трассы в панели: проверь статус, причину остановки и запрошенную и фактическую модели. Трассы и контрольные точки лежат в `data_dir`; для восстановления используй тот же каталог.
-- Профиль и очередь — в [application/](../backend/news_futures/application/), выбор модели и анализ — в [agents/](../backend/news_futures/agents/), риск и заявки — в [trading/](../backend/news_futures/trading/). Аргументы команд: `docker compose run --rm backend <команда> --help`.
+- Аргументы команд доступны через `docker compose run --rm backend <команда> --help`.
 - Офлайн-проверки: из `backend/` установи зависимости в окружение Python 3.11 (`python -m pip install -r requirements-telegram.txt -r requirements-openrouter.txt -r requirements-sandbox.txt -r requirements-dev.txt`), затем выполни `python -m unittest discover -s tests -v` и `python -m mypy --strict news_futures tests`. Для проверки в Chrome собери фронтенд (`npm ci` и `npm run build` из `frontend/`) и перед запуском тестов укажи путь к браузеру в `OPERATOR_TEST_CHROME`. При правке Decisions проверь ID во всех четырёх шагах и отказ без подмены.
 
 История изменений — в [тикетах](../.scratch/news-futures/issues/) и [ADR](adr/).

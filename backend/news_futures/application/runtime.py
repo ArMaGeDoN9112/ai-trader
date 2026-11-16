@@ -1,52 +1,48 @@
 """Run publication processing and broker monitoring for one local profile."""
 
 import asyncio
-from collections.abc import Callable
-from contextlib import ExitStack, closing
+from collections.abc import Awaitable, Callable
+from contextlib import AbstractContextManager
 from datetime import datetime, timedelta
 import json
 from pathlib import Path
-import sqlite3
 from threading import Event
 from typing import Any
 from uuid import uuid4
 
-import httpx
-
-from news_futures.trading.broker import BrokerReader, SandboxBroker
-from news_futures.trading.account import BrokerAccount
-from news_futures.common.credentials import load_token
-from news_futures.agents.company import OpenPosition, Snapshot
-from news_futures.agents.contracts import Aggregator
-from news_futures.agents.events import EventArchive
-from news_futures.agents.routing import catalog_contracts
-from news_futures.common.artifacts import replace_json
+from news_futures.application.catalog import catalog_contracts
+from news_futures.application.artifact_paths import review_path
+from news_futures.application.config import RuntimeSettings, cycle_inputs, groq_models, role_models
+from news_futures.application.ports.broker import BrokerReader, SandboxBroker
+from news_futures.application.ports.models import AnalysisModels
+from news_futures.application.ports.storage import EventStore, RuntimePublications, RuntimeStorage
+from news_futures.application.trading.account import BrokerAccount
+from news_futures.application.trading.executor import AUTONOMOUS_PROTECTION_UNAVAILABLE, SandboxExecutor
 from news_futures.application.workflow import Shutdown, analyze_news
-from news_futures.news.publications import Archive, TEST_SOURCE, utc_now
-from news_futures.application.config import RuntimeSettings, cycle_inputs, groq_models, load_settings, role_models
-from news_futures.application.operator_state import OperatorState
-from news_futures.common.errors import RuntimeErrorInfo, error_code
-from news_futures.application.records import pending_revisions, review_path, runtime_tables, save_broker_status, save_result
-from news_futures.trading.executor import AUTONOMOUS_PROTECTION_UNAVAILABLE, SandboxExecutor
-from news_futures.adapters.tbank.futures_catalog import fetch_catalog, save_catalog
-from news_futures.adapters.tbank.rest import TBankReader, TBankSandbox, limit_broker_read, sandbox_client
-from news_futures.adapters.telegram import configured_channels, default_session, run_telegram, session_path
-from news_futures.trading.journal import trade_journal
-from news_futures.trading.terms import CloseIntent, ContractSnapshot
+from news_futures.common.artifacts import replace_json
+from news_futures.common.errors import error_code
+from news_futures.domain.company import OpenPosition, Snapshot
+from news_futures.domain.contracts import Aggregator
+from news_futures.domain.publications import TEST_SOURCE, utc_now
+from news_futures.domain.terms import CloseIntent, ContractSnapshot
 
 
 class Runtime:
     def __init__(
         self, settings: RuntimeSettings, reader: Callable[[str, str | None], BrokerReader],
-        broker: Callable[[str, str | None], SandboxBroker] | None, *, run_id: str | None = None,
+        broker: Callable[[str, str | None], SandboxBroker] | None, *, models: AnalysisModels, storage: RuntimeStorage,
+        read_limit: Callable[[float], AbstractContextManager[None]], run_id: str | None = None,
         on_controls: Callable[..., None] | None = None, started_at: datetime | None = None,
     ):
         self.settings = settings
+        self.models = models
+        self.read_limit = read_limit
         self.started_at = started_at if started_at is not None else utc_now()
         self.account = BrokerAccount(settings.account_id, reader)
         self.broker = broker
         self.run_id = run_id
-        self.operator = OperatorState(settings.data_dir.resolve())
+        self.storage = storage
+        self.operator = storage.controls
         self.on_controls = on_controls
         self.pause_version: str | None = None
         self.stop = Event()
@@ -70,7 +66,7 @@ class Runtime:
             return 'entry_pause_changed'
         return None
 
-    def _manual_close(self, events: EventArchive) -> None:
+    def _manual_close(self, events: EventStore) -> None:
         if self.broker is None or self.on_controls is None or self.stop.is_set():
             return
         row = self.operator.close_intent(pending=True)
@@ -91,8 +87,7 @@ class Runtime:
         self.operator.finish_close(intent.request_id, 'rejected', reason)
 
     def refresh(self) -> None:
-        archive = Archive(self.settings.publications)
-        with closing(archive.db), EventArchive(self.settings.events) as events:
+        with self.storage.publications() as archive, self.storage.events() as events:
             self._pause()
             self._manual_close(events)
             self.refresh_broker(archive, events)
@@ -102,7 +97,7 @@ class Runtime:
         if self.broker is not None and self.operator.close_intent(pending=True):
             self.refresh()
 
-    def refresh_broker(self, archive: Archive, events: EventArchive) -> None:
+    def refresh_broker(self, archive: RuntimePublications, events: EventStore) -> None:
         settings = self.settings
         status: dict[str, Any] = {
             'mode': settings.mode, 'account_id': settings.account_id,
@@ -133,15 +128,14 @@ class Runtime:
         finally:
             status['checked_at'] = utc_now().isoformat()
             self.broker_ready = status.get('broker') == 'connected'
-            save_broker_status(archive, status, last_confirmed)
+            archive.save_broker_status(status, last_confirmed)
             print(json.dumps(status, ensure_ascii=False), flush=True)
 
     def process(self) -> None:
         settings = self.settings
         tool_agent = settings.analysis_strategy == 'tool_agent'
-        archive = Archive(settings.publications)
-        with closing(archive.db), EventArchive(settings.events) as events:
-            for row in pending_revisions(archive):
+        with self.storage.publications() as archive, self.storage.events() as events:
+            for row in archive.pending_revisions():
                 if self.stop.is_set():
                     break
                 publication = json.loads(row['publication'])
@@ -151,7 +145,7 @@ class Runtime:
                     result = {'revision': row['revision'], 'mode': settings.mode, 'status': 'processing',
                               'publication_id': publication['id'], 'inputs_saved': False,
                               'analysis_strategy': settings.analysis_strategy}
-                    save_result(archive, result)
+                    archive.save_result(result)
                 else:
                     result = json.loads(row['result'])
                 try:
@@ -170,10 +164,10 @@ class Runtime:
                 result['latency_ms'] = round((utc_now() - datetime.fromisoformat(
                     publication['received_at'],
                 )) / timedelta(milliseconds=1))
-                save_result(archive, result)
+                archive.save_result(result)
                 print(json.dumps(result, ensure_ascii=False), flush=True)
 
-    def process_revision(self, archive: Archive, events: EventArchive, publication: dict[str, Any],
+    def process_revision(self, archive: RuntimePublications, events: EventStore, publication: dict[str, Any],
                          result: dict[str, Any]) -> None:
         settings = self.settings
         testing = publication['source'] == TEST_SOURCE
@@ -218,7 +212,7 @@ class Runtime:
             else:
                 (directory / 'futures-catalog.json').write_bytes(futures_catalog)
             result['inputs_saved'] = True
-            save_result(archive, result)
+            archive.save_result(result)
             if self.on_controls is not None:
                 self.on_controls(models=role_models(inputs), aggregator=aggregator)
         catalog = (directory / 'catalog.json').read_bytes()
@@ -232,14 +226,14 @@ class Runtime:
             snapshot, _ = self.account.snapshot(catalog, candidates)
             return snapshot
 
-        def read_market(events: EventArchive, uid: str, seconds: float) -> tuple[Snapshot, ContractSnapshot]:
-            with limit_broker_read(seconds):
+        def read_market(uid: str, seconds: float) -> tuple[Snapshot, ContractSnapshot]:
+            with self.read_limit(seconds):
                 snapshot, readings = self.account.snapshot(catalog, {uid: contracts[uid]})
             return snapshot, readings[0].contract
 
         state = analyze_news(
             previous, directory, publication, result['revision'], contracts=contracts, read_snapshot=read_snapshot,
-            current_position=lambda: self.position, stop=self.stop,
+            current_position=lambda: self.position, stop=self.stop, models=self.models, storage=self.storage,
             **({'read_market': read_market} if tool_agent else {}),
         )
         result.update(stage=state['stage'], status=state['status'], reason=state.get('reason'))
@@ -273,8 +267,8 @@ class Runtime:
             {uid: contracts[uid]} if uid in contracts else {},
         )
 
-    def _recover_execution(self, events: EventArchive, approval: Path, result: dict[str, Any]) -> bool:
-        trades = trade_journal(events.db, approval=approval)
+    def _recover_execution(self, events: EventStore, approval: Path, result: dict[str, Any]) -> bool:
+        trades = events.trades.report(approval=approval)
         if not trades:
             return False
         trade, = trades
@@ -297,12 +291,12 @@ class Runtime:
         return True
 
     def _execute_review(
-        self, archive: Archive, events: EventArchive, review: Path, proposal: dict[str, Any],
+        self, archive: RuntimePublications, events: EventStore, review: Path, proposal: dict[str, Any],
         position_id: str | None, result: dict[str, Any], contracts: dict[str, str],
     ) -> None:
         assert self.broker is not None
         result.update(stage='execution', status='processing', reason='broker_reconciliation_required')
-        save_result(archive, result)
+        archive.save_result(result)
         executor = SandboxExecutor(events, self.broker(proposal['contract_id'], contracts.get(proposal['contract_id'])))
         risk_path = review / f'risk-{uuid4().hex}.json'
         risk_audit_error = False
@@ -331,118 +325,69 @@ class Runtime:
             result['reconcile_pending'] = True
 
 
-async def run_runtime(
-    config: Path | RuntimeSettings, once: bool, *,
-    run_id: str | None = None, channels: list[str] | None = None,
-    on_phase: Callable[[str], None] | None = None,
-    on_source: Callable[[str, bool, int], None] | None = None,
-    on_controls: Callable[..., None] | None = None,
+async def run(
+    runtime: Runtime, channels: list[str], once: bool, *,
+    consume: Callable[[Callable[[], Awaitable[None]]], Awaitable[int]],
+    refresh_futures_catalog: Callable[[], None], on_phase: Callable[[str], None] | None,
 ) -> int:
-    started_at = utc_now()
-    settings = load_settings(config) if isinstance(config, Path) else config
-    cycle_inputs(settings)
-    groq_models(settings)
-    try:
-        if channels is None:
-            channels = configured_channels(settings.sources)
-        session = session_path(settings.session or default_session())
-    except (OSError, ValueError, TypeError, KeyError) as error:
-        raise RuntimeErrorInfo('Проверьте sources и внешний путь к session.') from error
-    load_token('openrouter', 'api_key')
-    if on_phase is not None:
-        on_phase('directory')
-    settings.data_dir.mkdir(parents=True, exist_ok=True)
-    use_mcp = settings.order_transport == 'mcp'
-    if use_mcp:
-        from news_futures.adapters.tbank.mcp_orders import TBankMCPReader, TBankMCPSandbox
-    with ExitStack() as stack:
-        lock = stack.enter_context(closing(sqlite3.connect(settings.data_dir / 'runtime-lock.sqlite3', timeout=0)))
+    settings = runtime.settings
+    on_controls = runtime.on_controls
+    with runtime.storage.publications() as archive:
+        archive.initialize_runtime()
+        print(json.dumps({'mode': settings.mode, 'sources': channels, 'account_id': settings.account_id},
+                         ensure_ascii=False), flush=True)
+
+    async def in_worker(action: Callable[[], None]) -> None:
+        task = asyncio.create_task(asyncio.to_thread(action))
         try:
-            lock.execute('BEGIN IMMEDIATE')
-        except sqlite3.OperationalError as error:
-            if error.sqlite_errorcode != sqlite3.SQLITE_BUSY:
-                raise
-            if on_phase is not None:
-                on_phase('directory_busy')
-            raise RuntimeErrorInfo('serve уже работает с этим каталогом данных.') from error
-        if on_phase is not None:
-            on_phase('broker')
-        client = stack.enter_context(sandbox_client(settings.ca_file, read_only=use_mcp or settings.mode == 'observation'))
-        def reader(contract: str, company: str | None) -> BrokerReader:
-            adapter = TBankMCPReader if use_mcp else TBankReader
-            return adapter(client, settings.account_id, contract, company)
-
-        def broker(contract: str, company: str | None) -> SandboxBroker:
-            if use_mcp:
-                return TBankMCPSandbox(client, settings.account_id, contract, company, settings.ca_file)
-            return TBankSandbox(client, settings.account_id, contract, company)
-
-        runtime = Runtime(settings, reader, broker if settings.mode == 'sandbox' else None,
-                          run_id=run_id, on_controls=on_controls, started_at=started_at)
-        archive = Archive(settings.publications)
-        with closing(archive.db):
-            runtime_tables(archive)
-            print(json.dumps({'mode': settings.mode, 'sources': channels, 'account_id': settings.account_id},
-                             ensure_ascii=False), flush=True)
-
-        async def in_worker(action: Callable[[], None]) -> None:
-            task = asyncio.create_task(asyncio.to_thread(action))
-            try:
-                await asyncio.shield(task)
-            except asyncio.CancelledError:
-                runtime.stop.set()
-                await task
-                raise
-
-        async def process() -> None:
-            if not runtime.sources_ready:
-                runtime.sources_ready = True
-                if on_phase is not None:
-                    on_phase('running')
-                await in_worker(runtime.refresh)
-            await in_worker(runtime.process)
-
-        async def monitor() -> None:
-            loop = asyncio.get_running_loop()
-            next_check = 0.0
-            while not runtime.stop.is_set():
-                try:
-                    if loop.time() >= next_check:
-                        await in_worker(runtime.refresh)
-                        next_check = loop.time() + settings.broker_refresh_seconds
-                    elif on_controls is not None:
-                        await in_worker(runtime.poll_controls)
-                except Exception as error:
-                    print(json.dumps({'broker_monitor_error': error_code(error)}), flush=True)
-                await asyncio.sleep(min(1, settings.broker_refresh_seconds) if on_controls is not None
-                                    else settings.broker_refresh_seconds)
-
-        def refresh_futures_catalog() -> None:
-            try:
-                save_catalog(settings.futures_catalog.parent, fetch_catalog(client, settings.futures_categories))
-            except (httpx.HTTPError, OSError, ValueError, KeyError, TypeError) as error:
-                print(json.dumps({'futures_catalog_error': error_code(error)}), flush=True)
-
-        async def refresh_catalog() -> None:
-            while not runtime.stop.is_set():
-                await asyncio.sleep(settings.futures_refresh_seconds)
-                await in_worker(refresh_futures_catalog)
-
-        await in_worker(runtime.refresh)
-        await in_worker(refresh_futures_catalog)
-        catalog_task = None if once else asyncio.create_task(refresh_catalog())
-        observer = None if once else asyncio.create_task(monitor())
-        try:
-            if on_phase is not None:
-                on_phase('sources')
-            source_code = await run_telegram(channels, settings.publications, session, once, process=process,
-                                             on_source=on_source, live_since=started_at)
-            if once:
-                await in_worker(runtime.refresh)
-            return source_code or int(runtime.failed)
-        finally:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
             runtime.stop.set()
-            background_tasks = [task for task in (observer, catalog_task) if task is not None]
-            for task in background_tasks:
-                task.cancel()
-            await asyncio.gather(*background_tasks, return_exceptions=True)
+            await task
+            raise
+
+    async def process() -> None:
+        if not runtime.sources_ready:
+            runtime.sources_ready = True
+            if on_phase is not None:
+                on_phase('running')
+            await in_worker(runtime.refresh)
+        await in_worker(runtime.process)
+
+    async def monitor() -> None:
+        loop = asyncio.get_running_loop()
+        next_check = 0.0
+        while not runtime.stop.is_set():
+            try:
+                if loop.time() >= next_check:
+                    await in_worker(runtime.refresh)
+                    next_check = loop.time() + settings.broker_refresh_seconds
+                elif on_controls is not None:
+                    await in_worker(runtime.poll_controls)
+            except Exception as error:
+                print(json.dumps({'broker_monitor_error': error_code(error)}), flush=True)
+            await asyncio.sleep(min(1, settings.broker_refresh_seconds) if on_controls is not None
+                                else settings.broker_refresh_seconds)
+
+    async def refresh_catalog() -> None:
+        while not runtime.stop.is_set():
+            await asyncio.sleep(settings.futures_refresh_seconds)
+            await in_worker(refresh_futures_catalog)
+
+    await in_worker(runtime.refresh)
+    await in_worker(refresh_futures_catalog)
+    catalog_task = None if once else asyncio.create_task(refresh_catalog())
+    observer = None if once else asyncio.create_task(monitor())
+    try:
+        if on_phase is not None:
+            on_phase('sources')
+        source_code = await consume(process)
+        if once:
+            await in_worker(runtime.refresh)
+        return source_code or int(runtime.failed)
+    finally:
+        runtime.stop.set()
+        background_tasks = [task for task in (observer, catalog_task) if task is not None]
+        for task in background_tasks:
+            task.cancel()
+        await asyncio.gather(*background_tasks, return_exceptions=True)

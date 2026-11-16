@@ -6,10 +6,11 @@ import unittest
 import httpx
 from pydantic import ValidationError
 
-from news_futures.agents.contracts import AnalysisContext
-from news_futures.agents.review import control_context
-from news_futures.agents.routing import route_publication
-from news_futures.common.artifacts import publication_digest
+from news_futures.domain.contracts import AnalysisContext
+from news_futures.application.analysis.review import control_context
+from news_futures.adapters.models.decisions import choices
+from news_futures.application.analysis.routing import route_publication
+from news_futures.domain.publications import publication_digest
 from tests.support.routing import answer
 
 
@@ -48,7 +49,7 @@ class JevTests(unittest.TestCase):
                 return httpx.Response(200, json={'model': body['model'], 'id': 'decision', 'answers': answers})
 
             with httpx.Client(transport=httpx.MockTransport(respond)) as client:
-                trace = route_publication(config, publication, catalog, root / 'run', client=client, token='secret',
+                trace = route_publication(config, publication, catalog, root / 'run', decisions=lambda: choices(client, 'secret'),
                                           futures_catalog=futures, position_company='asset-3')
             self.assertEqual(len(requests), 2)
             self.assertEqual(trace['candidate_count'], 3)
@@ -58,7 +59,7 @@ class JevTests(unittest.TestCase):
             self.assertEqual(category['candidates'], ['asset-0', 'asset-2', 'asset-3'])
 
             with httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(502))) as client:
-                failed = route_publication(config, publication, catalog, root / 'failed', client=client, token='secret',
+                failed = route_publication(config, publication, catalog, root / 'failed', decisions=lambda: choices(client, 'secret'),
                                            futures_catalog=futures)
             self.assertEqual(failed['error'], 'http_502')
             self.assertEqual(failed['batches'], [])
@@ -89,12 +90,12 @@ class JevTests(unittest.TestCase):
                 })
 
             with httpx.Client(transport=httpx.MockTransport(respond)) as client:
-                first = route_publication(config, publication, catalog, root / 'first', client=client, token='secret')
+                first = route_publication(config, publication, catalog, root / 'first', decisions=lambda: choices(client, 'secret'))
                 self.assertEqual(requested_models, ['typesafe/jev-1.14'] * 3)
                 self.assertEqual(requested_tickers, [f'T{i}' for i in range(5)])
                 self.assertEqual([(link['company_id'], link['kind']) for link in first['links']],
                                  [('asset-4', 'direct')])
-                second = route_publication(config, publication, catalog, root / 'second', client=client, token='secret')
+                second = route_publication(config, publication, catalog, root / 'second', decisions=lambda: choices(client, 'secret'))
             self.assertEqual(requested_models[3:], ['typesafe/jev-1.13'] * 3)
             self.assertNotEqual(first['settings_version'], second['settings_version'])
 
@@ -128,7 +129,7 @@ class JevTests(unittest.TestCase):
 
                     with httpx.Client(transport=httpx.MockTransport(respond)) as client:
                         result = route_publication(config, publication, catalog, root / name,
-                                                   client=client, token='fake secret')
+                                                   decisions=lambda: choices(client, 'fake secret'))
                     self.assertEqual(result['error'], expected_error)
                     self.assertEqual(result['status'], 'failed' if expected_error else 'completed')
                     if name == 'uncertain':
@@ -165,7 +166,7 @@ class JevTests(unittest.TestCase):
                 })
 
             with httpx.Client(transport=httpx.MockTransport(respond)) as client:
-                trace = route_publication(config, publication, catalog, root / 'run', client=client, token='secret')
+                trace = route_publication(config, publication, catalog, root / 'run', decisions=lambda: choices(client, 'secret'))
             self.assertEqual(trace['status'], 'failed')
             self.assertIsNone(trace['links'])
             self.assertEqual(trace['cost_usd'], 0.02)
@@ -223,7 +224,7 @@ class JevTests(unittest.TestCase):
 
             with httpx.Client(transport=httpx.MockTransport(respond)) as client:
                 trace = route_publication(config, publication, catalog, root / 'run',
-                                          client=client, token='test-key')
+                                          decisions=lambda: choices(client, 'test-key'))
             self.assertEqual(trace['status'], 'completed')
             links = trace['links']
             self.assertEqual([(link['company_id'], link['kind']) for link in links],

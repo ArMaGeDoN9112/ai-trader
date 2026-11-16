@@ -6,13 +6,14 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 import unittest
-from unittest.mock import patch
 
-from news_futures.agents.contracts import RoleSettings
-from news_futures.agents.decisions import analyze_event
-from news_futures.agents.events import EventArchive
+from news_futures.domain.contracts import RoleSettings
+from news_futures.application.analysis.decisions import analyze_event
+from news_futures.adapters.sqlite.events import EventArchive
+from news_futures.application.analysis.events import match_event
 from news_futures.common.artifacts import write_json
-from news_futures.news.publications import Archive, Publication, utc_now
+from news_futures.adapters.sqlite.publications import Archive
+from news_futures.domain.publications import Publication, utc_now
 from tests.support.models import ScriptedEndpoint, review
 from tests.support.news import company_link
 
@@ -67,7 +68,7 @@ class RiskFixture(unittest.TestCase):
         with EventArchive(self.events_db) as events:
             matcher = ScriptedEndpoint([{'match': 'different', 'event_id': None, 'change': None,
                                          'reason': 'Independent report.', 'evidence': None}])
-            event = events.match(publication, [company_link(publication, 'sber')],
+            event = match_event(events, publication, [company_link(publication, 'sber')],
                                  RoleSettings(model='test/matcher'), model_factory=matcher.model)
             proposal = {
                 'action': 'enter', 'publication_id': publication['id'], 'company_id': 'sber',
@@ -78,8 +79,7 @@ class RiskFixture(unittest.TestCase):
                                  'evidence': [{'revision': event['revision'], 'quote': publication['text']}]}],
             } | terms
             endpoint = ScriptedEndpoint([proposal, review()])
-            with patch('news_futures.agents.decisions.chat_model', endpoint.model):
-                trace = analyze_event(events, event['decision_id'], snapshot_path, self.config, directory,
-                                      mode='sandbox')
+            trace = analyze_event(events, event['decision_id'], snapshot_path, self.config, directory,
+                                  model_factory=endpoint.model, mode='sandbox')
             self.assertEqual(trace['status'], 'approved_for_checks')
         return directory

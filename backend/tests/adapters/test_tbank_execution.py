@@ -10,10 +10,10 @@ from uuid import UUID
 import httpx
 from tests.support.risk import RiskFixture
 
-from news_futures.agents.events import EventArchive
-from news_futures.news.publications import Archive
-from news_futures.trading.executor import SandboxExecutor
-from news_futures.trading.journal import trade_journal
+from news_futures.adapters.sqlite.events import EventArchive
+from news_futures.adapters.sqlite.publications import Archive
+from news_futures.application.trading.executor import SandboxExecutor
+from news_futures.adapters.sqlite.trades import trade_journal
 from news_futures.adapters.tbank.rest import TBankSandbox, quotation, restrict_to_reads
 from news_futures.adapters.tbank.mcp_orders import CANCEL, CANCEL_STOP, CREATE, FIELDS, STOP, TBankMCPSandbox
 

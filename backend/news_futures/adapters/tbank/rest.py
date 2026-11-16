@@ -13,12 +13,13 @@ from uuid import UUID
 import httpx
 from pydantic import BaseModel, Field
 
-from news_futures.trading.broker import Fill, Protection, SubmissionRejected, TradeState, UnsupportedFuturesUnits
-from news_futures.common.credentials import load_token
+from news_futures.adapters.credentials import load_token
+from news_futures.application.ports.broker import SubmissionRejected, UnsupportedFuturesUnits
 from news_futures.common.errors import RuntimeErrorInfo
-from news_futures.news.publications import utc_now
-from news_futures.trading.terms import EntryReservation, RiskSnapshot
-from news_futures.trading.journal import close_requests
+from news_futures.domain.execution import Fill, Protection, TradeState
+from news_futures.domain.execution import close_requests
+from news_futures.domain.publications import utc_now
+from news_futures.domain.terms import EntryReservation, RiskSnapshot
 
 
 SANDBOX_REST = 'https://sandbox-invest-public-api.tbank.ru/rest/tinkoff.public.invest.api.contract.v1.'

@@ -7,9 +7,11 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-from news_futures.news.publications import Archive, Publication, utc_now
+from news_futures.application.simulation import process_publication
+from news_futures.adapters.sqlite.publications import Archive
+from news_futures.domain.publications import Publication, utc_now
 
 
 class ArchiveTest(unittest.TestCase):
@@ -26,12 +28,12 @@ class ArchiveTest(unittest.TestCase):
     def test_history_editions_duplicate_and_restart(self) -> None:
         original = self.publication
         self.archive.save_batch(original.source, 10, [original], historical=True)
-        self.archive.process_pending()
+        self.archive.process_pending(process_publication)
         self.assertEqual(self.archive.report()['revisions'][0]['status'], 'context_only')
         self.assertIsNone(self.archive.report()['revisions'][0]['trace'])
         edited = replace(original, text='Исправленная подпись', edited_at=utc_now(), change='edit')
         self.archive.save_batch(original.source, 11, [edited])
-        self.archive.process_pending()
+        self.archive.process_pending(process_publication)
         redelivery = replace(edited, received_at=utc_now(), url='https://t.me/renamed/7', change='new')
         self.archive.save_batch(original.source, 11, [redelivery])
         self.archive.db.close()
@@ -66,18 +68,17 @@ class ArchiveTest(unittest.TestCase):
 
     def test_failed_processing_remains_pending_and_can_resume(self) -> None:
         self.archive.save_batch(self.publication.source, 1, [self.publication])
-        with patch('news_futures.news.publications.process_publication', side_effect=ValueError('failed')):
-            with self.assertRaises(ValueError):
-                self.archive.process_pending()
+        with self.assertRaises(ValueError):
+            self.archive.process_pending(Mock(side_effect=ValueError('failed')))
         self.assertEqual(self.archive.report()['revisions'][0]['status'], 'pending')
         self.archive.db.close()
         self.archive = Archive(self.path)
-        self.archive.process_pending()
+        self.archive.process_pending(process_publication)
         self.assertEqual(self.archive.report()['revisions'][0]['status'], 'simulated')
 
     def test_operator_reads_persisted_archive_in_offline_process(self) -> None:
         self.archive.save_batch(self.publication.source, 1, [self.publication])
-        self.archive.process_pending()
+        self.archive.process_pending(process_publication)
         root = Path(__file__).resolve().parents[2]
         result = subprocess.run(
             [sys.executable, '-I', '-S', str(root / 'tests/offline_runner.py'),
@@ -93,15 +94,15 @@ class ArchiveTest(unittest.TestCase):
         media = replace(self.publication, text='')
         old = replace(self.publication, external_id='8', published_at=utc_now() - timedelta(hours=1))
         self.archive.save_batch(media.source, 1, [media, old])
-        self.archive.process_pending()
+        self.archive.process_pending(process_publication)
         revisions = self.archive.report()['revisions']
         self.assertEqual([row['status'] for row in revisions], ['no_text', 'context_only'])
         self.assertTrue(all(row['trace'] is None for row in revisions))
 
     def test_pending_publication_expires_before_processing(self) -> None:
         self.archive.save_batch(self.publication.source, 1, [self.publication])
-        with patch('news_futures.news.publications.utc_now', return_value=utc_now() + timedelta(minutes=16)):
-            self.archive.process_pending()
+        with patch('news_futures.adapters.sqlite.publications.utc_now', return_value=utc_now() + timedelta(minutes=16)):
+            self.archive.process_pending(process_publication)
         self.assertEqual(self.archive.report()['revisions'][0]['status'], 'context_only')
 
     def test_session_identity_is_checked_but_not_exposed_to_processing(self) -> None:
@@ -112,7 +113,7 @@ class ArchiveTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.archive.bind_session(session, account, state)
         self.archive.save_batch(self.publication.source, 1, [self.publication])
-        self.archive.process_pending()
+        self.archive.process_pending(process_publication)
         self.assertNotIn('local-identity', json.dumps(self.archive.report()))
 
     def test_delete_delivery_is_idempotent_and_preserves_original(self) -> None:

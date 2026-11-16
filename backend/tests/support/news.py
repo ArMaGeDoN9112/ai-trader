@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from news_futures.common.artifacts import publication_digest
+from news_futures.domain.publications import publication_digest
 
 def company_link(record: dict[str, Any], company: str) -> dict[str, Any]:
     digest = publication_digest(record)

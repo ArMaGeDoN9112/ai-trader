@@ -11,7 +11,9 @@ from typing import Any
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
-from news_futures.news.publications import Archive, utc_now
+from news_futures.application.simulation import process_publication
+from news_futures.adapters.sqlite.publications import Archive
+from news_futures.domain.publications import utc_now
 from news_futures.adapters.telegram import (
     Difference, Source, TelethonTransport, collect, configured_channels, session_path, watch_channel,
     run_telegram,
@@ -38,7 +40,7 @@ class CollectionTest(unittest.IsolatedAsyncioTestCase):
         edit = replace(live, text='Исправление', edited_at=now, change='edit')
         transport.differences = [Difference(11, [live], final=False), Difference(12, [edit])]
         await collect(transport, self.archive, transport.source)
-        self.archive.process_pending()
+        self.archive.process_pending(process_publication)
         transport.differences = [Difference(12, [replace(edit, received_at=utc_now())])]
         await collect(transport, self.archive, transport.source)
         self.assertEqual(len(transport.windows), 1)
@@ -166,7 +168,7 @@ class TelethonAdapterTest(unittest.IsolatedAsyncioTestCase):
                     client.is_user_authorized.return_value = authorized
                     client.get_me.return_value = SimpleNamespace(bot=bot)
                     with (patch('telethon.TelegramClient', return_value=client) as factory,
-                          patch('news_futures.common.credentials.CREDENTIALS_PATH', credentials),
+                          patch('news_futures.adapters.credentials.CREDENTIALS_PATH', credentials),
                           patch('sys.stdin.isatty', return_value=False),
                           patch('getpass.getpass') as prompt):
                         with self.assertRaises(ValueError):

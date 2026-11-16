@@ -9,17 +9,33 @@ from pathlib import Path
 from threading import Barrier
 from unittest.mock import patch
 
-from news_futures.agents.contracts import RoleSettings
-from news_futures.agents.events import EventArchive
-from news_futures.news.publications import Archive
-from news_futures.trading.risk import Admission, cancel_unsubmitted, reserve_entry
-from news_futures.trading.terms import ContractSnapshot, RiskSnapshot
+from news_futures.domain.contracts import RoleSettings
+from news_futures.adapters.sqlite.events import EventArchive
+from news_futures.application.analysis.events import match_event
+from news_futures.adapters.sqlite.publications import Archive
+from news_futures.application.trading.risk import Admission, cancel_unsubmitted, reserve_entry
+from news_futures.domain.terms import ContractSnapshot, RiskSnapshot
 from tests.support.models import ScriptedEndpoint
 from tests.support.news import company_link
 from tests.support.risk import RiskFixture
 
 
 class RiskAdmissionTest(RiskFixture):
+    def test_failed_intent_rolls_back_entry_reservation(self) -> None:
+        directory = self.approved()
+
+        def fail_intent(*args: object) -> None:
+            raise ValueError('intent unavailable')
+
+        with EventArchive(self.events_db) as events, Archive(self.publications_db) as archive:
+            rejected = reserve_entry(
+                events, archive, directory, account_id=self.account_id, allowed_contracts={self.contract_id},
+                read_snapshot=lambda *_: self.snapshot, on_reserve=fail_intent,
+            )
+
+        self.assertEqual(rejected, Admission(reason='invalid_admission_evidence'))
+        self.assertIsNotNone(self.reserve(directory).reservation)
+
     def reserve(
         self, directory: Path, *,
         reader: Callable[[str, str], object] | None = None, allowed: set[str] | None = None,
@@ -196,7 +212,7 @@ class RiskAdmissionTest(RiskFixture):
                 'match': 'same', 'event_id': original['event_id'], 'change': 'retraction',
                 'reason': 'The company retracted the forecast.', 'evidence': None,
             }])
-            update = events.match(publication, [company_link(publication, 'sber')],
+            update = match_event(events, publication, [company_link(publication, 'sber')],
                                   RoleSettings(model='test/matcher'), model_factory=endpoint.model)
             self.assertEqual(update['kind'], 'update')
         self.assertEqual(self.reserve(directory), Admission(reason='event_context_superseded'))
@@ -218,7 +234,7 @@ class RiskAdmissionTest(RiskFixture):
                     self.snapshot['contract'].update(observed_at=checked, quote_at=checked)
                     return self.snapshot
 
-                with patch('news_futures.trading.risk.utc_now', return_value=formed) as clock:
+                with patch('news_futures.application.trading.risk.utc_now', return_value=formed) as clock:
                     result = self.reserve(directory, reader=read_snapshot)
                 self.assertEqual(result.reason, reason)
 

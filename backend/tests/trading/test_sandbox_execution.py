@@ -8,12 +8,12 @@ from unittest.mock import patch
 
 from tests.support.risk import RiskFixture
 
-from news_futures.trading.broker import Fill
-from news_futures.agents.events import EventArchive
-from news_futures.news.publications import Archive
-from news_futures.trading.terms import EntryReservation
-from news_futures.trading.executor import SandboxExecutor
-from news_futures.trading.journal import trade_journal
+from news_futures.domain.execution import Fill
+from news_futures.adapters.sqlite.events import EventArchive
+from news_futures.adapters.sqlite.publications import Archive
+from news_futures.domain.terms import EntryReservation
+from news_futures.application.trading.executor import SandboxExecutor
+from news_futures.adapters.sqlite.trades import trade_journal
 from tests.support.broker import ControlBroker
 
 

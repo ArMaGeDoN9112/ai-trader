@@ -1,15 +1,9 @@
-"""Stable publication digests and atomic writes for local JSON artifacts."""
+"""Atomic writes for local JSON artifacts."""
 
-from hashlib import sha256
 import json
 from pathlib import Path
 import sys
 from time import monotonic, sleep
-from typing import Any
-
-
-def publication_digest(publication: dict[str, Any]) -> str:
-    return sha256(json.dumps(publication, sort_keys=True, allow_nan=False).encode()).hexdigest()
 
 
 def write_json(path: Path, value: object) -> None:

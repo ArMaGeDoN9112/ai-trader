@@ -4,13 +4,13 @@ from pathlib import Path
 from typing import Any
 import unittest
 
-from news_futures.simulation.execution import simulate_execution
+from news_futures.domain.simulation import simulate_execution
 
 
 class IndependentAdmissionTest(unittest.TestCase):
     def setUp(self) -> None:
         self.context = json.loads(
-            (Path(__file__).resolve().parents[2] / 'news_futures' / 'simulation' / 'control.json').read_text(encoding='utf-8')
+            (Path(__file__).resolve().parents[2] / 'news_futures' / 'application' / 'control.json').read_text(encoding='utf-8')
         )
 
     def test_critic_approval_cannot_bypass_program_checks(self) -> None:

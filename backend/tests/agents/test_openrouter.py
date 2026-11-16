@@ -13,12 +13,13 @@ try:
     from langchain_openrouter import ChatOpenRouter
     from openrouter import OpenRouter
     from pydantic import SecretStr
-    from news_futures.adapters.openrouter import OpenRouterChat
+    from news_futures.adapters.models.openrouter import OpenRouterChat
 except ImportError:
     raise unittest.SkipTest('Install requirements-openrouter.txt for ticket 03 tests')
 
-from news_futures.agents.contracts import RoleSettings
-from news_futures.agents.review import chat_model, control_context, run_cycle
+from news_futures.domain.contracts import RoleSettings
+from news_futures.adapters.models.chat import chat_model
+from news_futures.application.analysis.review import control_context, run_cycle
 from tests.support.models import ScriptedEndpoint, review
 
 
@@ -193,7 +194,7 @@ class OpenRouterCycleTest(unittest.TestCase):
     def test_production_client_uses_only_openrouter_key_and_strict_provider(self) -> None:
         credentials = self.root / 'credentials.toml'
         credentials.write_text('[openrouter]\napi_key = "local-test-secret"\n', encoding='utf-8')
-        with patch('news_futures.common.credentials.CREDENTIALS_PATH', credentials), patch.dict(os.environ, {
+        with patch('news_futures.adapters.credentials.CREDENTIALS_PATH', credentials), patch.dict(os.environ, {
                                      'OPENROUTER_API_KEY': 'wrong-openrouter-key',
                                      'OPENAI_API_KEY': 'wrong-key',
                                      'OPENAI_BASE_URL': 'https://example.invalid'}):

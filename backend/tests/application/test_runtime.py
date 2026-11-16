@@ -25,25 +25,30 @@ from tests.support.models import ScriptedEndpoint, review
 from tests.support.broker import ControlBroker
 from tests.support.telegram import ControlledTransport
 
-from news_futures.cli import main
-from news_futures.adapters.groq import GroqChat
-from news_futures.agents.contracts import Review
-from news_futures.agents.events import EventArchive
-from news_futures.application.checkpoints import checkpoint_serializer
+from news_futures.adapters.cli import main
+from news_futures.adapters.models.groq import GroqChat
+from news_futures.domain.contracts import Review
+from news_futures.adapters.sqlite.events import EventArchive
+from news_futures.adapters.sqlite.checkpoints import checkpoint_serializer
 from news_futures.common.paths import DECISIONS_SETTINGS, GROQ_SETTINGS, REVIEW_SETTINGS, TELEGRAM_SOURCES
-from news_futures.trading.broker import Fill, UnsupportedFuturesUnits
-from news_futures.agents.routing import request_choices
+from news_futures.domain.execution import Fill
+from news_futures.application.ports.broker import UnsupportedFuturesUnits
+from news_futures.adapters.models.chat import chat_model
+from news_futures.adapters.models.decisions import choices, request_choices
+from news_futures.application.ports.models import AnalysisModels
 from news_futures.common.artifacts import replace_json, write_json
-from news_futures.operator.news import news_view, trace_view
-from news_futures.operator.settings import Preferences
-from news_futures.news.publications import Archive, Publication, utc_now
-from news_futures.application.runtime import Runtime, run_runtime
+from news_futures.adapters.http.news import news_view, trace_view
+from news_futures.adapters.http.settings import Preferences
+from news_futures.adapters.sqlite.publications import Archive
+from news_futures.domain.publications import Publication, utc_now
+from news_futures.application.runtime import Runtime
+from news_futures.bootstrap.runtime import run_runtime
 from news_futures.application.config import load_settings
-from news_futures.application.operator_state import OperatorState
-from news_futures.application.records import runtime_tables
+from news_futures.adapters.sqlite.operator_state import OperatorState
+from news_futures.adapters.sqlite.runtime import SQLiteRuntimeStorage
 from news_futures.application.workflow import Shutdown
 from news_futures.adapters.tbank.futures_catalog import save_catalog
-from news_futures.adapters.tbank.rest import SANDBOX_REST, TBankReader, restrict_to_reads
+from news_futures.adapters.tbank.rest import SANDBOX_REST, TBankReader, limit_broker_read, restrict_to_reads
 from news_futures.adapters.telegram import Difference, Source
 
 
@@ -119,11 +124,10 @@ class RuntimeAcceptance(RiskFixture):
         client.get_me.return_value = SimpleNamespace(id=1)
         self.enterContext(patch('news_futures.adapters.telegram.open_client', return_value=client))
         self.enterContext(patch('news_futures.adapters.telegram.TelethonTransport', return_value=self))
-        self.enterContext(patch('news_futures.application.runtime.load_token', return_value='test-key'))
-        self.enterContext(patch('news_futures.agents.routing.load_token', return_value='test-key'))
-        self.enterContext(patch('news_futures.agents.tool_agent.load_token', return_value='test-key'))
-        self.enterContext(patch('news_futures.agents.review.load_token', return_value='test-key'))
-        self.enterContext(patch('news_futures.application.runtime.sandbox_client', side_effect=lambda *args, **kw: httpx.Client()))
+        self.enterContext(patch('news_futures.bootstrap.runtime.load_token', return_value='test-key'))
+        self.enterContext(patch('news_futures.adapters.models.decisions.load_token', return_value='test-key'))
+        self.enterContext(patch('news_futures.adapters.models.chat.load_token', return_value='test-key'))
+        self.enterContext(patch('news_futures.bootstrap.runtime.sandbox_client', side_effect=lambda *args, **kw: httpx.Client()))
         self.futures_snapshot: dict[str, Any] = {
             'fetched_at': self.started_at.isoformat(), 'categories': {'financial': 'Финансы'},
             'assets': [{'name': company, 'categories': ['financial'], 'underlying_position_uid': f'{company}-share',
@@ -131,11 +135,11 @@ class RuntimeAcceptance(RiskFixture):
                                        'last_trade': (self.started_at + timedelta(days=1)).isoformat()}]}
                        for company, uid in (('sber', self.contract_id), ('vtb', 'vtb-future'))],
         }
-        self.fetch_futures = self.enterContext(patch('news_futures.application.runtime.fetch_catalog',
+        self.fetch_futures = self.enterContext(patch('news_futures.bootstrap.runtime.fetch_catalog',
                                                    return_value=self.futures_snapshot))
         save_catalog(self.root / 'futures-catalog', self.futures_snapshot)
-        self.enterContext(patch('news_futures.application.runtime.TBankReader', return_value=self.broker))
-        self.write_broker = self.enterContext(patch('news_futures.application.runtime.TBankSandbox', return_value=self.broker))
+        self.enterContext(patch('news_futures.bootstrap.runtime.TBankReader', return_value=self.broker))
+        self.write_broker = self.enterContext(patch('news_futures.bootstrap.runtime.TBankSandbox', return_value=self.broker))
         self.jev_requests: list[dict[str, Any]] = []
         self.category_requests: list[dict[str, Any]] = []
         self.expected_decisions_model = 'parallel/decisions-fast:free'
@@ -144,10 +148,8 @@ class RuntimeAcceptance(RiskFixture):
         self.tool_requests: list[dict[str, Any]] = []
         self.tool_choices = iter(['get_market_context', 'analyze', 'analyze'])
         jev_client = self.enterContext(httpx.Client(transport=httpx.MockTransport(self.jev_reply)))
-        self.enterContext(patch('news_futures.agents.routing.request_choices',
+        self.enterContext(patch('news_futures.adapters.models.decisions.request_choices',
                                 side_effect=lambda _client, *args, **kw: request_choices(jev_client, *args, **kw)))
-        self.enterContext(patch('news_futures.agents.tool_agent.request_choices',
-                                side_effect=lambda _client, *args, **kwargs: request_choices(jev_client, *args, **kwargs)))
         self.catalog = self.root / 'catalog.json'
         write_json(self.catalog, {'operations': {'catalog': {'availability': 'available', 'data': [
             {'company_id': company, 'company_name': company.upper(), 'ticker': company.upper(),
@@ -242,11 +244,11 @@ class RuntimeAcceptance(RiskFixture):
         endpoint = ScriptedEndpoint(list(answers))
 
         def model(**kwargs: Any) -> Any:
-            from news_futures.agents.contracts import RoleSettings
+            from news_futures.domain.contracts import RoleSettings
             return endpoint.model(RoleSettings(model=kwargs['model']))
 
-        with (patch('news_futures.agents.review.OpenRouterChat', side_effect=model),
-              patch('news_futures.application.runtime.utc_now',
+        with (patch('news_futures.adapters.models.chat.OpenRouterChat', side_effect=model),
+              patch('news_futures.bootstrap.runtime.utc_now',
                     side_effect=chain((started_at or self.started_at,), iter(utc_now, None))),
               patch('sys.argv', ['news_futures', 'serve', str(self.profile), '--once']),
               patch('builtins.print') as output):
@@ -275,9 +277,9 @@ class RuntimeAcceptance(RiskFixture):
         return {'status': 'delegate', 'company_id': 'sber', 'reason': 'Проверь прогноз.'}
 
     def test_manual_news_runs_in_sandbox_and_is_ineligible_for_execution(self) -> None:
-        from news_futures.application.records import review_path
-        from news_futures.operator.news import enqueue_test_news, testing_view
-        from news_futures.trading.risk import reserve_entry
+        from news_futures.application.artifact_paths import review_path
+        from news_futures.adapters.http.news import enqueue_test_news, testing_view
+        from news_futures.application.trading.risk import reserve_entry
 
         self.sandbox()
         revision = enqueue_test_news(self.root, {'text': 'SBER опубликовал повышенный прогноз.'})
@@ -305,10 +307,10 @@ class RuntimeAcceptance(RiskFixture):
         self.assertEqual(admission.reason, 'testing_publication')
 
     def test_tool_agent_delegates_and_publishes_a_reviewed_candidate_without_execution(self) -> None:
-        from news_futures.agents.approval import read_approval
-        from news_futures.agents.tool_agent import TEAM_DIRECTORY
+        from news_futures.application.analysis.approval import read_approval
+        from news_futures.application.analysis.tool_agent import TEAM_DIRECTORY
         from news_futures.common.errors import Rejected
-        from news_futures.operator.news import trace_view
+        from news_futures.adapters.http.news import trace_view
 
         self.tool_agent(mode='sandbox')
         self.tool_choices = iter(['get_company_news', 'get_market_context'])
@@ -562,7 +564,7 @@ class RuntimeAcceptance(RiskFixture):
             return 0
 
         write_json(self.profile.with_name('refresh.json'), self.profile_data | {'futures_refresh_seconds': 1})
-        with (patch('news_futures.application.runtime.run_telegram', side_effect=wait_for_refresh),
+        with (patch('news_futures.bootstrap.runtime.run_telegram', side_effect=wait_for_refresh),
               patch('builtins.print')):
             self.assertEqual(asyncio.run(run_runtime(self.profile.with_name('refresh.json'), False)), 0)
         self.assertGreaterEqual(self.fetch_futures.call_count, 2)
@@ -617,7 +619,11 @@ class RuntimeAcceptance(RiskFixture):
 
     def test_panel_model_edit_applies_to_the_next_revision_and_keeps_frozen_review(self) -> None:
         controls = OperatorState(self.root)
-        runtime = Runtime(load_settings(self.profile), lambda *_: self.broker, None, on_controls=lambda **event: None)
+        settings = load_settings(self.profile)
+        runtime = Runtime(settings, lambda *_: self.broker, None,
+                          models=AnalysisModels(chat_model, choices), storage=SQLiteRuntimeStorage(settings),
+                          read_limit=limit_broker_read,
+                          on_controls=lambda **event: None)
         runtime.broker_ready = True
         first = self.news(self.market, 'SBER raised its forecast.')
         second = self.news(self.market, 'SBER raised its dividend.')
@@ -634,7 +640,7 @@ class RuntimeAcceptance(RiskFixture):
         archive = Archive(self.publications_db)
         with (closing(archive.db), EventArchive(self.events_db) as events,
               patch('news_futures.application.runtime.analyze_news', side_effect=analyze)):
-            runtime_tables(archive)
+            archive.initialize_runtime()
             first_result = {'revision': first.revision_key(), 'mode': 'observation', 'inputs_saved': False}
             with self.assertRaises(Shutdown):
                 runtime.process_revision(archive, events, first.record(), first_result)
@@ -657,7 +663,7 @@ class RuntimeAcceptance(RiskFixture):
         preferences = Preferences(settings, ['markettwits'], controls)
         saved = preferences.saved()
         form = saved | {'base': saved, 'aggregator': 'groq'}
-        with patch('news_futures.operator.settings.load_token', return_value='groq-test-key') as token:
+        with patch('news_futures.adapters.http.settings.load_token', return_value='groq-test-key') as token:
             preferences.save(form, stopped=False)
             token.assert_called_once_with('groq', 'api_key')
         stored = controls.saved()
@@ -681,16 +687,19 @@ class RuntimeAcceptance(RiskFixture):
             return endpoint.respond(request)
 
         applied: list[dict[str, Any]] = []
-        runtime = Runtime(settings, lambda *_: self.broker, None, on_controls=lambda **event: applied.append(event),
+        runtime = Runtime(settings, lambda *_: self.broker, None,
+                          models=AnalysisModels(chat_model, choices), storage=SQLiteRuntimeStorage(settings),
+                          read_limit=limit_broker_read,
+                          on_controls=lambda **event: applied.append(event),
                           started_at=self.started_at)
         runtime.broker_ready = True
         archive = Archive(settings.publications)
         with closing(archive.db):
-            runtime_tables(archive)
+            archive.initialize_runtime()
             archive.save_batch(first.source, self.market.pts, [first, second])
         with (httpx.Client(transport=httpx.MockTransport(respond)) as client,
-              patch('news_futures.agents.review.GroqChat', side_effect=lambda **kw: GroqChat(http_client=client, **kw)),
-              patch('news_futures.agents.review.load_token', return_value='groq-test-key') as token,
+              patch('news_futures.adapters.models.chat.GroqChat', side_effect=lambda **kw: GroqChat(http_client=client, **kw)),
+              patch('news_futures.adapters.models.chat.load_token', return_value='groq-test-key') as token,
               patch('builtins.print')):
             runtime.process()
         self.assertEqual(token.call_count, 4)
@@ -713,7 +722,10 @@ class RuntimeAcceptance(RiskFixture):
         last = self.report()['broker']['last_confirmed']
         self.assertEqual(last['position']['quantity'], 3)
         settings = load_settings(self.profile)
-        runtime = Runtime(settings, lambda *_: self.broker, lambda *_: self.broker, run_id='test-run')
+        runtime = Runtime(settings, lambda *_: self.broker, lambda *_: self.broker,
+                          models=AnalysisModels(chat_model, choices), storage=SQLiteRuntimeStorage(settings),
+                          read_limit=limit_broker_read,
+                          run_id='test-run')
         with (patch.object(self.broker, 'read_trade', side_effect=ConnectionError('private connection error')),
               patch('builtins.print')):
             runtime.refresh()
@@ -732,7 +744,7 @@ class RuntimeAcceptance(RiskFixture):
         with closing(sqlite3.connect(self.root / 'runtime-lock.sqlite3')) as lock:
             lock.execute('BEGIN IMMEDIATE')
             result = subprocess.run(
-                [sys.executable, '-m', 'news_futures.operator.worker', 'test-run'],
+                [sys.executable, '-m', 'news_futures.adapters.http.worker', 'test-run'],
                 cwd=self.root, env=os.environ | {'PYTHONPATH': str(Path(__file__).resolve().parents[2])},
                 input=payload + '\n', capture_output=True, text=True, timeout=30, check=False,
             )
@@ -823,14 +835,18 @@ class RuntimeAcceptance(RiskFixture):
     def test_restart_skips_reviewed_entry_when_broker_execution_never_started(self) -> None:
         self.sandbox()
         incoming = self.news(self.rbc, 'SBER raised its forecast.')
-        runtime = Runtime(load_settings(self.profile), lambda *_: self.broker, lambda *_: self.broker,
+        settings = load_settings(self.profile)
+        runtime = Runtime(settings, lambda *_: self.broker, lambda *_: self.broker,
+                          models=AnalysisModels(chat_model, choices), storage=SQLiteRuntimeStorage(settings),
+                          read_limit=limit_broker_read,
+
                           started_at=self.started_at)
 
         def stop(body: dict[str, Any]) -> dict[str, Any]:
             runtime.stop.set()
             return dict(review()(body))
 
-        with patch('news_futures.application.runtime.Runtime', return_value=runtime):
+        with patch('news_futures.bootstrap.runtime.Runtime', return_value=runtime):
             self.serve(self.proposal('enter', incoming), stop)
         self.assertEqual(self.report(incoming)['result']['reason'], 'shutdown_before_execution')
         self.serve(started_at=utc_now())

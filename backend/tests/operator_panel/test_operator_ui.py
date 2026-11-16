@@ -20,14 +20,14 @@ from uuid import uuid4
 import httpx
 from websockets.sync.client import connect
 
-from news_futures.operator.server import OperatorHandler, OperatorServer
-from news_futures.operator.settings import Preferences
-from news_futures.operator.supervisor import Worker
-from news_futures.agents.events import EventArchive
+from news_futures.adapters.http.server import OperatorHandler, OperatorServer
+from news_futures.adapters.http.settings import Preferences
+from news_futures.adapters.http.supervisor import Worker
+from news_futures.adapters.sqlite.events import EventArchive
 from news_futures.application.config import RuntimeSettings
 from news_futures.common.artifacts import replace_json
-from news_futures.news.publications import Archive, Publication, utc_now
-from news_futures.application.records import runtime_tables, save_result
+from news_futures.adapters.sqlite.publications import Archive
+from news_futures.domain.publications import Publication, utc_now
 
 
 CONTROLLED_WORKER = """
@@ -164,7 +164,7 @@ class OperatorTest(unittest.TestCase):
                 } for uid in ids
             ]})
 
-        self.enterContext(patch('news_futures.operator.server.sandbox_client', side_effect=lambda *args, **kwargs:
+        self.enterContext(patch('news_futures.adapters.http.server.sandbox_client', side_effect=lambda *args, **kwargs:
                                 httpx.Client(transport=httpx.MockTransport(respond))))
 
     def test_tickers_only_include_open_futures_and_attach_last_prices(self) -> None:
@@ -196,7 +196,7 @@ class OperatorTest(unittest.TestCase):
                 'currency': 'rub', 'units': '0', 'nano': 0,
             }})
 
-        with patch('news_futures.operator.server.sandbox_client', return_value=httpx.Client(
+        with patch('news_futures.adapters.http.server.sandbox_client', return_value=httpx.Client(
             transport=httpx.MockTransport(wrong_account),
         )):
             code, body = self.request('GET', path, **session)
@@ -258,7 +258,7 @@ class OperatorTest(unittest.TestCase):
         checked_at = utc_now()
         event = b'{"source":"example","ok":true,"ready":true,"next_poll_in":120}'
         worker.state = 'starting'
-        with patch('news_futures.operator.supervisor.utc_now', return_value=checked_at) as clock:
+        with patch('news_futures.adapters.http.supervisor.utc_now', return_value=checked_at) as clock:
             worker._update(event, 'worker')
             clock.return_value = checked_at + timedelta(seconds=119)
             self.assertEqual(self.overview()['sources'], {'example': 'connected'})
@@ -365,10 +365,10 @@ class OperatorTest(unittest.TestCase):
                                       (key, json.dumps(event)))
         archive = Archive(self.root / 'publications.sqlite3')
         with closing(archive.db):
-            runtime_tables(archive)
-            save_result(archive, {'revision': revision, 'stage': 'review', 'status': 'rejected', 'decision_id': 1,
+            archive.initialize_runtime()
+            archive.save_result({'revision': revision, 'stage': 'review', 'status': 'rejected', 'decision_id': 1,
                                   'review_attempt': revision})
-            save_result(archive, {'revision': unlinked.revision_key(), 'stage': 'event', 'status': 'skipped',
+            archive.save_result({'revision': unlinked.revision_key(), 'stage': 'event', 'status': 'skipped',
                                   'reason': 'no_company_link'})
         directory = self.root / 'decisions' / revision
         review = directory / 'review' / revision
@@ -406,7 +406,7 @@ class OperatorTest(unittest.TestCase):
             archive.save_batch(source, 2, [pending])
             for status in ('pending', 'failed'):
                 if status == 'failed':
-                    save_result(archive, {'revision': pending.revision_key(), 'status': status,
+                    archive.save_result({'revision': pending.revision_key(), 'status': status,
                                           'reason': 'event_model_error'})
                 code, body = self.request('GET', '/api/news', **{'X-Operator-Session': self.session})
                 self.assertEqual(code, 200)
@@ -471,7 +471,7 @@ class OperatorTest(unittest.TestCase):
             db.execute('UPDATE event_decisions SET details = ? WHERE revision = ?', (json.dumps(event), unlinked))
         archive = Archive(self.root / 'publications.sqlite3')
         with closing(archive.db):
-            save_result(archive, {'revision': unlinked, 'stage': 'event', 'status': 'failed',
+            archive.save_result({'revision': unlinked, 'stage': 'event', 'status': 'failed',
                                   'reason': 'event_model_error'})
         decision_dir = self.root / 'decisions' / unlinked
         interrupted = decision_dir / 'route-interrupted-test'
@@ -645,7 +645,7 @@ class OperatorTest(unittest.TestCase):
                    'document.querySelector("[data-node=analyst]").getAttribute("aria-pressed") === "true"')
             expect('window.scrollY === 550 && document.querySelector("#trace-steps details").open')
             expect('document.documentElement.scrollWidth === document.documentElement.clientWidth')
-            from news_futures.agents.tool_agent import TEAM_DIRECTORY
+            from news_futures.application.analysis.tool_agent import TEAM_DIRECTORY
 
             agent = self.root / 'decisions' / revision / TEAM_DIRECTORY
             agent.mkdir()
@@ -666,7 +666,7 @@ class OperatorTest(unittest.TestCase):
             ]})
             archive = Archive(self.root / 'publications.sqlite3')
             with closing(archive.db):
-                save_result(archive, {'revision': revision, 'stage': 'agent', 'status': 'candidate',
+                archive.save_result({'revision': revision, 'stage': 'agent', 'status': 'candidate',
                                       'analysis_strategy': 'tool_agent', 'critic_status': 'approved'})
             expect('document.querySelector(".agent-trace-summary")?.innerText.includes("Мультиагентный анализ")')
             evaluate('document.querySelector("[data-id=\'0/agent/1\'] details").open = true')
@@ -714,7 +714,7 @@ class OperatorTest(unittest.TestCase):
             expect('Array.from(document.querySelectorAll("label.field")).some(field => '
                    'field.innerText.trim() === "Аналитик" && '
                    'field.querySelector("input")?.value === "openai/gpt-oss-120b")')
-            with patch('news_futures.operator.settings.load_token', return_value='test-key'):
+            with patch('news_futures.adapters.http.settings.load_token', return_value='test-key'):
                 evaluate('document.querySelector(".save-bar .primary").click()')
                 until(lambda: self.server.worker.controls_state.saved().get('aggregator') == 'groq')
                 self.assertEqual(self.server.worker.controls_state.saved()['analysis_strategy'], 'tool_agent')

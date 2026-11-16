@@ -14,9 +14,12 @@ import sys
 from typing import Any, Protocol
 from uuid import uuid4
 
-from news_futures.common.credentials import CredentialsError, load_credentials
+from news_futures.adapters.credentials import load_credentials
+from news_futures.adapters.sqlite.publications import Archive
+from news_futures.application.simulation import process_publication
+from news_futures.common.errors import CredentialsError
 from news_futures.common.paths import PACKAGE
-from news_futures.news.publications import Archive, Publication, utc_now
+from news_futures.domain.publications import Publication, utc_now
 
 
 @dataclass(frozen=True)
@@ -328,7 +331,7 @@ async def run_telegram(
 
         async def simulate() -> None:
             assert archive is not None
-            archive.process_pending()
+            archive.process_pending(process_publication)
 
         consume = process if process is not None else simulate
         ready = [asyncio.Event() for _ in channels]

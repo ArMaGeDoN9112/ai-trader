@@ -4,10 +4,10 @@ from dataclasses import replace
 from decimal import Decimal
 from typing import Literal
 
-from news_futures.agents.events import EventArchive
-from news_futures.trading.broker import Fill, Protection, TradeState
-from news_futures.trading.journal import trade_journal
-from news_futures.trading.terms import EntryReservation
+from news_futures.adapters.sqlite.events import EventArchive
+from news_futures.domain.execution import Fill, Protection, TradeState
+from news_futures.adapters.sqlite.trades import trade_journal
+from news_futures.domain.terms import EntryReservation
 from tests.support.risk import RiskFixture
 
 class ControlBroker:

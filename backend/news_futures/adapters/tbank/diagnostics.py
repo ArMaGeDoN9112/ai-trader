@@ -16,7 +16,7 @@ from mcp.client.streamable_http import streamable_http_client
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from referencing import Registry
 
-from news_futures.common.credentials import load_token
+from news_futures.adapters.credentials import load_token
 from news_futures.common.artifacts import write_json
 
 

@@ -4,7 +4,8 @@ from collections import Counter
 from pathlib import Path
 import sys
 
-from news_futures.agents.routing import route_publication
+from news_futures.adapters.models.decisions import choices
+from news_futures.application.analysis.routing import route_publication
 from news_futures.common.artifacts import write_json
 from news_futures.common.paths import DECISIONS_SETTINGS
 
@@ -44,7 +45,7 @@ def evaluate(directory: Path, config: Path) -> int:
     for name, (text, labels) in CASES.items():
         publication = directory / f'{name}.json'
         write_json(publication, {'id': f'eval:{name}', 'url': f'https://example.invalid/{name}', 'text': text})
-        trace = route_publication(config, publication, catalog, directory / name)
+        trace = route_publication(config, publication, catalog, directory / name, decisions=choices)
         expected = {f'eval-{ticker}': kind for ticker, kind in labels.items()}
         actual = ({link['company_id']: link['kind'] for link in trace['links']}
                   if trace['status'] == 'completed' else None)

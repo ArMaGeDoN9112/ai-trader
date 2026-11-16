@@ -3,14 +3,15 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from news_futures.common.credentials import CredentialsError, load_token
+from news_futures.common.errors import CredentialsError
+from news_futures.adapters.credentials import load_token
 
 
 class CredentialsTest(unittest.TestCase):
     def test_invalid_credentials_report_only_safe_diagnostics(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / 'credentials.toml'
-            with patch('news_futures.common.credentials.CREDENTIALS_PATH', path):
+            with patch('news_futures.adapters.credentials.CREDENTIALS_PATH', path):
                 with self.assertRaisesRegex(CredentialsError, 'credentials.example.toml'):
                     load_token('openrouter', 'api_key')
                 for content in ('[openrouter]\napi_key = "secret-marker',

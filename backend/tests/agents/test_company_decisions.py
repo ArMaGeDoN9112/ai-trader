@@ -12,11 +12,12 @@ try:
 except ImportError:
     raise unittest.SkipTest('Install requirements-openrouter.txt for ticket 07 tests')
 
-from news_futures.cli import main
-from news_futures.agents.contracts import RoleSettings
-from news_futures.agents.events import EventArchive
+from news_futures.adapters.cli import main
+from news_futures.domain.contracts import RoleSettings
+from news_futures.adapters.sqlite.events import EventArchive
+from news_futures.application.analysis.events import correct_event, event_report, match_event
 from news_futures.common.artifacts import write_json
-from news_futures.news.publications import utc_now
+from news_futures.domain.publications import utc_now
 from tests.support.news import company_link
 from tests.support.models import ScriptedEndpoint, review
 
@@ -56,7 +57,7 @@ class CompanyDecisionTest(unittest.TestCase):
                 'match': 'same' if prior else 'different', 'event_id': prior['event_id'] if prior else None,
                 'change': change if prior else None, 'reason': 'Compared the claims.', 'evidence': None,
             }])
-            return archive.match(publication, links, RoleSettings(model='test/matcher'),
+            return match_event(archive, publication, links, RoleSettings(model='test/matcher'),
                                  model_factory=endpoint.model)
 
     def analyze(self, event: dict[str, Any], answers: list[Any]) -> tuple[int, dict[str, Any]]:
@@ -67,7 +68,7 @@ class CompanyDecisionTest(unittest.TestCase):
         with patch('sys.argv', ['news_futures', 'analyze-event', str(event['decision_id']),
                                '--database', str(self.database), '--snapshot', str(snapshot),
                                '--config', str(self.config), '--directory', str(directory)]), patch(
-                                   'news_futures.agents.decisions.chat_model', endpoint.model), patch('builtins.print'):
+                                   'news_futures.adapters.models.chat.chat_model', endpoint.model), patch('builtins.print'):
             code = main()
         trace_file = directory / 'trace.json'
         return code, json.loads(trace_file.read_bytes()) if trace_file.is_file() else {}
@@ -258,7 +259,7 @@ class CompanyDecisionTest(unittest.TestCase):
             self.assertEqual(context['entry_reason']['reason'], thesis)
             self.assertEqual(context['publication']['text'], event['publication']['text'])
         with EventArchive(self.database) as archive:
-            self.assertEqual(archive.report('sber')['context'][0]['publication']['text'], old_text)
+            self.assertEqual(event_report(archive, 'sber')['context'][0]['publication']['text'], old_text)
 
     def test_repeat_and_superseded_event_do_not_start_another_review(self) -> None:
         first = self.archive('Сбер опубликовал оценку прибыли.', 'sber')
@@ -266,7 +267,7 @@ class CompanyDecisionTest(unittest.TestCase):
                               'sber', prior=first, change='none')
         self.assertEqual(self.analyze(repeat, []), (1, {}))
         with EventArchive(self.database) as archive:
-            archive.correct(first['revision'], 'separate', None, 'Уточнение редакции')
+            correct_event(archive, first['revision'], 'separate', None, 'Уточнение редакции')
         self.assertEqual(self.analyze(first, []), (1, {}))
 
     def test_stale_account_or_market_snapshot_is_rejected_before_model_calls(self) -> None:
@@ -285,7 +286,7 @@ class CompanyDecisionTest(unittest.TestCase):
 
         def correct_and_approve(body: dict[str, Any]) -> dict[str, Any]:
             with EventArchive(self.database) as archive:
-                archive.correct(event['revision'], 'repeat', first['event_id'], 'Перепечатка')
+                correct_event(archive, event['revision'], 'repeat', first['event_id'], 'Перепечатка')
             approval: dict[str, Any] = review()(body)
             return approval
 

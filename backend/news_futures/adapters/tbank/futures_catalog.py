@@ -2,7 +2,6 @@
 
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
 from html import escape
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -14,7 +13,8 @@ from pydantic import BaseModel, ConfigDict, model_validator
 from news_futures.adapters.tbank.rest import SANDBOX_REST, amount, identifier, rows
 from news_futures.common.artifacts import move_artifact, write_json
 from news_futures.common.paths import FUTURES_CATEGORIES
-from news_futures.news.publications import utc_now
+from news_futures.domain.catalog import listed_futures
+from news_futures.domain.publications import utc_now
 
 
 class CategorySettings(BaseModel):
@@ -123,15 +123,6 @@ def fetch_catalog(client: httpx.Client, config: Path = FUTURES_CATEGORIES) -> di
         listings.append(rows(payload, 'instruments'))
     return {'fetched_at': utc_now().isoformat(), 'source': 't-invest-sandbox',
             'categories': settings.categories, 'assets': group_futures(listings[0], listings[1], settings)}
-
-
-def listed_futures(catalog: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    now = utc_now()
-    return {
-        item['uid']: {**item, 'asset': asset['name'], 'share_id': asset.get('underlying_position_uid')}
-        for asset in catalog['assets'] for item in asset['contracts']
-        if item['api_trade_available'] is True and datetime.fromisoformat(item['last_trade']) > now
-    }
 
 
 def active_futures(client: httpx.Client, catalog: dict[str, Any]) -> list[dict[str, Any]]:

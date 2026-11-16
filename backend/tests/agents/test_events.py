@@ -12,9 +12,11 @@ try:
 except ImportError:
     raise unittest.SkipTest('Install requirements-openrouter.txt for ticket 06 tests')
 
-from news_futures.agents.contracts import RoleSettings
-from news_futures.agents.events import EventArchive
-from news_futures.agents.routing import route_publication
+from news_futures.domain.contracts import RoleSettings
+from news_futures.adapters.sqlite.events import EventArchive
+from news_futures.application.analysis.events import correct_event, event_report, match_event
+from news_futures.adapters.models.decisions import choices
+from news_futures.application.analysis.routing import route_publication
 from tests.support.routing import answer
 from tests.support.models import ScriptedEndpoint
 from tests.support.news import company_link
@@ -46,7 +48,7 @@ class EventsTest(unittest.TestCase):
 
         links = [company_link(record, company) for company in companies]
         with EventArchive(self.path) as archive:
-            return archive.match(record, links, self.settings, model_factory=model)
+            return match_event(archive, record, links, self.settings, model_factory=model)
 
     def test_paraphrased_reprint_keeps_original_age_and_company_context(self) -> None:
         first = self.submit(self.record(1, 'РБК: Сбербанк увеличил чистую прибыль за октябрь до 120 млрд.'), 'sber')
@@ -64,7 +66,7 @@ class EventsTest(unittest.TestCase):
         self.assertNotIn('never sent to model', json.dumps(endpoint.requests[0]))
         self.assertEqual(self.submit(dict(copy, received_at='2026-11-08T12:00:00+00:00'), 'sber'), repeat)
         with EventArchive(self.path) as archive:
-            report = archive.report('sber')
+            report = event_report(archive, 'sber')
         self.assertEqual([row['publication']['source'] for row in report['history']], ['rbc', 'copy'])
         self.assertEqual(report['history'][1]['assessment']['reason'],
                          'Тот же отчёт за октябрь и та же сумма со ссылкой на РБК.')
@@ -116,7 +118,7 @@ class EventsTest(unittest.TestCase):
                     evidence_input = json.loads(request['messages'][-1]['content'])['candidates'][0]['evidence']
                     self.assertIn(first['revision'], [row['revision'] for row in evidence_input])
         with EventArchive(self.path) as archive:
-            context = archive.report('nvtk')['context']
+            context = event_report(archive, 'nvtk')['context']
         self.assertEqual([row['publication'] for row in context], [original, *(item[1] for item in updates)])
 
     def test_uncertain_match_keeps_disputed_link_and_correction_appends_history(self) -> None:
@@ -132,17 +134,17 @@ class EventsTest(unittest.TestCase):
         self.assertEqual(ambiguous['assessment']['event_id'], first['event_id'])
         self.assertEqual(ambiguous['analysis_company_ids'], ['gazp', 'nvtk'])
         with EventArchive(self.path) as archive:
-            self.assertEqual(archive.report('gazp')['context'], [first, ambiguous])
-            self.assertEqual(archive.report('nvtk')['context'], [first, ambiguous])
-            corrected = archive.correct(ambiguous['revision'], 'repeat', first['event_id'],
+            self.assertEqual(event_report(archive, 'gazp')['context'], [first, ambiguous])
+            self.assertEqual(event_report(archive, 'nvtk')['context'], [first, ambiguous])
+            corrected = correct_event(archive, ambiguous['revision'], 'repeat', first['event_id'],
                                         'Первоисточник назвал тот же трубопровод.')
             self.assertEqual(corrected['correction']['supersedes'], ambiguous['decision_id'])
             self.assertEqual(corrected['analysis_company_ids'], [])
-            self.assertEqual(archive.report('gazp')['context'][1], corrected)
-            separate = archive.correct(ambiguous['revision'], 'separate', None, 'Найдена другая дата.')
-            self.assertEqual(archive.correct(ambiguous['revision'], 'separate', None, 'Найдена другая дата.'),
+            self.assertEqual(event_report(archive, 'gazp')['context'][1], corrected)
+            separate = correct_event(archive, ambiguous['revision'], 'separate', None, 'Найдена другая дата.')
+            self.assertEqual(correct_event(archive, ambiguous['revision'], 'separate', None, 'Найдена другая дата.'),
                              separate)
-            report = archive.report()
+            report = event_report(archive)
         self.assertNotEqual(separate['event_id'], first['event_id'])
         self.assertEqual(separate['analysis_company_ids'], ['gazp', 'nvtk'])
         self.assertEqual([row['current'] for row in report['history']], [True, False, False, True])
@@ -157,8 +159,8 @@ class EventsTest(unittest.TestCase):
         ambiguous = self.submit(self.record(2, 'Оператор приостановил экспорт по трубопроводу.'), endpoint=endpoint)
         self.assertEqual(ambiguous['analysis_company_ids'], ['gazp'])
         with EventArchive(self.path) as archive:
-            self.assertIn(ambiguous, archive.report('gazp')['context'])
-            separated = archive.correct(ambiguous['revision'], 'separate', None, 'Поступили дополнительные сведения.')
+            self.assertIn(ambiguous, event_report(archive, 'gazp')['context'])
+            separated = correct_event(archive, ambiguous['revision'], 'separate', None, 'Поступили дополнительные сведения.')
         self.assertEqual(separated['analysis_company_ids'], ['gazp'])
 
     def test_correction_does_not_leave_an_active_basis_from_a_detached_event(self) -> None:
@@ -169,8 +171,8 @@ class EventsTest(unittest.TestCase):
                                endpoint=ScriptedEndpoint([answer]))
         self.assertEqual(repeated['basis_at'], first['basis_at'])
         with EventArchive(self.path) as archive:
-            archive.correct(first['revision'], 'separate', None, 'Другая остановка.')
-            report = archive.report()
+            correct_event(archive, first['revision'], 'separate', None, 'Другая остановка.')
+            report = event_report(archive)
         self.assertIsNone(report['event_bases'][first['event_id']])
         self.assertEqual(report['history'][1]['basis_at'], first['basis_at'])
         later = self.submit(self.record(3, 'Другой канал перепечатал новость Газпрома о трубопроводе.'), 'gazp',
@@ -216,7 +218,7 @@ class EventsTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Архив изменился'):
             self.submit(self.record(2, 'Сбербанк сообщил прибыль.'), 'sber', endpoint=ScriptedEndpoint([response]))
         with EventArchive(self.path) as archive:
-            self.assertEqual([row['publication']['id'] for row in archive.report()['history']], ['rbc:1', 'rbc:3'])
+            self.assertEqual([row['publication']['id'] for row in event_report(archive)['history']], ['rbc:1', 'rbc:3'])
 
     def test_cli_matches_a_completed_route_and_displays_context(self) -> None:
         route = self.path.parent / 'route'
@@ -227,7 +229,7 @@ class EventsTest(unittest.TestCase):
         catalog.write_text(json.dumps({'operations': {'catalog': {'availability': 'available', 'data': [
             {'company_id': 'sber', 'company_name': 'Сбербанк', 'ticker': 'SBER'},
         ]}}}), encoding='utf-8')
-        config = Path('news_futures/agents/decisions-model.json')
+        config = Path('news_futures/application/analysis/decisions-model.json')
 
         def respond(request: httpx.Request) -> httpx.Response:
             self.assertEqual(json.loads(request.content)['model'], 'parallel/decisions-fast:free')
@@ -235,7 +237,7 @@ class EventsTest(unittest.TestCase):
                                              'answers': {'company_0': answer('direct')}})
 
         with httpx.Client(transport=httpx.MockTransport(respond)) as client:
-            trace = route_publication(config, source, catalog, route, client=client, token='test-secret')
+            trace = route_publication(config, source, catalog, route, decisions=lambda: choices(client, 'test-secret'))
         self.assertEqual(trace['status'], 'completed')
 
         def cli(*args: str) -> subprocess.CompletedProcess[str]:

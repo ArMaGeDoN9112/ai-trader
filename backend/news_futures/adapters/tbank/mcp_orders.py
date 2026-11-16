@@ -11,11 +11,11 @@ from mcp import ClientSession, types
 from mcp.client.streamable_http import streamable_http_client
 from referencing import Registry
 
+from news_futures.adapters.credentials import load_token
 from news_futures.adapters.tbank.diagnostics import SANDBOX_URL
 from news_futures.adapters.tbank.rest import POINTS, STOP_TYPES, TBankReader, identifier
-from news_futures.common.credentials import load_token
-from news_futures.trading.broker import Fill
-from news_futures.trading.terms import EntryReservation
+from news_futures.domain.execution import Fill
+from news_futures.domain.terms import EntryReservation
 
 
 CREATE = 'invest_create_order'

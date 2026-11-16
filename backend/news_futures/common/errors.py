@@ -11,3 +11,11 @@ def error_code(error: Exception) -> str:
 
 class Rejected(ValueError):
     """Admission failed with a stable reason suitable for the local journal."""
+
+
+class CredentialsError(ValueError):
+    pass
+
+
+class StorageError(RuntimeErrorInfo):
+    """A storage failure with the original exception class as a safe error code."""
