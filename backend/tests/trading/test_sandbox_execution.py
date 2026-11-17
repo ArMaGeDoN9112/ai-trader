@@ -9,11 +9,11 @@ from unittest.mock import patch
 from tests.support.risk import RiskFixture
 
 from news_futures.domain.execution import Fill
-from news_futures.adapters.sqlite.events import EventArchive
-from news_futures.adapters.sqlite.publications import Archive
+from news_futures.adapters.postgres.events import EventArchive
+from news_futures.adapters.postgres.publications import Archive
 from news_futures.domain.terms import EntryReservation
 from news_futures.application.trading.executor import SandboxExecutor
-from news_futures.adapters.sqlite.trades import trade_journal
+from news_futures.adapters.postgres.trades import trade_journal
 from tests.support.broker import ControlBroker
 
 
@@ -57,18 +57,20 @@ class SandboxExecutionTest(RiskFixture):
         entry = self.start(approval)
         self.assertEqual(entry['status'], 'protected')
         with EventArchive(self.events_db) as events:
-            with events.db:
+            with events.db.transaction():
                 events.db.execute("""
                     INSERT INTO sandbox_cycles (id, account_id, proposal_id, terms, approval, source, status)
                     SELECT 'conflicting-cycle', account_id, 'other-proposal', terms, approval, source, 'reserved'
-                    FROM sandbox_cycles WHERE id = ?
+                    FROM sandbox_cycles WHERE id = %s
                 """, (entry['cycle_id'],))
             executor = SandboxExecutor(events, self.broker)
             with patch.object(self.broker, 'read_trade') as read_trade:
                 self.assertEqual(executor.reconcile(close=True, cycle_id=entry['cycle_id']),
                                  {'status': 'blocked', 'reason': 'conflicting_active_cycles'})
                 read_trade.assert_not_called()
-            self.assertEqual(events.db.execute('SELECT sum(close_requested) FROM sandbox_cycles').fetchone()[0], 0)
+            row = events.db.execute('SELECT sum(close_requested) AS total FROM sandbox_cycles').fetchone()
+            assert row is not None
+            self.assertEqual(row['total'], 0)
         with patch.object(self.broker, 'read_risk') as read_risk:
             self.assertEqual(self.start(approval), {'status': 'blocked', 'reason': 'conflicting_active_cycles'})
             read_risk.assert_not_called()

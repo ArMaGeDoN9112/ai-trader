@@ -3,11 +3,12 @@
 from decimal import Decimal
 import json
 from pathlib import Path
-import sqlite3
+import psycopg
 from typing import Any, cast
 
-from news_futures.adapters.http.news import REVISION, archive_news, event_rows, has_table, read_archive, runtime_rows, visible
-from news_futures.adapters.sqlite.trades import journal_events
+from news_futures.adapters.http.news import REVISION, archive_news, event_rows, read_archive, runtime_rows, visible
+from news_futures.adapters.postgres.database import has_table
+from news_futures.adapters.postgres.trades import journal_events
 
 
 def linked_revision(root: Path, approval: str) -> str | None:
@@ -27,8 +28,8 @@ def average(orders: list[dict[str, Any]], action: str) -> tuple[int | None, str 
     return lots, format((points / lots).quantize(Decimal('.000000001')).normalize(), 'f')
 
 
-def trade(root: Path, db: sqlite3.Connection, row: sqlite3.Row,
-          publications: sqlite3.Connection | None, *, detail: bool) -> dict[str, Any]:
+def trade(root: Path, db: psycopg.Connection[dict[str, Any]], row: dict[str, Any],
+          publications: psycopg.Connection[dict[str, Any]] | None, *, detail: bool) -> dict[str, Any]:
     terms = json.loads(row['terms'])
     entry_side = 'buy' if terms['side'] == 'long' else 'sell'
     exit_side = 'sell' if entry_side == 'buy' else 'buy'
@@ -102,7 +103,7 @@ def trade(root: Path, db: sqlite3.Connection, row: sqlite3.Row,
         ):
             traces.append({'kind': kind, 'revision': revision})
             seen.add(revision)
-    reason = (db.execute('SELECT * FROM position_entry_reasons WHERE account_id = ? AND position_id = ?',
+    reason = (db.execute('SELECT * FROM position_entry_reasons WHERE account_id = %s AND position_id = %s',
                          (row['account_id'], row['id'])).fetchone()
               if has_table(db, 'position_entry_reasons') else None)
     protection = {'protected': 'confirmed', 'closed': 'none', 'no_fill': 'none'}.get(row['status'], 'unknown')
@@ -113,12 +114,12 @@ def trade(root: Path, db: sqlite3.Connection, row: sqlite3.Row,
 
 
 def trades_view(root: Path, account: str, cycle: str) -> dict[str, Any] | None:
-    with (read_archive(root / 'events.sqlite3') as db, read_archive(root / 'publications.sqlite3') as publications):
+    with (read_archive(root / 'events') as db, read_archive(root / 'publications') as publications):
         if db is None or not has_table(db, 'sandbox_cycles'):
             return None if cycle else {'trades': []}
         rows = db.execute("""
-            SELECT * FROM sandbox_cycles WHERE account_id = ? AND source IN ('sandbox', 'sandbox_mcp') AND (? = '' OR id = ?)
-            ORDER BY rowid DESC
+            SELECT * FROM sandbox_cycles WHERE account_id = %s AND source IN ('sandbox', 'sandbox_mcp') AND (%s = '' OR id = %s)
+            ORDER BY ordinal DESC
         """, (account, cycle, cycle))
         results = [trade(root, db, row, publications, detail=bool(cycle)) for row in rows]
     result = (results[0] if results else None) if cycle else {'trades': results}

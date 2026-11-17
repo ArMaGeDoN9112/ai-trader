@@ -4,8 +4,8 @@ from contextlib import closing
 from pathlib import Path
 from typing import Literal
 
-from news_futures.adapters.sqlite.events import EventArchive
-from news_futures.adapters.sqlite.publications import Archive
+from news_futures.adapters.postgres.events import EventArchive
+from news_futures.adapters.postgres.publications import Archive
 from news_futures.adapters.tbank.rest import TBankSandbox, sandbox_client
 from news_futures.application.trading.executor import SandboxExecutor
 

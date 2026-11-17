@@ -9,10 +9,10 @@ import unittest
 
 from news_futures.domain.contracts import RoleSettings
 from news_futures.application.analysis.decisions import analyze_event
-from news_futures.adapters.sqlite.events import EventArchive
+from news_futures.adapters.postgres.events import EventArchive
 from news_futures.application.analysis.events import match_event
 from news_futures.common.artifacts import write_json
-from news_futures.adapters.sqlite.publications import Archive
+from news_futures.adapters.postgres.publications import Archive
 from news_futures.domain.publications import Publication, utc_now
 from tests.support.models import ScriptedEndpoint, review
 from tests.support.news import company_link
@@ -22,8 +22,8 @@ class RiskFixture(unittest.TestCase):
         temporary = TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
-        self.events_db = self.root / 'events.sqlite3'
-        self.publications_db = self.root / 'publications.sqlite3'
+        self.events_db = self.root / 'events'
+        self.publications_db = self.root / 'publications'
         self.now = utc_now()
         self.publication = Publication('rbc', '1', 'https://t.me/rbc/1',
                                        'New earnings forecast.', self.now, self.now)

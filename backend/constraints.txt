@@ -1,4 +1,3 @@
-aiosqlite==0.22.1
 annotated-types==0.8.0
 anyio==4.16.0
 attrs==26.1.0
@@ -27,7 +26,7 @@ langchain-openrouter==0.2.9
 langchain-protocol==0.0.21
 langgraph==1.2.20
 langgraph-checkpoint==4.3.1
-langgraph-checkpoint-sqlite==3.1.3
+langgraph-checkpoint-postgres==3.2.1
 langgraph-prebuilt==1.1.1
 langgraph-sdk==0.4.14
 langsmith==0.14.17
@@ -37,6 +36,9 @@ openai==3.46.0
 openrouter==0.11.46
 orjson==3.13.0
 ormsgpack==1.13.0
+psycopg==3.3.9
+psycopg-binary==3.3.9
+psycopg-pool==3.3.3
 packaging==26.3
 pyaes==1.6.1
 pyasn1==0.6.5
@@ -56,7 +58,6 @@ requests-toolbelt==1.0.0
 rpds-py==2026.9.1
 rsa==4.9.1
 sniffio==1.3.1
-sqlite-vec==0.1.9
 sse-starlette==3.6.0
 starlette==1.10.0
 telethon==1.45.0

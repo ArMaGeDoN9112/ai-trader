@@ -10,7 +10,7 @@ import httpx
 from langchain_core.language_models import BaseChatModel
 
 from news_futures.domain.contracts import RoleSettings
-from news_futures.adapters.sqlite.events import EventArchive
+from news_futures.adapters.postgres.events import EventArchive
 from news_futures.application.analysis.events import correct_event, event_report, match_event
 from news_futures.adapters.models.decisions import choices
 from news_futures.application.analysis.routing import route_publication
@@ -23,7 +23,7 @@ class EventsTest(unittest.TestCase):
     def setUp(self) -> None:
         directory = TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        self.path = Path(directory.name) / 'events.sqlite3'
+        self.path = Path(directory.name) / 'events'
         self.settings = RoleSettings(model='test/matcher')
 
     def record(self, number: int, text: str, *, source: str = 'rbc',

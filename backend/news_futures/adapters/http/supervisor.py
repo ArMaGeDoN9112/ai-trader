@@ -1,21 +1,21 @@
 """Start, stop and monitor the local application's worker process."""
 
-from contextlib import closing
 from datetime import datetime, timedelta
 import json
 from pathlib import Path
 import re
-import sqlite3
+import psycopg
 import subprocess
 import sys
 from threading import Lock, Thread
 from typing import Any
 from uuid import uuid4
 
-from news_futures.adapters.http.news import has_table, read_archive, visible
+from news_futures.adapters.http.news import read_archive, visible
 from news_futures.adapters.http.settings import Preferences, profile_view
 from news_futures.adapters.http.worker import FAILURES
-from news_futures.adapters.sqlite.operator_state import OperatorState
+from news_futures.adapters.postgres.database import has_table
+from news_futures.adapters.postgres.operator_state import OperatorState
 from news_futures.domain.publications import TEST_SOURCE, utc_now
 from news_futures.domain.terms import CloseIntent
 
@@ -37,12 +37,12 @@ BLOCKS = {
 
 def broker_status(path: Path, profile: dict[str, Any], run_id: str | None) -> dict[str, Any]:
     try:
-        with closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=0.2)) as db:
-            row = db.execute('SELECT data FROM runtime_status WHERE id = 1').fetchone()
-        status = json.loads(row[0]) if row else {}
+        with read_archive(path) as db:
+            row = db.execute('SELECT data FROM runtime_status WHERE id = 1').fetchone() if has_table(db, 'runtime_status') else None
+        status = json.loads(row['data']) if row else {}
         if any(status.get(key) != profile[key] for key in ('mode', 'account_id')):
             status = {}
-    except (sqlite3.Error, ValueError, AttributeError):
+    except (psycopg.Error, ValueError, AttributeError):
         status = {}
 
     last = status.get('last_confirmed')
@@ -86,17 +86,17 @@ def processing_error(path: Path) -> dict[str, Any] | None:
         with read_archive(path) as db:
             if db is not None and has_table(db, 'runtime_decisions'):
                 row = db.execute("""
-                    SELECT json_extract(result, '$.stage') AS stage, json_extract(result, '$.at') AS at,
-                           json_extract(result, '$.reason') AS reason FROM runtime_decisions
-                    WHERE json_extract(result, '$.status') = 'failed' AND NOT EXISTS (
+                    SELECT (result::json ->> 'stage') AS stage, (result::json ->> 'at') AS at,
+                           (result::json ->> 'reason') AS reason FROM runtime_decisions
+                    WHERE (result::json ->> 'status') = 'failed' AND NOT EXISTS (
                         SELECT 1 FROM revisions WHERE revisions.revision = runtime_decisions.revision
-                        AND json_extract(publication, '$.source') = ?
+                        AND (publication::json ->> 'source') = %s
                     )
                     ORDER BY at DESC LIMIT 1
                 """, (TEST_SOURCE,)).fetchone()
                 if row:
                     return {key: visible(row[key]) for key in ('stage', 'at', 'reason')}
-    except (OSError, sqlite3.Error):
+    except (OSError, psycopg.Error):
         pass
     return None
 
@@ -171,7 +171,7 @@ class Worker:
                 self.profile, self.channels, self.settings = self.preferences.prepare()
             except ValueError as error:
                 return 'account_has_operations' if str(error) == 'account_has_operations' else 'settings_unavailable'
-            except (OSError, sqlite3.Error):
+            except (OSError, psycopg.Error):
                 return 'settings_unavailable'
         return None
 
@@ -274,7 +274,7 @@ class Worker:
                 seen = self.sources.get(name)
                 sources[name] = ('unknown' if not active or seen is None or now > seen[1]
                                  else 'connected' if seen[0] else 'unavailable')
-            broker = broker_status(self.directory / 'publications.sqlite3', self.profile,
+            broker = broker_status(self.directory / 'publications', self.profile,
                                    self.run_id if active else None)
             pause = self.controls_state.pause()
             applied = self.pause_applied if active else None
@@ -283,16 +283,16 @@ class Worker:
                 'worker': self.state, 'failure': self.failure, 'command': self.result,
                 'exit_code': self.exit_code, 'allowed': self._allowed(),
                 'journal_error': self.journal_error, 'sources': sources, 'broker': broker, 'pause': pause,
-                'processing_error': processing_error(self.directory / 'publications.sqlite3'),
+                'processing_error': processing_error(self.directory / 'publications'),
             }
 
     def controls(self) -> dict[str, Any]:
         with self.lock:
             close = self.controls_state.close_intent()
             if close and close['status'] == 'accepted':
-                with read_archive(self.directory / 'events.sqlite3') as db:
+                with read_archive(self.directory / 'events') as db:
                     if db is not None and has_table(db, 'sandbox_cycles'):
-                        row = db.execute('SELECT status, reason FROM sandbox_cycles WHERE id = ?',
+                        row = db.execute('SELECT status, reason FROM sandbox_cycles WHERE id = %s',
                                          (close['cycle_id'],)).fetchone()
                         if row is not None:
                             close.update(status=row['status'] if row['status'] in ('closed', 'no_fill') else 'accepted',
@@ -343,7 +343,7 @@ class Worker:
             return 202, 'close_queued'
         if self.state != 'running' or self.profile['mode'] != 'sandbox':
             return 409, 'ignored'
-        current = broker_status(self.directory / 'publications.sqlite3', self.profile, self.run_id)['current']
+        current = broker_status(self.directory / 'publications', self.profile, self.run_id)['current']
         position = current.get('position') if current and current['protection'] == 'confirmed' else None
         if not position or any(position.get(key) != body[key] for key in names[1:]):
             return 409, 'close_position_changed'

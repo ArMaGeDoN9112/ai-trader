@@ -5,12 +5,13 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import re
-import sqlite3
+import psycopg
 from typing import Any, Iterator, cast
 from urllib.parse import parse_qsl, urlsplit
 
-from news_futures.adapters.sqlite.publications import Archive
-from news_futures.adapters.sqlite.trades import journal_events
+from news_futures.adapters.postgres.database import connect, has_table
+from news_futures.adapters.postgres.publications import Archive
+from news_futures.adapters.postgres.trades import journal_events
 from news_futures.application.analysis.tool_agent import TEAM_DIRECTORY
 from news_futures.domain.publications import TEST_SOURCE
 from news_futures.domain.publications import publication_digest
@@ -30,19 +31,10 @@ CREDENTIAL = re.compile(
 )
 
 @contextmanager
-def read_archive(path: Path) -> Iterator[sqlite3.Connection | None]:
-    if not path.is_file():
-        yield None
-        return
-    with closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=0.2)) as db:
-        db.row_factory = sqlite3.Row
-        with db:
-            db.execute('BEGIN')
-            yield db
-
-
-def has_table(db: sqlite3.Connection | None, table: str) -> bool:
-    return db is not None and db.execute('SELECT 1 FROM sqlite_master WHERE name = ?', (table,)).fetchone() is not None
+def read_archive(path: Path) -> Iterator[psycopg.Connection[dict[str, Any]]]:
+    with connect(path) as db, db.transaction():
+        db.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+        yield db
 
 
 def artifact(path: Path) -> dict[str, Any]:
@@ -64,9 +56,9 @@ def visible(value: Any) -> Any:
     if isinstance(value, list):
         return [visible(item) for item in value]
     if isinstance(value, str):
-        value = re.sub(r'(?i)Bearer\s+[^\s"\x27,}]+', 'Bearer [скрыто]', value)
-        value = re.sub(r'(?i)\bsk-(?:or-v1-)?[a-z\d_-]{20,}', '[скрыто]', value)
-        return CREDENTIAL.sub(r'\1[скрыто]', value)
+        value = re.sub(r'(?i)Bearer\s+[^\s"\x27,}]+', 'Bearer [СЃРєСЂС‹С‚Рѕ]', value)
+        value = re.sub(r'(?i)\bsk-(?:or-v1-)?[a-z\d_-]{20,}', '[СЃРєСЂС‹С‚Рѕ]', value)
+        return CREDENTIAL.sub(r'\1[СЃРєСЂС‹С‚Рѕ]', value)
     return value
 
 
@@ -131,29 +123,29 @@ def when(path: Path, record: dict[str, Any]) -> str:
         return ''
 
 
-def runtime_rows(db: sqlite3.Connection | None, revision: str | None) -> dict[str, tuple[dict[str, Any], Any]]:
+def runtime_rows(db: psycopg.Connection[dict[str, Any]] | None, revision: str | None) -> dict[str, tuple[dict[str, Any], Any]]:
     if db is None or not has_table(db, 'runtime_decisions'):
         return {}
     return {row['revision']: (json.loads(row['publication']), json.loads(row['result']))
             for row in db.execute('''
                 SELECT revision, publication, result FROM runtime_decisions JOIN revisions USING (revision)
-                WHERE (? IS NULL OR revision = ?)
-                  AND (? IS NOT NULL OR json_extract(publication, '$.source') IS NOT ?)
+                WHERE (%s::text IS NULL OR revision = %s)
+                  AND (%s::text IS NOT NULL OR (publication::json ->> 'source') IS DISTINCT FROM %s)
             ''', (revision, revision, revision, TEST_SOURCE))}
 
 
-def telegram_rows(db: sqlite3.Connection | None, revision: str | None = None) -> Iterator[sqlite3.Row]:
+def telegram_rows(db: psycopg.Connection[dict[str, Any]] | None, revision: str | None = None) -> Iterator[dict[str, Any]]:
     if db is not None and has_table(db, 'revisions'):
         yield from db.execute("""
             SELECT revision, publication, status FROM revisions
             WHERE historical = 0
-              AND (json_extract(publication, '$.source') LIKE 'telegram:%'
-                   OR (? IS NOT NULL AND json_extract(publication, '$.source') = ?))
-              AND (? IS NULL OR revision = ?)
+              AND ((publication::json ->> 'source') LIKE 'telegram:%%'
+                   OR (%s::text IS NOT NULL AND (publication::json ->> 'source') = %s))
+              AND (%s::text IS NULL OR revision = %s)
         """, (revision, TEST_SOURCE, revision, revision))
 
 
-def event_rows(db: sqlite3.Connection | None, revision: str | None, *,
+def event_rows(db: psycopg.Connection[dict[str, Any]] | None, revision: str | None, *,
                include_unlinked: bool = False) -> dict[str, list[dict[str, Any]]]:
     if db is None or not has_table(db, 'event_decisions'):
         return {}
@@ -161,11 +153,11 @@ def event_rows(db: sqlite3.Connection | None, revision: str | None, *,
     for row in db.execute('''
         SELECT d.id, r.revision, linked, publication, links, details
         FROM (
-            SELECT revision, json_array_length(links) > 0 AS linked,
-                   CASE WHEN ? OR json_array_length(links) > 0 THEN publication END AS publication,
-                   CASE WHEN ? OR json_array_length(links) > 0 THEN links END AS links
-            FROM event_revisions WHERE (? IS NULL OR revision = ?)
-              AND (? IS NOT NULL OR json_extract(publication, '$.source') IS NOT ?)
+            SELECT revision, json_array_length(links::json) > 0 AS linked,
+                   CASE WHEN %s OR json_array_length(links::json) > 0 THEN publication END AS publication,
+                   CASE WHEN %s OR json_array_length(links::json) > 0 THEN links END AS links
+            FROM event_revisions WHERE (%s::text IS NULL OR revision = %s)
+              AND (%s::text IS NOT NULL OR (publication::json ->> 'source') IS DISTINCT FROM %s)
         ) r JOIN event_decisions d USING (revision)
         ORDER BY d.id
     ''', (include_unlinked, include_unlinked, revision, revision, revision, TEST_SOURCE)):
@@ -177,11 +169,11 @@ def event_rows(db: sqlite3.Connection | None, revision: str | None, *,
     return events
 
 
-def cycle_rows(db: sqlite3.Connection | None, account: str) -> list[dict[str, Any]]:
+def cycle_rows(db: psycopg.Connection[dict[str, Any]] | None, account: str) -> list[dict[str, Any]]:
     if db is None or not has_table(db, 'sandbox_cycles'):
         return []
     return [dict(row) | {'terms': json.loads(row['terms'])} for row in db.execute(
-        'SELECT id, terms, approval FROM sandbox_cycles WHERE account_id = ?', (account,),
+        'SELECT id, terms, approval FROM sandbox_cycles WHERE account_id = %s', (account,),
     )]
 
 
@@ -214,13 +206,13 @@ def summary(key: str, event: dict[str, Any], result: dict[str, Any], contracts: 
             'testing': publication.get('source') == TEST_SOURCE,
             'companies': sorted({link['company_id'] for link in event['links']}), 'contracts': sorted(contracts),
             'title': publication.get('text', '').strip()[:160]
-            or ('Пост удалён' if publication.get('change') == 'delete' else 'Публикация без текста')}
+            or ('РџРѕСЃС‚ СѓРґР°Р»С‘РЅ' if publication.get('change') == 'delete' else 'РџСѓР±Р»РёРєР°С†РёСЏ Р±РµР· С‚РµРєСЃС‚Р°')}
 
 
 def enqueue_test_news(root: Path, body: dict[str, Any]) -> str:
     if set(body) != {'text'}:
         raise ValueError('invalid_test_news')
-    archive = Archive(root / 'publications.sqlite3')
+    archive = Archive(root / 'publications')
     with closing(archive.db):
         archive.initialize_runtime()
         return archive.enqueue_test(body['text']).revision_key()
@@ -228,13 +220,13 @@ def enqueue_test_news(root: Path, body: dict[str, Any]) -> str:
 
 def testing_view(root: Path) -> dict[str, Any]:
     decisions = []
-    with read_archive(root / 'publications.sqlite3') as db:
+    with read_archive(root / 'publications') as db:
         if db is not None and has_table(db, 'runtime_decisions'):
             for row in db.execute("""
                 SELECT revision, publication, revisions.status, result
                 FROM revisions LEFT JOIN runtime_decisions USING (revision)
-                WHERE json_extract(publication, '$.source') = ?
-                ORDER BY revisions.rowid DESC LIMIT 20
+                WHERE (publication::json ->> 'source') = %s
+                ORDER BY revisions.ordinal DESC LIMIT 20
             """, (TEST_SOURCE,)):
                 publication = json.loads(row['publication'])
                 result = json.loads(row['result']) if row['result'] else {'status': row['status']}
@@ -286,7 +278,7 @@ def news_view(root: Path, profile: dict[str, Any], catalog: dict[str, Any],
     publications = []
     orders = []
     linked_companies: set[str] = set()
-    with (read_archive(root / 'publications.sqlite3') as db, read_archive(root / 'events.sqlite3') as events):
+    with (read_archive(root / 'publications') as db, read_archive(root / 'events') as events):
         cycles = cycle_rows(events, profile['account_id'])
         cycle_contracts = {cycle['id']: cycle['terms']['contract_id'] for cycle in cycles}
         history_by_revision = event_rows(events, None, include_unlinked=bool(company))
@@ -395,7 +387,7 @@ def news_view(root: Path, profile: dict[str, Any], catalog: dict[str, Any],
 def trace_view(root: Path, account: str, key: str) -> dict[str, Any] | None:
     if not REVISION.fullmatch(key):
         return None
-    with (read_archive(root / 'publications.sqlite3') as db, read_archive(root / 'events.sqlite3') as events):
+    with (read_archive(root / 'publications') as db, read_archive(root / 'events') as events):
         runtime = runtime_rows(db, key)
         history_by_revision = event_rows(events, key, include_unlinked=True)
         news = next(archive_news(root, runtime, history_by_revision), None)

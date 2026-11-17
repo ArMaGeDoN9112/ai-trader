@@ -5,9 +5,10 @@ import json
 from pathlib import Path
 from typing import Any
 
-from news_futures.adapters.sqlite.events import EventArchive
-from news_futures.adapters.sqlite.publications import Archive
-from news_futures.adapters.sqlite.trades import trade_journal
+from news_futures.adapters.postgres.database import archive_exists
+from news_futures.adapters.postgres.events import EventArchive
+from news_futures.adapters.postgres.publications import Archive
+from news_futures.adapters.postgres.trades import trade_journal
 from news_futures.application.analysis.tool_agent import TEAM_DIRECTORY
 from news_futures.application.artifact_paths import review_path
 from news_futures.application.config import load_settings
@@ -16,7 +17,7 @@ from news_futures.common.errors import RuntimeErrorInfo
 
 def runtime_report(config: Path, decision: str | None) -> dict[str, Any]:
     settings = load_settings(config)
-    if not settings.publications.is_file():
+    if not archive_exists(settings.publications, 'runtime_status'):
         raise RuntimeErrorInfo('Сначала запустите serve для этого каталога данных.')
     archive = Archive(settings.publications)
     with closing(archive.db), EventArchive(settings.events) as events:
@@ -27,12 +28,12 @@ def runtime_report(config: Path, decision: str | None) -> dict[str, Any]:
                 'channels': [dict(row) for row in archive.db.execute('SELECT * FROM channels')],
                 'notices': [dict(row) for row in archive.db.execute('SELECT * FROM notices ORDER BY id DESC LIMIT 20')],
                 'decisions': [json.loads(row['result']) for row in archive.db.execute(
-                    'SELECT result FROM runtime_decisions ORDER BY rowid DESC LIMIT 20',
+                    'SELECT result FROM runtime_decisions ORDER BY ordinal DESC LIMIT 20',
                 )],
             }
         row = archive.db.execute("""
             SELECT runtime_decisions.revision, result, publication FROM runtime_decisions JOIN revisions USING(revision)
-            WHERE revision = ? OR CAST(json_extract(result, '$.decision_id') AS TEXT) = ?
+            WHERE revision = %s OR CAST((result::json ->> 'decision_id') AS TEXT) = %s
         """, (decision, decision)).fetchone()
         if row is None:
             raise RuntimeErrorInfo('Решение не найдено. Возьмите decision_id или revision из runtime-status.')

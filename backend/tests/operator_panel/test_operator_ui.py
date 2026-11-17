@@ -5,7 +5,6 @@ from http.client import HTTPConnection
 import json
 from pathlib import Path
 import os
-import sqlite3
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
@@ -23,10 +22,11 @@ from websockets.sync.client import connect
 from news_futures.adapters.http.server import OperatorHandler, OperatorServer
 from news_futures.adapters.http.settings import Preferences
 from news_futures.adapters.http.supervisor import Worker
-from news_futures.adapters.sqlite.events import EventArchive
+from news_futures.adapters.postgres.database import connect as database_connect
+from news_futures.adapters.postgres.events import EventArchive
 from news_futures.application.config import RuntimeSettings
 from news_futures.common.artifacts import replace_json
-from news_futures.adapters.sqlite.publications import Archive
+from news_futures.adapters.postgres.publications import Archive
 from news_futures.domain.publications import Publication, utc_now
 
 
@@ -35,10 +35,11 @@ from datetime import datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
-import sqlite3
 import sys
 from threading import Event, Thread
 import time
+
+from news_futures.adapters.postgres.publications import Archive
 
 directory, run_id = Path(sys.argv[1]), sys.argv[2]
 profile = json.loads(sys.stdin.readline())
@@ -56,8 +57,8 @@ while not (directory / 'ready').exists():
     if stop.wait(0.01):
         raise SystemExit(0)
 
-with sqlite3.connect(directory / 'publications.sqlite3') as db:
-    db.execute('CREATE TABLE IF NOT EXISTS runtime_status (id INTEGER PRIMARY KEY, data TEXT)')
+with Archive(directory / 'publications') as archive:
+    archive.initialize_runtime()
     while not stop.is_set():
         control = (directory / 'control').read_text()
         if control == 'crash':
@@ -75,8 +76,7 @@ with sqlite3.connect(directory / 'publications.sqlite3') as db:
         status = profile | {'run_id': run_id, 'confirmed': True, 'last_confirmed': last, 'broker': 'connected'}
         if control == 'offline':
             status.update(confirmed=False, broker='blocked', error='token-private-value')
-        with db:
-            db.execute('INSERT OR REPLACE INTO runtime_status VALUES (1, ?)', (json.dumps(status),))
+        archive.save_broker_status(status, last)
         print(json.dumps({'source': 'example', 'ok': control != 'offline', 'ready': True}), flush=True)
         stop.wait(0.02)
 
@@ -351,19 +351,19 @@ class OperatorTest(unittest.TestCase):
         links = [{'company_id': 'company', 'kind': 'direct'}, {'company_id': 'other', 'kind': 'inferred'}]
         event = {'event_id': 'event-1', 'kind': 'unmatched', 'recorded_at': now.isoformat(),
                  'analysis_company_ids': ['company', 'other'], 'call': None}
-        with (closing(Archive(self.root / 'publications.sqlite3').db) as db,
-              EventArchive(self.root / 'events.sqlite3') as events):
+        with (closing(Archive(self.root / 'publications').db) as db,
+              EventArchive(self.root / 'events') as events):
             # Real archive schemas, with saved evidence from a rejected review.
-            with db, events.db:
+            with db.transaction(), events.db.transaction():
                 for publication, bindings in ((linked, links), (unlinked, [])):
                     key = publication.revision_key()
                     record = json.dumps(publication.record())
-                    db.execute("INSERT INTO revisions VALUES (?, ?, 0, 'pending', NULL)", (key, record))
-                    events.db.execute('INSERT INTO event_revisions VALUES (?, ?, ?)',
+                    db.execute("INSERT INTO revisions VALUES (%s, %s, 0, 'pending', NULL)", (key, record))
+                    events.db.execute('INSERT INTO event_revisions VALUES (%s, %s, %s)',
                                       (key, record, json.dumps(bindings)))
-                    events.db.execute('INSERT INTO event_decisions (revision, details) VALUES (?, ?)',
+                    events.db.execute('INSERT INTO event_decisions (revision, details) VALUES (%s, %s)',
                                       (key, json.dumps(event)))
-        archive = Archive(self.root / 'publications.sqlite3')
+        archive = Archive(self.root / 'publications')
         with closing(archive.db):
             archive.initialize_runtime()
             archive.save_result({'revision': revision, 'stage': 'review', 'status': 'rejected', 'decision_id': 1,
@@ -400,7 +400,7 @@ class OperatorTest(unittest.TestCase):
         source, now = 'telegram:42', utc_now()
         pending = Publication(source, '3', 'https://t.me/source/3', 'Свежий пост', now, now)
         archived = Publication(source, '4', 'https://t.me/source/4', 'Начальная история', now, now)
-        archive = Archive(self.root / 'publications.sqlite3')
+        archive = Archive(self.root / 'publications')
         with closing(archive.db):
             archive.save_batch(source, 1, [archived], historical=True)
             archive.save_batch(source, 2, [pending])
@@ -459,17 +459,18 @@ class OperatorTest(unittest.TestCase):
     def test_ticker_to_rejected_trace_keeps_expansion_and_scroll_during_refresh(self) -> None:
         self.mock_market()
         revision, unlinked, review = self.save_news()
-        with closing(sqlite3.connect(self.root / 'events.sqlite3')) as db, db:
-            saved, = db.execute('SELECT details FROM event_decisions WHERE revision = ?', (unlinked,)).fetchone()
+        with database_connect(self.root / 'events') as db, db.transaction():
+            saved = db.execute('SELECT details FROM event_decisions WHERE revision = %s', (unlinked,)).fetchone()
             candidates = [{'event_id': f'candidate-{index}'} for index in range(8)]
-            event = json.loads(saved) | {
+            assert saved is not None
+            event = json.loads(saved['details']) | {
                 'kind': 'model_error',
                 'search': {'events_examined': 19, 'events_ranked': 17, 'candidates': candidates},
                 'call': {'error': 'OpenAITimeoutError', 'input': {'candidates': candidates},
                          'settings': {'aggregator': 'groq', 'model': 'openai/gpt-oss-20b', 'timeout_ms': 60000}},
             }
-            db.execute('UPDATE event_decisions SET details = ? WHERE revision = ?', (json.dumps(event), unlinked))
-        archive = Archive(self.root / 'publications.sqlite3')
+            db.execute('UPDATE event_decisions SET details = %s WHERE revision = %s', (json.dumps(event), unlinked))
+        archive = Archive(self.root / 'publications')
         with closing(archive.db):
             archive.save_result({'revision': unlinked, 'stage': 'event', 'status': 'failed',
                                   'reason': 'event_model_error'})
@@ -664,7 +665,7 @@ class OperatorTest(unittest.TestCase):
                 {'id': '5', 'kind': 'critic', 'status': 'completed',
                  'output': {'approved': True}, 'started_at': utc_now().isoformat()},
             ]})
-            archive = Archive(self.root / 'publications.sqlite3')
+            archive = Archive(self.root / 'publications')
             with closing(archive.db):
                 archive.save_result({'revision': revision, 'stage': 'agent', 'status': 'candidate',
                                       'analysis_strategy': 'tool_agent', 'critic_status': 'approved'})
@@ -741,12 +742,12 @@ class OperatorTest(unittest.TestCase):
             evaluate('Array.from(document.querySelectorAll(".hero button")).find(button => '
                      'button.innerText === "Пауза новых входов").click()')
             expect('document.querySelector(".status-strip").innerText.includes("Входы на паузе")')
-            archive = Archive(self.root / 'publications.sqlite3')
-            with worker.lock, closing(archive.db), archive.db:
+            archive = Archive(self.root / 'publications')
+            with worker.lock, closing(archive.db), archive.db.transaction():
                 worker.state = 'running'
                 worker.run_id = 'browser-test'
                 worker.profile = self.profile | {'mode': 'sandbox'}
-                archive.db.execute('INSERT OR REPLACE INTO runtime_status VALUES (1, ?)', (json.dumps(
+                archive.db.execute('INSERT INTO runtime_status VALUES (1, %s) ON CONFLICT (id) DO UPDATE SET data = excluded.data', (json.dumps(
                     worker.profile | {'run_id': worker.run_id, 'broker': 'connected', 'confirmed': True,
                                       'last_confirmed': {'checked_at': utc_now().isoformat(),
                                                          'position': {'id': uuid4().hex, 'contract_id': 'future',

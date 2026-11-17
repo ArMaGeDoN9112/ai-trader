@@ -40,11 +40,11 @@ class RuntimeSettings(Contract):
 
     @property
     def publications(self) -> Path:
-        return self.data_dir / 'publications.sqlite3'
+        return self.data_dir / 'publications'
 
     @property
     def events(self) -> Path:
-        return self.data_dir / 'events.sqlite3'
+        return self.data_dir / 'events'
 
     @property
     def futures_catalog(self) -> Path:

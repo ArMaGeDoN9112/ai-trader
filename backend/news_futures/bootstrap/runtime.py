@@ -1,4 +1,4 @@
-"""Compose the runtime with SQLite, Telegram, model clients and T-Bank."""
+"""Compose the runtime with PostgreSQL, Telegram, model clients and T-Bank."""
 
 from collections.abc import Awaitable, Callable
 from contextlib import ExitStack
@@ -10,8 +10,9 @@ import httpx
 from news_futures.adapters.credentials import load_token
 from news_futures.adapters.models.chat import chat_model
 from news_futures.adapters.models.decisions import choices
-from news_futures.adapters.sqlite.locks import exclusive_operation
-from news_futures.adapters.sqlite.runtime import SQLiteRuntimeStorage
+from news_futures.adapters.postgres.locks import exclusive_operation
+from news_futures.adapters.postgres.migrate import require_migration
+from news_futures.adapters.postgres.runtime import PostgresRuntimeStorage
 from news_futures.adapters.tbank.futures_catalog import fetch_catalog, save_catalog
 from news_futures.adapters.tbank.rest import TBankReader, TBankSandbox, limit_broker_read, sandbox_client
 from news_futures.adapters.telegram import configured_channels, default_session, run_telegram, session_path
@@ -47,10 +48,11 @@ async def run_runtime(
     if use_mcp:
         from news_futures.adapters.tbank.mcp_orders import TBankMCPReader, TBankMCPSandbox
     with ExitStack() as stack:
-        if not stack.enter_context(exclusive_operation(settings.data_dir / 'runtime-lock.sqlite3')):
+        if not stack.enter_context(exclusive_operation(settings.data_dir / 'runtime-lock')):
             if on_phase is not None:
                 on_phase('directory_busy')
             raise RuntimeErrorInfo('serve уже работает с этим каталогом данных.')
+        require_migration(settings.data_dir)
         if on_phase is not None:
             on_phase('broker')
         client = stack.enter_context(sandbox_client(settings.ca_file, read_only=use_mcp or settings.mode == 'observation'))
@@ -65,7 +67,7 @@ async def run_runtime(
             return TBankSandbox(client, settings.account_id, contract, company)
 
         runtime = Runtime(settings, reader, broker if settings.mode == 'sandbox' else None,
-                          models=AnalysisModels(chat_model, choices), storage=SQLiteRuntimeStorage(settings),
+                          models=AnalysisModels(chat_model, choices), storage=PostgresRuntimeStorage(settings),
                           read_limit=limit_broker_read,
                           run_id=run_id, on_controls=on_controls, started_at=started_at)
 

@@ -11,7 +11,7 @@ import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 from news_futures.application.simulation import process_publication
-from news_futures.adapters.sqlite.publications import Archive
+from news_futures.adapters.postgres.publications import Archive
 from news_futures.domain.publications import utc_now
 from news_futures.adapters.telegram import (
     Difference, Source, TelethonTransport, collect, configured_channels, session_path, watch_channel,
@@ -25,7 +25,7 @@ class CollectionTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
-        self.archive = Archive(Path(self.temporary.name) / 'archive.sqlite3')
+        self.archive = Archive(Path(self.temporary.name) / 'archive')
         self.addCleanup(self.archive.db.close)
         self.transport = ControlledTransport()
 
@@ -53,10 +53,7 @@ class CollectionTest(unittest.IsolatedAsyncioTestCase):
         await collect(transport, self.archive, transport.source)
         live = replace(transport.original, external_id='2', published_at=utc_now())
         transport.differences = [Difference(11, [live])]
-        self.archive.db.executescript('''
-            CREATE TRIGGER fail_one BEFORE INSERT ON channels WHEN NEW.source='telegram:123'
-            BEGIN SELECT RAISE(ABORT, 'save failed'); END;
-        ''')
+        self.archive.db.execute("ALTER TABLE channels ADD CONSTRAINT fail_one CHECK (source <> 'telegram:123' OR pts <> 11)")
         other = ControlledTransport()
         other.source = Source(456, 'second')
         other.messages = []
@@ -66,10 +63,10 @@ class CollectionTest(unittest.IsolatedAsyncioTestCase):
                 watch_channel(other, self.archive, 'second', True),
             )
         self.assertEqual(results, [False, True])
-        self.assertIn('IntegrityError', errors.getvalue())
+        self.assertIn('CheckViolation', errors.getvalue())
         self.assertEqual(self.archive.cursor(transport.source.id)['pts'], 10)  # type: ignore[index]
         self.assertIsNotNone(self.archive.cursor(other.source.id))
-        self.archive.db.execute('DROP TRIGGER fail_one')
+        self.archive.db.execute('ALTER TABLE channels DROP CONSTRAINT fail_one')
         transport.differences = [Difference(11, [live])]
         await collect(transport, self.archive, transport.source)
         self.assertEqual(transport.requests[-1], 10)
@@ -185,7 +182,7 @@ class TelethonAdapterTest(unittest.IsolatedAsyncioTestCase):
             root = Path(temporary)
             config = root / 'sources.json'
             config.write_text(json.dumps({'channels': ['example']}))
-            database = root / 'archive.sqlite3'
+            database = root / 'archive'
             with (patch('news_futures.adapters.telegram.open_client', return_value=client),
                   patch('news_futures.adapters.telegram.TelethonTransport', return_value=transport),
                   patch('sys.stdout', new_callable=StringIO)):
@@ -196,6 +193,7 @@ class TelethonAdapterTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(len(archive.report()['revisions']), 1)
                 self.assertEqual(archive.report()['revisions'][0]['status'], 'context_only')
                 saved = archive.db.execute('SELECT state FROM sessions').fetchone()
+                assert saved is not None
                 self.assertEqual(json.loads(saved['state'])['qts'], 2)
                 self.assertEqual(client.disconnect.await_count, 2)
                 self.assertEqual(len(transport.windows), 1)
@@ -217,7 +215,7 @@ class TelethonAdapterTest(unittest.IsolatedAsyncioTestCase):
 
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            database = root / 'archive.sqlite3'
+            database = root / 'archive'
             with (patch('news_futures.adapters.telegram.open_client', return_value=client),
                   patch('news_futures.adapters.telegram.TelethonTransport', return_value=transport),
                   patch('sys.stdout', new_callable=StringIO)):
@@ -268,7 +266,7 @@ class TelethonAdapterTest(unittest.IsolatedAsyncioTestCase):
                   patch('news_futures.adapters.telegram.TelethonTransport', return_value=ControlledTransport()),
                   patch('sys.stdout', new_callable=StringIO)):
                 task = asyncio.create_task(run_telegram(
-                    ['example'], root / 'archive.sqlite3', root / 'user.session', False, process=process,
+                    ['example'], root / 'archive', root / 'user.session', False, process=process,
                 ))
                 try:
                     await asyncio.wait_for(started.wait(), 2)

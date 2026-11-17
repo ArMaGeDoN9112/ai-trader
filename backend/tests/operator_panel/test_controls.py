@@ -11,18 +11,18 @@ from uuid import uuid4
 
 import httpx
 
-from news_futures.adapters.sqlite.events import EventArchive
+from news_futures.adapters.postgres.events import EventArchive
 from news_futures.application.config import RuntimeSettings, cycle_inputs
-from news_futures.adapters.sqlite.operator_state import OperatorState
+from news_futures.adapters.postgres.operator_state import OperatorState
 from news_futures.adapters.models.chat import chat_model
 from news_futures.adapters.models.decisions import choices
-from news_futures.adapters.sqlite.runtime import SQLiteRuntimeStorage
+from news_futures.adapters.postgres.runtime import PostgresRuntimeStorage
 from news_futures.adapters.tbank.rest import limit_broker_read
 from news_futures.application.ports.models import AnalysisModels
 from news_futures.application.runtime import Runtime
 from news_futures.common.artifacts import write_json
 from news_futures.common.errors import CredentialsError
-from news_futures.adapters.sqlite.publications import Archive
+from news_futures.adapters.postgres.publications import Archive
 from news_futures.adapters.http.news import trace_view
 from news_futures.adapters.http.settings import Preferences, profile_view
 from news_futures.adapters.http.supervisor import Worker
@@ -165,7 +165,7 @@ class ManualCloseTest(RiskFixture):
 
     def apply_close(self) -> None:
         runtime = Runtime(self.settings, lambda *_: self.broker, lambda *_: self.broker,
-                          models=AnalysisModels(chat_model, choices), storage=SQLiteRuntimeStorage(self.settings),
+                          models=AnalysisModels(chat_model, choices), storage=PostgresRuntimeStorage(self.settings),
                           read_limit=limit_broker_read, run_id='controlled-run', on_controls=lambda **event: None)
         with patch('builtins.print'):
             runtime.refresh()

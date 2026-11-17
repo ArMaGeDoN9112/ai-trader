@@ -1,4 +1,18 @@
 services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: trader
+      POSTGRES_USER: trader
+      POSTGRES_PASSWORD: ${TRADER_POSTGRES_PASSWORD:-trader-local}
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "trader", "-d", "trader"]
+      interval: 5s
+      timeout: 3s
+      retries: 6
+
   backend:
     build: ./backend
     command: ["operator-api", ".local/runtime.json", "--bind", "0.0.0.0"]
@@ -7,6 +21,11 @@ services:
     stop_grace_period: 60s
     environment:
       XDG_STATE_HOME: /state
+      DATABASE_URL: "host=postgres dbname=trader user=trader"
+      PGPASSWORD: ${TRADER_POSTGRES_PASSWORD:-trader-local}
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
       - type: bind
         source: ./.local
@@ -29,4 +48,5 @@ services:
       - "127.0.0.1:8765:80"
 
 volumes:
+  postgres:
   telegram:

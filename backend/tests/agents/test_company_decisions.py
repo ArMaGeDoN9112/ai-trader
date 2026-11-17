@@ -8,7 +8,9 @@ from unittest.mock import patch
 
 from news_futures.adapters.cli import main
 from news_futures.domain.contracts import RoleSettings
-from news_futures.adapters.sqlite.events import EventArchive
+from news_futures.adapters.postgres.database import connect, schema_name
+from psycopg import sql
+from news_futures.adapters.postgres.events import EventArchive
 from news_futures.application.analysis.events import correct_event, event_report, match_event
 from news_futures.common.artifacts import write_json
 from news_futures.domain.publications import utc_now
@@ -20,7 +22,7 @@ class CompanyDecisionTest(unittest.TestCase):
         temporary = TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
-        self.database = self.root / 'events.sqlite3'
+        self.database = self.root / 'events'
         now = utc_now().isoformat().replace('+00:00', 'Z')
         self.snapshot: dict[str, Any] = {
             'account': {'id': 'sandbox-account', 'observed_at': now, 'currency': 'RUB',
@@ -290,6 +292,8 @@ class CompanyDecisionTest(unittest.TestCase):
         self.assertTrue(trace['calls'][-1]['output']['approved'])
         self.assertIsNone(trace['approved_proposal'])
 
-    def test_corrupt_database_reports_failure_when_saving_entry_reason(self) -> None:
-        self.database.write_text('Invalid SQLite file', encoding='utf-8')
+    def test_incompatible_schema_reports_failure_when_saving_entry_reason(self) -> None:
+        with connect(self.database) as db:
+            db.execute(sql.SQL('CREATE SCHEMA {}').format(sql.Identifier(schema_name(self.database))))
+            db.execute('CREATE TABLE position_entry_reasons (invalid TEXT)')
         self.assertEqual(self.save_entry_reason('Исходная причина входа.'), 1)

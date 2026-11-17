@@ -2,7 +2,6 @@ import argparse
 import json
 import logging
 from pathlib import Path
-import sqlite3
 import sys
 from uuid import uuid4
 
@@ -41,10 +40,10 @@ def main() -> int:
     telegram_command = commands.add_parser('telegram', help='Непрерывный приём Telegram, обработка — имитация')
     telegram_command.add_argument('--session', type=Path)
     telegram_command.add_argument('--config', type=Path, default=TELEGRAM_SOURCES)
-    telegram_command.add_argument('--database', type=Path, default=Path('.local/telegram/archive.sqlite3'))
+    telegram_command.add_argument('--database', type=Path, default=Path('.local/telegram/archive'))
     telegram_command.add_argument('--once', action='store_true', help='История и все доступные изменения, затем выход')
     archive_command = commands.add_parser('publications', help='Прочитать архив, редакции и статусы')
-    archive_command.add_argument('--database', type=Path, default=Path('.local/telegram/archive.sqlite3'))
+    archive_command.add_argument('--database', type=Path, default=Path('.local/telegram/archive'))
     match_command = commands.add_parser('event-match', help='Сопоставить редакцию из трассы route с событием')
     match_command.add_argument('directory', type=Path)
     match_command.add_argument('--config', type=Path, default=EVENT_SETTINGS)
@@ -70,6 +69,8 @@ def main() -> int:
     operator_command.add_argument('config', type=Path)
     operator_command.add_argument('--port', type=int, default=8765)
     operator_command.add_argument('--bind', choices=('127.0.0.1', '0.0.0.0'), default='127.0.0.1')
+    migration_command = commands.add_parser('migrate-sqlite', help='Перенести хранилища runtime в PostgreSQL')
+    migration_command.add_argument('config', type=Path)
     status_command = commands.add_parser('runtime-status', help='Состояние рабочего запуска и решения')
     status_command.add_argument('config', type=Path)
     status_command.add_argument('--decision')
@@ -79,15 +80,25 @@ def main() -> int:
     trade_command.add_argument('--contract', required=True)
     trade_command.add_argument('--company')
     trade_command.add_argument('--approval', type=Path)
-    trade_command.add_argument('--publications', type=Path, default=Path('.local/telegram/archive.sqlite3'))
+    trade_command.add_argument('--publications', type=Path, default=Path('.local/telegram/archive'))
     trade_command.add_argument('--ca-file', type=Path)
     trade_command.add_argument('--allow-independent-stops', action='store_true')
     trade_command.add_argument('--transport', choices=('rest', 'mcp'), default='rest')
     for command in (match_command, events_command, correct_command, decision_command, reason_command,
                     trades_command, trade_command):
-        command.add_argument('--database', type=Path, default=Path('.local/events.sqlite3'))
+        command.add_argument('--database', type=Path, default=Path('.local/events'))
     args = parser.parse_args()
+    database_errors: tuple[type[Exception], ...] = ()
+    if args.command not in {'run', 'show'}:
+        from psycopg import Error
+        from news_futures.adapters.postgres.database import archive_exists
+        database_errors = (Error,)
     try:
+        if args.command == 'migrate-sqlite':
+            from news_futures.adapters.postgres.migrate import migrate
+            from news_futures.application.config import load_settings
+            print(json.dumps(migrate(load_settings(args.config).data_dir)))
+            return 0
         if args.command == 'operator-api':
             if not 0 <= args.port <= 65535:
                 operator_command.error('Укажите порт от 0 до 65535.')
@@ -101,7 +112,7 @@ def main() -> int:
             try:
                 from news_futures.bootstrap.runtime import run_runtime
                 from news_futures.common.errors import RuntimeErrorInfo
-                from news_futures.adapters.sqlite.runtime_report import runtime_report
+                from news_futures.adapters.postgres.runtime_report import runtime_report
             except ImportError:
                 print('Установите зависимости по docs/runtime.md.', file=sys.stderr)
                 return 1
@@ -174,8 +185,8 @@ def main() -> int:
                 from news_futures.adapters.models.chat import chat_model
                 if args.command == 'analyze-event':
                     from news_futures.application.analysis.decisions import analyze_event
-                    from news_futures.adapters.sqlite.events import EventArchive
-                    if not args.database.is_file():
+                    from news_futures.adapters.postgres.events import EventArchive
+                    if not archive_exists(args.database, 'event_revisions'):
                         raise ValueError('Архив событий не найден')
                     directory = args.directory or Path('.local/news-futures-07') / str(uuid4())
                     with EventArchive(args.database) as events:
@@ -201,9 +212,10 @@ def main() -> int:
                 print(f'OpenRouter: {type(error).__name__}. См. локальную инструкцию README.', file=sys.stderr)
                 return 1
         if args.command == 'entry-reason':
+            from psycopg import Error
             from news_futures.common.errors import StorageError
             from news_futures.domain.company import EntryReason
-            from news_futures.adapters.sqlite.events import EventArchive
+            from news_futures.adapters.postgres.events import EventArchive
             try:
                 entry = EntryReason.model_validate_json(args.record.read_bytes())
             except ValueError as error:
@@ -211,7 +223,7 @@ def main() -> int:
             try:
                 with EventArchive(args.database) as events, events.transaction(immediate=True):
                     events.save_entry_reason(entry)
-            except (sqlite3.DatabaseError, StorageError) as error:
+            except (Error, StorageError) as error:
                 raise ValueError('Не удалось сохранить причину входа в базе событий') from error
             print('Причина входа сохранена.')
             return 0
@@ -231,8 +243,8 @@ def main() -> int:
                 print(f'Telegram: {type(error).__name__}. См. локальную инструкцию README.', file=sys.stderr)
                 return 1
         if args.command == 'publications':
-            from news_futures.adapters.sqlite.publications import Archive
-            if not args.database.is_file():
+            from news_futures.adapters.postgres.publications import Archive
+            if not archive_exists(args.database, 'revisions'):
                 raise ValueError('Архив не найден')
             archive = Archive(args.database)
             try:
@@ -241,21 +253,21 @@ def main() -> int:
                 archive.db.close()
             return 0
         if args.command == 'sandbox-trades':
-            from news_futures.adapters.sqlite.events import EventArchive
-            from news_futures.adapters.sqlite.trades import trade_journal
-            if not args.database.is_file():
+            from news_futures.adapters.postgres.events import EventArchive
+            from news_futures.adapters.postgres.trades import trade_journal
+            if not archive_exists(args.database, 'event_revisions'):
                 raise ValueError('Архив событий не найден')
             with EventArchive(args.database) as events:
                 print(json.dumps(trade_journal(events.db), ensure_ascii=False, indent=2))
             return 0
         if args.command == 'sandbox-trade':
             from news_futures.bootstrap.sandbox import run_sandbox_trade
-            if not args.database.is_file():
+            if not archive_exists(args.database, 'event_revisions'):
                 raise ValueError('Архив событий не найден')
             if args.action == 'start':
                 if not args.allow_independent_stops:
                     raise ValueError('Для входа требуется --allow-independent-stops')
-                if args.approval is None or not args.company or not args.publications.is_file():
+                if args.approval is None or not args.company or not archive_exists(args.publications, 'revisions'):
                     raise ValueError('Укажите --approval, --company и существующий архив --publications')
             elif args.approval is not None or args.company is not None:
                 raise ValueError('--approval и --company используются только для start')
@@ -277,9 +289,9 @@ def main() -> int:
             return 1 if result['status'] in ('blocked', 'rejected') else 0
         if args.command in {'event-match', 'events', 'event-correct'}:
             from news_futures.adapters.models.chat import chat_model
-            from news_futures.adapters.sqlite.events import EventArchive
+            from news_futures.adapters.postgres.events import EventArchive
             from news_futures.application.analysis.events import correct_event, event_report, match_route
-            if args.command != 'event-match' and not args.database.is_file():
+            if args.command != 'event-match' and not archive_exists(args.database, 'event_revisions'):
                 raise ValueError('Архив событий не найден')
             with EventArchive(args.database) as events:
                 if args.command == 'event-match':
@@ -302,6 +314,9 @@ def main() -> int:
             result = json.loads((args.directory / 'trace.json').read_text(encoding='utf-8'))
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
+    except database_errors as error:
+        print(f'PostgreSQL: {type(error).__name__}. См. docs/runtime.md.', file=sys.stderr)
+        return 1
     except (OSError, ValueError) as error:
         print(f'Ошибка: {error}', file=sys.stderr)
         return 1

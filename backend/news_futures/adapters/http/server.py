@@ -4,7 +4,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
 from secrets import compare_digest, token_urlsafe
-import sqlite3
 import sys
 from threading import Lock
 from time import monotonic
@@ -12,6 +11,7 @@ from typing import Any
 from urllib.parse import parse_qs
 
 import httpx
+import psycopg
 
 from news_futures.adapters.http.news import (
     artifact, catalog_series, enqueue_test_news, fields, news_view, testing_view, trace_view, visible,
@@ -21,6 +21,7 @@ from news_futures.adapters.http.supervisor import Worker
 from news_futures.adapters.http.trades import trades_view
 from news_futures.adapters.tbank.futures_catalog import active_futures
 from news_futures.adapters.tbank.rest import TBankReader, limit_broker_read, sandbox_client
+from news_futures.common.errors import RuntimeErrorInfo
 from news_futures.domain.publications import utc_now
 
 
@@ -86,7 +87,7 @@ class OperatorHandler(BaseHTTPRequestHandler):
                     value = visible(testing_view(worker.directory))
                 else:
                     value = worker.controls()
-            except (sqlite3.Error, httpx.HTTPError, OSError, ValueError, KeyError, TypeError):
+            except (psycopg.Error, httpx.HTTPError, OSError, ValueError, KeyError, TypeError):
                 result = {'/api/tickers': 'market_unavailable', '/api/account-balance': 'balance_unavailable'}
                 self.reply(503, {'result': result.get(path, 'archive_unavailable')})
             else:
@@ -121,7 +122,7 @@ class OperatorHandler(BaseHTTPRequestHandler):
                 code, result = self.server.worker.configure(self.path.removeprefix('/api/'), body)
             except (ValueError, TimeoutError):
                 code, result = 400, 'invalid_test_news' if self.path == '/api/testing' else 'invalid_request'
-            except (OSError, sqlite3.Error):
+            except (OSError, psycopg.Error):
                 code, result = 503, 'archive_unavailable' if self.path == '/api/testing' else 'settings_unavailable'
             self.reply(code, {'result': result})
         else:
@@ -174,15 +175,20 @@ class OperatorServer(ThreadingHTTPServer):
 def serve_operator(config: Path, port: int, bind: str) -> int:
     from news_futures.application.catalog import catalog_rows, load_catalog
     from news_futures.application.config import load_settings
-    from news_futures.adapters.sqlite.operator_state import OperatorState
+    from news_futures.adapters.postgres.migrate import require_migration
+    from news_futures.adapters.postgres.operator_state import OperatorState
     from news_futures.adapters.telegram import configured_channels
 
     try:
         settings = load_settings(config)
+        require_migration(settings.data_dir)
         channels = configured_channels(settings.sources)
         preferences = Preferences(settings, channels, OperatorState(settings.data_dir))
         profile, channels, payload = preferences.prepare()
-    except (OSError, ValueError, TypeError, KeyError, sqlite3.Error):
+    except RuntimeErrorInfo as error:
+        print(error, file=sys.stderr)
+        return 1
+    except (OSError, ValueError, TypeError, KeyError, psycopg.Error):
         print('Проверьте общую конфигурацию и список источников. См. docs/runtime.md.', file=sys.stderr)
         return 1
     worker = Worker(settings.data_dir, profile, [sys.executable, '-m', 'news_futures.adapters.http.worker'],

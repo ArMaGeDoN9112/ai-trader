@@ -8,7 +8,6 @@ from itertools import chain
 import json
 import os
 from pathlib import Path
-import sqlite3
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
@@ -28,8 +27,10 @@ from tests.support.telegram import ControlledTransport
 from news_futures.adapters.cli import main
 from news_futures.adapters.models.groq import GroqChat
 from news_futures.domain.contracts import Review
-from news_futures.adapters.sqlite.events import EventArchive
-from news_futures.adapters.sqlite.checkpoints import checkpoint_serializer
+from news_futures.adapters.postgres.database import archive_exists
+from news_futures.adapters.postgres.locks import exclusive_operation
+from news_futures.adapters.postgres.events import EventArchive
+from news_futures.adapters.postgres.checkpoints import checkpoint_serializer
 from news_futures.common.paths import DECISIONS_SETTINGS, GROQ_SETTINGS, REVIEW_SETTINGS, TELEGRAM_SOURCES
 from news_futures.domain.execution import Fill
 from news_futures.application.ports.broker import UnsupportedFuturesUnits
@@ -39,13 +40,13 @@ from news_futures.application.ports.models import AnalysisModels
 from news_futures.common.artifacts import replace_json, write_json
 from news_futures.adapters.http.news import news_view, trace_view
 from news_futures.adapters.http.settings import Preferences
-from news_futures.adapters.sqlite.publications import Archive
+from news_futures.adapters.postgres.publications import Archive
 from news_futures.domain.publications import Publication, utc_now
 from news_futures.application.runtime import Runtime
 from news_futures.bootstrap.runtime import run_runtime
 from news_futures.application.config import load_settings
-from news_futures.adapters.sqlite.operator_state import OperatorState
-from news_futures.adapters.sqlite.runtime import SQLiteRuntimeStorage
+from news_futures.adapters.postgres.operator_state import OperatorState
+from news_futures.adapters.postgres.runtime import PostgresRuntimeStorage
 from news_futures.application.workflow import Shutdown
 from news_futures.adapters.tbank.futures_catalog import save_catalog
 from news_futures.adapters.tbank.rest import SANDBOX_REST, TBankReader, limit_broker_read, restrict_to_reads
@@ -285,8 +286,10 @@ class RuntimeAcceptance(RiskFixture):
         revision = enqueue_test_news(self.root, {'text': 'SBER опубликовал повышенный прогноз.'})
         archive = Archive(self.publications_db)
         self.addCleanup(archive.db.close)
-        saved = json.loads(archive.db.execute('SELECT publication FROM revisions WHERE revision = ?',
-                                              (revision,)).fetchone()[0])
+        row = archive.db.execute('SELECT publication FROM revisions WHERE revision = %s',
+                                              (revision,)).fetchone()
+        assert row is not None
+        saved = json.loads(row['publication'])
         at = datetime.fromisoformat(saved['published_at'])
         incoming = Publication(saved['source'], saved['external_id'], saved['url'], saved['text'], at, at)
         self.serve(self.proposal('enter', incoming), review(), started_at=at + timedelta(microseconds=1))
@@ -621,7 +624,7 @@ class RuntimeAcceptance(RiskFixture):
         controls = OperatorState(self.root)
         settings = load_settings(self.profile)
         runtime = Runtime(settings, lambda *_: self.broker, None,
-                          models=AnalysisModels(chat_model, choices), storage=SQLiteRuntimeStorage(settings),
+                          models=AnalysisModels(chat_model, choices), storage=PostgresRuntimeStorage(settings),
                           read_limit=limit_broker_read,
                           on_controls=lambda **event: None)
         runtime.broker_ready = True
@@ -641,6 +644,7 @@ class RuntimeAcceptance(RiskFixture):
         with (closing(archive.db), EventArchive(self.events_db) as events,
               patch('news_futures.application.runtime.analyze_news', side_effect=analyze)):
             archive.initialize_runtime()
+            archive.save_batch(first.source, 1, [first, second, third])
             first_result = {'revision': first.revision_key(), 'mode': 'observation', 'inputs_saved': False}
             with self.assertRaises(Shutdown):
                 runtime.process_revision(archive, events, first.record(), first_result)
@@ -688,7 +692,7 @@ class RuntimeAcceptance(RiskFixture):
 
         applied: list[dict[str, Any]] = []
         runtime = Runtime(settings, lambda *_: self.broker, None,
-                          models=AnalysisModels(chat_model, choices), storage=SQLiteRuntimeStorage(settings),
+                          models=AnalysisModels(chat_model, choices), storage=PostgresRuntimeStorage(settings),
                           read_limit=limit_broker_read,
                           on_controls=lambda **event: applied.append(event),
                           started_at=self.started_at)
@@ -723,7 +727,7 @@ class RuntimeAcceptance(RiskFixture):
         self.assertEqual(last['position']['quantity'], 3)
         settings = load_settings(self.profile)
         runtime = Runtime(settings, lambda *_: self.broker, lambda *_: self.broker,
-                          models=AnalysisModels(chat_model, choices), storage=SQLiteRuntimeStorage(settings),
+                          models=AnalysisModels(chat_model, choices), storage=PostgresRuntimeStorage(settings),
                           read_limit=limit_broker_read,
                           run_id='test-run')
         with (patch.object(self.broker, 'read_trade', side_effect=ConnectionError('private connection error')),
@@ -741,8 +745,8 @@ class RuntimeAcceptance(RiskFixture):
         credentials.write_text('[openrouter]\napi_key = "test-key"\n', encoding='utf-8')
         settings = load_settings(self.profile)
         payload = json.dumps({'settings': settings.model_dump(mode='json'), 'channels': ['markettwits']})
-        with closing(sqlite3.connect(self.root / 'runtime-lock.sqlite3')) as lock:
-            lock.execute('BEGIN IMMEDIATE')
+        with exclusive_operation(self.root / 'runtime-lock') as lock:
+            self.assertTrue(lock)
             result = subprocess.run(
                 [sys.executable, '-m', 'news_futures.adapters.http.worker', 'test-run'],
                 cwd=self.root, env=os.environ | {'PYTHONPATH': str(Path(__file__).resolve().parents[2])},
@@ -750,9 +754,9 @@ class RuntimeAcceptance(RiskFixture):
             )
             self.assertEqual(result.returncode, 1)
             self.assertEqual(json.loads(result.stdout), {'failure': 'directory_busy'})
-        self.assertFalse((self.root / 'publications.sqlite3').exists())
+        self.assertFalse(archive_exists(self.root / 'publications', 'revisions'))
         self.serve()
-        self.assertTrue((self.root / 'publications.sqlite3').exists())
+        self.assertTrue(archive_exists(self.root / 'publications', 'revisions'))
 
     def test_restart_reconciles_entry_with_lost_response_before_processing(self) -> None:
         self.sandbox()
@@ -837,7 +841,7 @@ class RuntimeAcceptance(RiskFixture):
         incoming = self.news(self.rbc, 'SBER raised its forecast.')
         settings = load_settings(self.profile)
         runtime = Runtime(settings, lambda *_: self.broker, lambda *_: self.broker,
-                          models=AnalysisModels(chat_model, choices), storage=SQLiteRuntimeStorage(settings),
+                          models=AnalysisModels(chat_model, choices), storage=PostgresRuntimeStorage(settings),
                           read_limit=limit_broker_read,
 
                           started_at=self.started_at)

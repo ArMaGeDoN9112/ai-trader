@@ -2,7 +2,7 @@ from dataclasses import replace
 from datetime import timedelta
 import json
 from pathlib import Path
-import sqlite3
+import psycopg
 import subprocess
 import sys
 import tempfile
@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from news_futures.application.simulation import process_publication
-from news_futures.adapters.sqlite.publications import Archive
+from news_futures.adapters.postgres.publications import Archive
 from news_futures.domain.publications import Publication, utc_now
 
 
@@ -18,7 +18,7 @@ class ArchiveTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
-        self.path = Path(self.temporary.name) / 'archive.sqlite3'
+        self.path = Path(self.temporary.name) / 'archive'
         self.archive = Archive(self.path)
         self.addCleanup(lambda: self.archive.db.close())
         now = utc_now()
@@ -54,15 +54,12 @@ class ArchiveTest(unittest.TestCase):
     def test_storage_failure_rolls_back_revision_job_and_cursor(self) -> None:
         original = self.publication
         self.archive.save_batch(original.source, 10, [])
-        self.archive.db.executescript('''
-            CREATE TRIGGER fail_cursor BEFORE INSERT ON channels
-            BEGIN SELECT RAISE(ABORT, 'disk failure'); END;
-        ''')
-        with self.assertRaises(sqlite3.IntegrityError):
+        self.archive.db.execute('ALTER TABLE channels ADD CONSTRAINT fail_cursor CHECK (pts <> 11)')
+        with self.assertRaises(psycopg.errors.CheckViolation):
             self.archive.save_batch(original.source, 11, [original])
         self.assertEqual(self.archive.report()['revisions'], [])
         self.assertEqual(self.archive.cursor(original.source)['pts'], 10)  # type: ignore[index]
-        self.archive.db.execute('DROP TRIGGER fail_cursor')
+        self.archive.db.execute('ALTER TABLE channels DROP CONSTRAINT fail_cursor')
         self.archive.save_batch(original.source, 11, [original])
         self.assertEqual(self.archive.report()['revisions'][0]['status'], 'pending')
 
@@ -81,7 +78,7 @@ class ArchiveTest(unittest.TestCase):
         self.archive.process_pending(process_publication)
         root = Path(__file__).resolve().parents[2]
         result = subprocess.run(
-            [sys.executable, '-I', '-S', str(root / 'tests/offline_runner.py'),
+            [sys.executable, '-I', str(root / 'tests/offline_runner.py'),
              'publications', '--database', str(self.path)],
             capture_output=True, text=True, encoding='utf-8', cwd=root, timeout=10,
         )
@@ -101,7 +98,7 @@ class ArchiveTest(unittest.TestCase):
 
     def test_pending_publication_expires_before_processing(self) -> None:
         self.archive.save_batch(self.publication.source, 1, [self.publication])
-        with patch('news_futures.adapters.sqlite.publications.utc_now', return_value=utc_now() + timedelta(minutes=16)):
+        with patch('news_futures.adapters.postgres.publications.utc_now', return_value=utc_now() + timedelta(minutes=16)):
             self.archive.process_pending(process_publication)
         self.assertEqual(self.archive.report()['revisions'][0]['status'], 'context_only')
 

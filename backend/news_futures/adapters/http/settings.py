@@ -1,15 +1,16 @@
 """Validate and apply local operator profile edits."""
 
 from collections.abc import Iterator
-from contextlib import closing, contextmanager
+from contextlib import contextmanager
 import json
-import sqlite3
 from typing import Any
 
 from news_futures.adapters.credentials import load_token
 from news_futures.adapters.http.news import read_archive
-from news_futures.adapters.sqlite.operator_state import OperatorState
-from news_futures.adapters.sqlite.trades import active_cycles
+from news_futures.adapters.postgres.database import has_table
+from news_futures.adapters.postgres.locks import exclusive_operation
+from news_futures.adapters.postgres.operator_state import OperatorState
+from news_futures.adapters.postgres.trades import active_cycles
 from news_futures.adapters.tbank.rest import TBankReader, sandbox_client
 from news_futures.adapters.telegram import validate_channels
 from news_futures.application.config import CHAT_ROLES, RuntimeSettings, cycle_inputs, groq_models, role_models
@@ -73,23 +74,21 @@ class Preferences:
 
     @contextmanager
     def exclusive_profile(self) -> Iterator[None]:
-        self.base.data_dir.mkdir(parents=True, exist_ok=True)
-        with (closing(sqlite3.connect(self.base.data_dir / 'runtime-lock.sqlite3', timeout=0)) as runtime,
-              closing(sqlite3.connect(str(self.base.events) + '.sandbox-lock', timeout=0)) as execution):
-            for connection in (runtime, execution):
-                try:
-                    connection.execute('BEGIN IMMEDIATE')
-                except sqlite3.OperationalError as error:
-                    raise ValueError('account_unconfirmed') from error
-            yield
+        with exclusive_operation(self.base.data_dir / 'runtime-lock') as runtime:
+            if not runtime:
+                raise ValueError('account_unconfirmed')
+            with exclusive_operation(self.base.events, 'sandbox') as execution:
+                if not execution:
+                    raise ValueError('account_unconfirmed')
+                yield
 
     def require_flat(self, settings: RuntimeSettings) -> None:
         with read_archive(settings.events) as db:
             if db is not None:
                 if active_cycles(db, settings.account_id):
                     raise ValueError('account_has_operations')
-                if db.execute("SELECT 1 FROM sqlite_master WHERE name = 'entry_reservations'").fetchone() and db.execute(
-                    'SELECT 1 FROM entry_reservations WHERE account_id = ?', (settings.account_id,),
+                if has_table(db, 'entry_reservations') and db.execute(
+                    'SELECT 1 FROM entry_reservations WHERE account_id = %s', (settings.account_id,),
                 ).fetchone():
                     raise ValueError('account_has_operations')
         try:

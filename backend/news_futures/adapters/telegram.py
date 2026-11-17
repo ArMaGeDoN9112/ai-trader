@@ -15,7 +15,7 @@ from typing import Any, Protocol
 from uuid import uuid4
 
 from news_futures.adapters.credentials import load_credentials
-from news_futures.adapters.sqlite.publications import Archive
+from news_futures.adapters.postgres.publications import Archive
 from news_futures.application.simulation import process_publication
 from news_futures.common.errors import CredentialsError
 from news_futures.common.paths import PACKAGE
