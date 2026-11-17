@@ -21,6 +21,7 @@ from news_futures.application.trading.executor import AUTONOMOUS_PROTECTION_UNAV
 from news_futures.application.workflow import Shutdown, analyze_news, signal_deadline
 from news_futures.common.artifacts import replace_json
 from news_futures.common.errors import error_code
+from news_futures.common.paths import persistent_path
 from news_futures.domain.company import CompanyProposal, OpenPosition, SignalCandidate
 from news_futures.domain.contracts import Aggregator
 from news_futures.domain.publications import TEST_SOURCE, publication_digest, utc_now
@@ -293,7 +294,7 @@ class Runtime:
         trade, = trades
         cycle = trade['reservation']['id']
         status, reason = trade['status'], trade['reason']
-        approval_path = str(approval.resolve())
+        approval_path = persistent_path(approval)
         is_close = trade['approval'] != approval_path
         abandoned = next((event['details'] for event in reversed(trade['events'])
                           if event['kind'] == 'reviewed_close_abandoned'

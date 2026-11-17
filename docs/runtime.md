@@ -18,6 +18,12 @@ docker compose run --rm backend sandbox-diagnostics .local/catalog --config .loc
 
 Для остановки стека используй `docker compose down`, для журналов — `docker compose logs -f backend frontend`. После правок файлов рабочего профиля перезапусти бэкенд командой `docker compose restart backend` и обнови вкладку.
 
+## Панель и обработчик в Windows
+
+Для доступа к OpenRouter через VPN Windows оставь PostgreSQL в Compose и запусти панель и обработчик на хосте. Из корня проекта установи Python-зависимости в `.venv` командой `python -m pip install -r backend/requirements.txt`, затем установи зависимости фронтенда через `npm.cmd --prefix frontend ci`. Для Telegram используется локальная сессия Windows. Команда `telegram-login` из корня проекта ищет Python-пакет через `$env:PYTHONPATH = (Resolve-Path .\backend).Path`.
+
+Запусти `pwsh -NoProfile -File .\run-local.ps1`. Скрипт соберёт фронтенд, остановит контейнеры панели и бэкенда, откроет существующую базу на `127.0.0.1:55432` и поднимет панель на [127.0.0.1:8765](http://127.0.0.1:8765/). Запусти обработчик из панели. Чтобы вернуться к запуску всего стека через Compose, сначала останови локальную панель сочетанием `Ctrl+C` в её терминале и выполни `docker compose up --build -d`.
+
 ## Переход с SQLite
 
 Из корня проекта останови панель, обработчик и любые отдельные команды, которые пишут в старые архивы. Затем выполни:

@@ -3,6 +3,7 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
+import re
 from secrets import compare_digest, token_urlsafe
 import sys
 from threading import Lock
@@ -55,6 +56,26 @@ class OperatorHandler(BaseHTTPRequestHandler):
         tokens = self.headers.get_all('X-Operator-Session', [])
         return len(tokens) == 1 and compare_digest(tokens[0].encode(), self.server.session.encode())
 
+    def serve_frontend(self, path: str) -> bool:
+        root = self.server.frontend
+        if root is None:
+            return False
+        if path in ('/', '/index.html'):
+            file, mime = root / 'index.html', 'text/html'
+        elif re.fullmatch(r'/assets/[a-zA-Z0-9_.-]+\.(js|css)', path):
+            file = root / path[1:]
+            mime = 'text/css' if file.suffix == '.css' else 'text/javascript'
+        else:
+            return False
+        if not file.resolve().is_relative_to(root):
+            return False
+        try:
+            body = file.read_bytes()
+        except FileNotFoundError:
+            return False
+        self.reply(200, body, mime=mime)
+        return True
+
     def do_GET(self) -> None:
         path, _, query_string = self.path.partition('?')
         if not self.local():
@@ -95,7 +116,7 @@ class OperatorHandler(BaseHTTPRequestHandler):
                     self.reply(404, {'result': 'not_found'})
                 else:
                     self.reply(200, value)
-        else:
+        elif not self.serve_frontend(path):
             self.reply(404, {'result': 'not_found'})
 
     def do_POST(self) -> None:
@@ -132,13 +153,15 @@ class OperatorHandler(BaseHTTPRequestHandler):
 class OperatorServer(ThreadingHTTPServer):
     def __init__(self, worker: Worker, channels: list[str], port: int, catalog: dict[str, Any] | None = None,
                  series: dict[str, Any] | None = None, *, bind: str = '127.0.0.1',
-                 share_companies: dict[str, str] | None = None, ca_file: Path | None = None):
+                 share_companies: dict[str, str] | None = None, ca_file: Path | None = None,
+                 frontend: Path | None = None):
         self.worker = worker
         self.worker.channels = channels
         self.catalog = catalog or {}
         self.series = series or {}
         self.share_companies = share_companies or {}
         self.ca_file = ca_file
+        self.frontend = frontend.resolve() if frontend is not None else None
         self.market_lock = Lock()
         self.market_cache: dict[str, Any] = {}
         self.market_until = 0.0
@@ -172,7 +195,7 @@ class OperatorServer(ThreadingHTTPServer):
         pass
 
 
-def serve_operator(config: Path, port: int, bind: str) -> int:
+def serve_operator(config: Path, port: int, bind: str, *, frontend: Path | None = None) -> int:
     from news_futures.application.catalog import catalog_rows, load_catalog
     from news_futures.application.config import load_settings
     from news_futures.adapters.postgres.migrate import require_migration
@@ -180,6 +203,8 @@ def serve_operator(config: Path, port: int, bind: str) -> int:
     from news_futures.adapters.telegram import configured_channels
 
     try:
+        if frontend is not None and not (frontend / 'index.html').is_file():
+            raise RuntimeErrorInfo('Frontend build not found. Run npm run build in frontend.')
         settings = load_settings(config)
         require_migration(settings.data_dir)
         channels = configured_channels(settings.sources)
@@ -205,7 +230,7 @@ def serve_operator(config: Path, port: int, bind: str) -> int:
         pass
     try:
         with OperatorServer(worker, channels, port, catalog, series, bind=bind, share_companies=share_companies,
-                            ca_file=settings.ca_file) as server:
+                            ca_file=settings.ca_file, frontend=frontend) as server:
             print(f'API оператора: {bind}:{server.server_port}', flush=True)
             server.serve_forever()
     except KeyboardInterrupt:

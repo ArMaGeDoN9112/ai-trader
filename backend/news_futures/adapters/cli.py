@@ -73,6 +73,7 @@ def main() -> int:
     operator_command.add_argument('config', type=Path)
     operator_command.add_argument('--port', type=int, default=8765)
     operator_command.add_argument('--bind', choices=('127.0.0.1', '0.0.0.0'), default='127.0.0.1')
+    operator_command.add_argument('--frontend', type=Path)
     migration_command = commands.add_parser('migrate-sqlite', help='Перенести хранилища runtime в PostgreSQL')
     migration_command.add_argument('config', type=Path)
     status_command = commands.add_parser('runtime-status', help='Состояние рабочего запуска и решения')
@@ -120,7 +121,7 @@ def main() -> int:
                 operator_command.error('Укажите порт от 0 до 65535.')
             from news_futures.adapters.http.server import serve_operator
             try:
-                return serve_operator(args.config, args.port, args.bind)
+                return serve_operator(args.config, args.port, args.bind, frontend=args.frontend)
             except ImportError:
                 print('Установите зависимости по docs/runtime.md.', file=sys.stderr)
                 return 1

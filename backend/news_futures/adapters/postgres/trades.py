@@ -11,6 +11,7 @@ from news_futures.adapters.postgres.database import has_table, initialize
 from news_futures.adapters.postgres.locks import exclusive_operation
 from news_futures.application.ports.storage import TradeEvidence
 from news_futures.common.errors import Rejected
+from news_futures.common.paths import persistent_path
 from news_futures.domain.publications import utc_now
 from news_futures.domain.terms import CloseIntent, EntryReservation
 
@@ -75,7 +76,7 @@ def read_evidence(db: psycopg.Connection[dict[str, Any]], cycle_id: str) -> Trad
 def trade_journal(
     db: psycopg.Connection[dict[str, Any]], *, cycle_id: str | None = None, approval: Path | None = None,
 ) -> list[dict[str, Any]]:
-    approval_path = str(approval.resolve()) if approval else None
+    approval_path = persistent_path(approval) if approval else None
     if not has_table(db, 'sandbox_cycles'):
         return []
     return [
@@ -139,7 +140,7 @@ class TradeJournal:
             INSERT INTO sandbox_cycles (id, account_id, proposal_id, terms, approval, source, status)
             VALUES (%s, %s, %s, %s, %s, %s, 'reserved')
         """, (entry.id, entry.account_id, entry.proposal_id, entry.model_dump_json(),
-              str(approval.resolve()), source))
+              persistent_path(approval), source))
 
     def completed_manual(self, manual: CloseIntent, account_id: str, source: str) -> dict[str, str] | None:
         row = self.db.execute("""SELECT c.status, c.reason FROM sandbox_cycles c

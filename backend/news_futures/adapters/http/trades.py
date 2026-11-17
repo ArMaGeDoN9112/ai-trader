@@ -9,11 +9,12 @@ from typing import Any, cast
 from news_futures.adapters.http.news import REVISION, archive_news, event_rows, read_archive, runtime_rows, visible
 from news_futures.adapters.postgres.database import has_table
 from news_futures.adapters.postgres.trades import journal_events
+from news_futures.common.paths import local_path
 
 
 def linked_revision(root: Path, approval: str) -> str | None:
     try:
-        revision = Path(approval).relative_to(root / 'decisions').parts[0]
+        revision = local_path(approval).relative_to(root / 'decisions').parts[0]
     except (ValueError, IndexError):
         return None
     return revision if REVISION.fullmatch(revision) else None

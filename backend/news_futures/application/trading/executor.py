@@ -16,6 +16,7 @@ from news_futures.application.trading.risk import (
     check_publication, reserve_entry,
 )
 from news_futures.common.errors import Rejected
+from news_futures.common.paths import local_path, persistent_path
 from news_futures.domain.company import CompanyProposal, EntryReason
 from news_futures.domain.execution import TRADE_STATE, TradeState, close_requests, reconciled_fills, verified_protection
 from news_futures.domain.risk import MAX_RISK_DATA_AGE, fresh
@@ -142,7 +143,7 @@ class SandboxExecutor:
                         close = False
                         if publications is not None:
                             try:
-                                self._record_reviewed_close(entry, publications, Path(approval), persist=False)
+                                self._record_reviewed_close(entry, publications, local_path(approval), persist=False)
                             except Rejected as error:
                                 with self.events.transaction():
                                     self.trades.set_close_requested(entry.id, False)
@@ -184,7 +185,7 @@ class SandboxExecutor:
                 raise Rejected('close_market_or_position_unconfirmed')
             if persist:
                 self.trades.set_close_requested(entry.id, True)
-                self.trades.append(entry.id, 'reviewed_close', proposal_id=proposal_id, approval=str(approval.resolve()))
+                self.trades.append(entry.id, 'reviewed_close', proposal_id=proposal_id, approval=persistent_path(approval))
 
     def _log(self, entry: EntryReservation, kind: str, **details: Any) -> None:
         with self.events.transaction():

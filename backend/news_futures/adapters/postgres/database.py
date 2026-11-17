@@ -6,9 +6,12 @@ from typing import Any
 from psycopg import ClientCursor, Connection, sql
 from psycopg.rows import dict_row
 
+from news_futures.common.paths import persistent_path
+
 
 def schema_name(path: Path) -> str:
-    key = os.path.normcase(str(path.resolve()))
+    stored = persistent_path(path)
+    key = stored if stored.startswith('/') else os.path.normcase(stored)
     return 'trader_' + sha256(key.encode()).hexdigest()[:32]
 
 
