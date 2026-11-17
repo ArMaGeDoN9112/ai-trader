@@ -14,6 +14,8 @@ import sys
 from typing import Any, Protocol
 from uuid import uuid4
 
+from sqlalchemy.exc import DBAPIError
+
 from news_futures.credentials import load_credentials
 from news_futures.storage.publications import Archive
 from news_futures.simulation import process_publication
@@ -127,7 +129,7 @@ async def watch_channel(transport: Transport, archive: Archive, username: str, o
             print(json.dumps({'source': source.id, 'status': 'received'}, ensure_ascii=False), flush=True)
         except Exception as error:
             # Exception messages can contain phone numbers, requests or session material.
-            code = type(error).__name__
+            code = type(error.orig if isinstance(error, DBAPIError) else error).__name__
             identity = source.id if source else f'telegram:@{username}'
             try:
                 archive.notice(identity, code)

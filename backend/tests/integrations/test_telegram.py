@@ -53,7 +53,7 @@ class CollectionTest(unittest.IsolatedAsyncioTestCase):
         await collect(transport, self.archive, transport.source)
         live = replace(transport.original, external_id='2', published_at=utc_now())
         transport.differences = [Difference(11, [live])]
-        self.archive.db.execute("ALTER TABLE channels ADD CONSTRAINT fail_one CHECK (source <> 'telegram:123' OR pts <> 11)")
+        self.archive.db.exec_driver_sql("ALTER TABLE channels ADD CONSTRAINT fail_one CHECK (source <> 'telegram:123' OR pts <> 11)")
         other = ControlledTransport()
         other.source = Source(456, 'second')
         other.messages = []
@@ -66,7 +66,7 @@ class CollectionTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn('CheckViolation', errors.getvalue())
         self.assertEqual(self.archive.cursor(transport.source.id)['pts'], 10)  # type: ignore[index]
         self.assertIsNotNone(self.archive.cursor(other.source.id))
-        self.archive.db.execute('ALTER TABLE channels DROP CONSTRAINT fail_one')
+        self.archive.db.exec_driver_sql('ALTER TABLE channels DROP CONSTRAINT fail_one')
         transport.differences = [Difference(11, [live])]
         await collect(transport, self.archive, transport.source)
         self.assertEqual(transport.requests[-1], 10)
@@ -192,7 +192,7 @@ class TelethonAdapterTest(unittest.IsolatedAsyncioTestCase):
             try:
                 self.assertEqual(len(archive.report()['revisions']), 1)
                 self.assertEqual(archive.report()['revisions'][0]['status'], 'context_only')
-                saved = archive.db.execute('SELECT state FROM sessions').fetchone()
+                saved = archive.db.exec_driver_sql('SELECT state FROM sessions').mappings().fetchone()
                 assert saved is not None
                 self.assertEqual(json.loads(saved['state'])['qts'], 2)
                 self.assertEqual(client.disconnect.await_count, 2)

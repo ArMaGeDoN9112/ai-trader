@@ -5,6 +5,7 @@ from http.client import HTTPConnection
 import json
 from pathlib import Path
 import os
+from socket import create_server
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
@@ -17,13 +18,15 @@ from urllib.request import urlopen
 from uuid import uuid4
 
 import httpx
+from uvicorn import Config, Server
 from websockets.sync.client import connect
 
 from news_futures.agents.analysis import TEAM_DIRECTORY
-from news_futures.api.server import OperatorHandler, OperatorServer
+from news_futures.api.server import Operator, create_app
 from news_futures.api.settings import Preferences
 from news_futures.api.supervisor import Worker
 from news_futures.storage.database import connect as database_connect
+from news_futures.storage.database import transaction
 from news_futures.storage.events import EventArchive
 from news_futures.config import RuntimeSettings
 from news_futures.common.artifacts import replace_json
@@ -87,19 +90,6 @@ with (directory / 'stops').open('a') as stops:
 """
 
 
-class BrowserHandler(OperatorHandler):
-    web = Path(__file__).resolve().parents[3] / 'frontend' / 'dist'
-
-    def do_GET(self) -> None:
-        # Serve the built UI without Compose in the browser regression test.
-        path = self.web / ('index.html' if self.path == '/' else self.path.removeprefix('/'))
-        mime = {'.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css'}.get(path.suffix)
-        if self.local() and mime and path.resolve().is_relative_to(self.web) and path.is_file():
-            self.reply(200, path.read_bytes(), mime=mime)
-        else:
-            super().do_GET()
-
-
 class OperatorTest(unittest.TestCase):
     def setUp(self) -> None:
         directory = self.enterContext(TemporaryDirectory())
@@ -108,25 +98,30 @@ class OperatorTest(unittest.TestCase):
         (self.root / 'control').write_text('position', encoding='utf-8')
         worker = Worker(self.root, self.profile, [sys.executable, '-c', CONTROLLED_WORKER, str(self.root)],
                         json.dumps(self.profile).encode())
-        self.server = self.enterContext(OperatorServer(worker, ['example'], 0, {
+        web = Path(__file__).resolve().parents[3] / 'frontend' / 'dist'
+        self.operator = Operator(worker, ['example'], {
             'company': {'names': ['Компания А'], 'tickers': ['ABC']},
             'other': {'names': ['Компания Б'], 'tickers': ['XYZ']},
-        }))
-        if os.environ.get('OPERATOR_TEST_CHROME'):
-            self.server.RequestHandlerClass = BrowserHandler
-        thread = Thread(target=self.server.serve_forever, kwargs={'poll_interval': 0.01})
+        }, frontend=web if os.environ.get('OPERATOR_TEST_CHROME') else None)
+        listener = self.enterContext(create_server(('127.0.0.1', 0)))
+        self.port = listener.getsockname()[1]
+        app = create_app(self.operator, f'127.0.0.1:{self.port}')
+        server = Server(Config(app, log_level='warning', ws='none'))
+        thread = Thread(target=server.run, kwargs={'sockets': [listener]})
         thread.start()
-        self.addCleanup(thread.join)
-        self.addCleanup(self.server.shutdown)
-        self.addCleanup(worker.close)
-        self.port = self.server.server_port
+        self.addCleanup(thread.join, 5)
+        self.addCleanup(setattr, server, 'should_exit', True)
+        deadline = time.monotonic() + 5
+        while not server.started and thread.is_alive() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertTrue(server.started)
         self.origin = f'http://127.0.0.1:{self.port}'
         status, body = self.request('GET', '/api/session')
         self.assertEqual(status, 200)
         self.session = json.loads(body)['session']
 
     def mock_market(self) -> None:
-        self.server.share_companies = {'share-a': 'company', 'share-b': 'other'}
+        self.operator.share_companies = {'share-a': 'company', 'share-b': 'other'}
         folder = self.root / 'futures-catalog'
         folder.mkdir()
         now = utc_now()
@@ -189,7 +184,7 @@ class OperatorTest(unittest.TestCase):
         self.assertEqual(code, 200)
         self.assertEqual(json.loads(body)['equity'], '123456.780000000')
 
-        self.server.worker.profile['account_id'] = 'another-account'
+        self.operator.worker.profile['account_id'] = 'another-account'
 
         def wrong_account(request: httpx.Request) -> httpx.Response:
             self.assertEqual(json.loads(request.content), {'accountId': 'another-account'})
@@ -249,13 +244,16 @@ class OperatorTest(unittest.TestCase):
         self.assertEqual(self.request('POST', '/api/testing', Origin='https://example.org',
                                       body={'text': 'Новость'}, **session)[0], 403)
         self.assertEqual(self.request('POST', '/api/testing', Origin=self.origin, body={'text': ' '}, **session)[0], 400)
+        status, body = self.request('POST', '/api/testing', Origin=self.origin,
+                                    body={'text': 'x' * 32768}, **session)
+        self.assertEqual((status, json.loads(body)), (400, {'result': 'invalid_test_news'}))
         self.assertEqual(self.request('GET', '/api/session', Host='example.org')[0], 403)
         self.assertEqual(self.request('GET', '/api/start', **session)[0], 404)
         self.assertEqual(self.overview()['worker'], 'stopped')
         self.assertFalse((self.root / 'operator-commands.jsonl').exists())
 
     def test_source_status_expires_after_the_next_expected_poll_and_grace(self) -> None:
-        worker = self.server.worker
+        worker = self.operator.worker
         checked_at = utc_now()
         event = b'{"source":"example","ok":true,"ready":true,"next_poll_in":120}'
         worker.state = 'starting'
@@ -277,7 +275,7 @@ class OperatorTest(unittest.TestCase):
         self.assertTrue(before['paused'])
         self.assertEqual(self.request('POST', '/api/pause', body={'paused': True}, **headers)[0], 200)
         self.assertEqual(self.overview()['pause'], before)
-        self.assertTrue(self.server.worker.controls_state.pause()['paused'])
+        self.assertTrue(self.operator.worker.controls_state.pause()['paused'])
 
     def test_two_tabs_share_one_worker_and_stop_waits_for_its_exit(self) -> None:
         self.assertEqual(self.command('start')[0], 202)
@@ -355,14 +353,14 @@ class OperatorTest(unittest.TestCase):
         with (closing(Archive(self.root / 'publications').db) as db,
               EventArchive(self.root / 'events') as events):
             # Real archive schemas, with saved evidence from a rejected review.
-            with db.transaction(), events.db.transaction():
+            with transaction(db), transaction(events.db):
                 for publication, bindings in ((linked, links), (unlinked, [])):
                     key = publication.revision_key()
                     record = json.dumps(publication.record())
-                    db.execute("INSERT INTO revisions VALUES (%s, %s, 0, 'pending', NULL)", (key, record))
-                    events.db.execute('INSERT INTO event_revisions VALUES (%s, %s, %s)',
+                    db.exec_driver_sql("INSERT INTO revisions VALUES (%s, %s, 0, 'pending', NULL)", (key, record))
+                    events.db.exec_driver_sql('INSERT INTO event_revisions VALUES (%s, %s, %s)',
                                       (key, record, json.dumps(bindings)))
-                    events.db.execute('INSERT INTO event_decisions (revision, details) VALUES (%s, %s)',
+                    events.db.exec_driver_sql('INSERT INTO event_decisions (revision, details) VALUES (%s, %s)',
                                       (key, json.dumps(event)))
         archive = Archive(self.root / 'publications')
         with closing(archive.db):
@@ -450,8 +448,8 @@ class OperatorTest(unittest.TestCase):
     def test_ticker_to_rejected_trace_keeps_expansion_and_scroll_during_refresh(self) -> None:
         self.mock_market()
         revision, unlinked, agent = self.save_news()
-        with database_connect(self.root / 'events') as db, db.transaction():
-            saved = db.execute('SELECT details FROM event_decisions WHERE revision = %s', (unlinked,)).fetchone()
+        with database_connect(self.root / 'events') as db, transaction(db):
+            saved = db.exec_driver_sql('SELECT details FROM event_decisions WHERE revision = %s', (unlinked,)).mappings().fetchone()
             candidates = [{'event_id': f'candidate-{index}'} for index in range(8)]
             assert saved is not None
             event = json.loads(saved['details']) | {
@@ -460,7 +458,7 @@ class OperatorTest(unittest.TestCase):
                 'call': {'error': 'OpenAITimeoutError', 'input': {'candidates': candidates},
                          'settings': {'aggregator': 'groq', 'model': 'openai/gpt-oss-20b', 'timeout_ms': 60000}},
             }
-            db.execute('UPDATE event_decisions SET details = %s WHERE revision = %s', (json.dumps(event), unlinked))
+            db.exec_driver_sql('UPDATE event_decisions SET details = %s WHERE revision = %s', (json.dumps(event), unlinked))
         archive = Archive(self.root / 'publications')
         with closing(archive.db):
             archive.save_result({'revision': unlinked, 'stage': 'event', 'status': 'failed',
@@ -485,7 +483,7 @@ class OperatorTest(unittest.TestCase):
             'company_id': 'company', 'company_name': 'Компания А', 'ticker': 'ABC', 'share_id': 'share',
         }]}}})
         settings = RuntimeSettings(data_dir=self.root, catalog=catalog, account_id='account')
-        worker = self.server.worker
+        worker = self.operator.worker
         worker.preferences = Preferences(settings, ['example'], worker.controls_state)
         profile = self.root / 'chromium'
         with subprocess.Popen([
@@ -700,10 +698,10 @@ class OperatorTest(unittest.TestCase):
                    'field.querySelector("input")?.value === "openai/gpt-oss-120b")')
             with patch('news_futures.api.settings.load_token', return_value='test-key'):
                 evaluate('document.querySelector(".save-bar .primary").click()')
-                until(lambda: self.server.worker.controls_state.saved().get('aggregator') == 'groq')
+                until(lambda: self.operator.worker.controls_state.saved().get('aggregator') == 'groq')
                 expect('document.querySelector(".save-bar .primary").disabled && '
                        'document.querySelector("#chat-aggregator").value === "groq"')
-            worker = self.server.worker
+            worker = self.operator.worker
             saved = worker.controls_state.saved()
             worker._update(json.dumps({'aggregator': 'groq', 'models': saved['models'] | saved['groq_models']}).encode(), '')
             expect('Array.from(document.querySelectorAll(".facts dt")).some(term => '
@@ -725,11 +723,11 @@ class OperatorTest(unittest.TestCase):
                      'button.innerText === "Пауза новых входов").click()')
             expect('document.querySelector(".status-strip").innerText.includes("Входы на паузе")')
             archive = Archive(self.root / 'publications')
-            with worker.lock, closing(archive.db), archive.db.transaction():
+            with worker.lock, closing(archive.db), transaction(archive.db):
                 worker.state = 'running'
                 worker.run_id = 'browser-test'
                 worker.profile = self.profile | {'mode': 'sandbox'}
-                archive.db.execute('INSERT INTO runtime_status VALUES (1, %s) ON CONFLICT (id) DO UPDATE SET data = excluded.data', (json.dumps(
+                archive.db.exec_driver_sql('INSERT INTO runtime_status VALUES (1, %s) ON CONFLICT (id) DO UPDATE SET data = excluded.data', (json.dumps(
                     worker.profile | {'run_id': worker.run_id, 'broker': 'connected', 'confirmed': True,
                                       'last_confirmed': {'checked_at': utc_now().isoformat(),
                                                          'position': {'id': uuid4().hex, 'contract_id': 'future',

@@ -97,5 +97,5 @@ class MigrationTest(unittest.TestCase):
             with self.assertRaises(ForeignKeyViolation):
                 migrate(directory)
             with connect(directory / 'publications') as db:
-                self.assertIsNone(db.execute('SELECT 1 FROM notices').fetchone())
+                self.assertIsNone(db.exec_driver_sql('SELECT 1 FROM notices').mappings().fetchone())
                 self.assertFalse(has_table(db, 'sqlite_import'))

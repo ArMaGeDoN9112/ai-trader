@@ -1,18 +1,26 @@
 """Serve the local operator API."""
 
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from contextlib import asynccontextmanager, contextmanager
 import json
 from pathlib import Path
 import re
 from secrets import compare_digest, token_urlsafe
+from socket import create_server
 import sys
 from threading import Lock
 from time import monotonic
 from typing import Any
 from urllib.parse import parse_qs
 
+from anyio import fail_after
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import JSONResponse
 import httpx
-import psycopg
+from sqlalchemy.exc import SQLAlchemyError
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from uvicorn import Config, Server
 
 from news_futures.api.news import (
     artifact, catalog_series, enqueue_test_news, fields, news_view, testing_view, trace_view, visible,
@@ -26,133 +34,9 @@ from news_futures.common.errors import RuntimeErrorInfo
 from news_futures.dataflows.publications import utc_now
 
 
-class OperatorHandler(BaseHTTPRequestHandler):
-    timeout = 5
-    server: 'OperatorServer'
-
-    def log_message(self, format: str, *args: Any) -> None:
-        pass
-
-    def reply(self, code: int, value: object, *, mime: str = 'application/json') -> None:
-        body = value if isinstance(value, bytes) else (
-            json.dumps(value, ensure_ascii=False) if mime == 'application/json' else str(value)
-        ).encode('utf-8')
-        self.send_response(code)
-        self.send_header('Content-Type', mime + '; charset=utf-8')
-        self.send_header('Cache-Control', 'no-store')
-        self.send_header('Content-Security-Policy',
-                         "default-src 'none'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; "
-                         "script-src 'self'; style-src 'self'; form-action 'self'")
-        self.send_header('X-Content-Type-Options', 'nosniff')
-        self.send_header('Cross-Origin-Resource-Policy', 'same-origin')
-        self.send_header('Content-Length', str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def local(self) -> bool:
-        return self.headers.get_all('Host') == [self.server.host]
-
-    def authorized(self) -> bool:
-        tokens = self.headers.get_all('X-Operator-Session', [])
-        return len(tokens) == 1 and compare_digest(tokens[0].encode(), self.server.session.encode())
-
-    def serve_frontend(self, path: str) -> bool:
-        root = self.server.frontend
-        if root is None:
-            return False
-        if path in ('/', '/index.html'):
-            file, mime = root / 'index.html', 'text/html'
-        elif re.fullmatch(r'/assets/[a-zA-Z0-9_.-]+\.(js|css)', path):
-            file = root / path[1:]
-            mime = 'text/css' if file.suffix == '.css' else 'text/javascript'
-        else:
-            return False
-        if not file.resolve().is_relative_to(root):
-            return False
-        try:
-            body = file.read_bytes()
-        except FileNotFoundError:
-            return False
-        self.reply(200, body, mime=mime)
-        return True
-
-    def do_GET(self) -> None:
-        path, _, query_string = self.path.partition('?')
-        if not self.local():
-            self.reply(403, {'result': 'forbidden'})
-        elif self.path == '/api/session':
-            self.reply(200, {'session': self.server.session})
-        elif path in ('/api/overview', '/api/news', '/api/trace', '/api/trades', '/api/controls', '/api/tickers',
-                      '/api/testing', '/api/account-balance'):
-            if not self.authorized():
-                self.reply(403, {'result': 'forbidden'})
-                return
-            worker = self.server.worker
-            query = parse_qs(query_string)
-            value: dict[str, Any] | None
-            try:
-                if path == '/api/overview':
-                    value = worker.overview()
-                elif path == '/api/account-balance':
-                    value = self.server.account_balance()
-                elif path == '/api/tickers':
-                    value = self.server.market_tickers()
-                elif path == '/api/news':
-                    value = visible(news_view(worker.directory, worker.profile, self.server.catalog,
-                                              self.server.series, query.get('company', [''])[0]))
-                elif path == '/api/trace':
-                    value = trace_view(worker.directory, worker.profile['account_id'], query.get('revision', [''])[0])
-                elif path == '/api/trades':
-                    value = trades_view(worker.directory, worker.profile['account_id'], query.get('cycle', [''])[0])
-                elif path == '/api/testing':
-                    value = visible(testing_view(worker.directory))
-                else:
-                    value = worker.controls()
-            except (psycopg.Error, httpx.HTTPError, OSError, ValueError, KeyError, TypeError):
-                result = {'/api/tickers': 'market_unavailable', '/api/account-balance': 'balance_unavailable'}
-                self.reply(503, {'result': result.get(path, 'archive_unavailable')})
-            else:
-                if value is None:
-                    self.reply(404, {'result': 'not_found'})
-                else:
-                    self.reply(200, value)
-        elif not self.serve_frontend(path):
-            self.reply(404, {'result': 'not_found'})
-
-    def do_POST(self) -> None:
-        if (not self.local() or not self.authorized()
-                or self.headers.get_all('Origin') != [f'http://{self.server.host}']):
-            self.reply(403, {'result': 'forbidden'})
-        elif self.path in ('/api/start', '/api/stop', '/api/restart'):
-            code, result = self.server.worker.request(self.path.removeprefix('/api/'))
-            self.reply(code, {'result': result})
-        elif self.path in ('/api/pause', '/api/close', '/api/settings', '/api/testing'):
-            try:
-                lengths = self.headers.get_all('Content-Length', [])
-                if (len(lengths) != 1 or not 0 < int(lengths[0]) <= 32768
-                        or self.headers.get_all('Transfer-Encoding')
-                        or self.headers.get_content_type() != 'application/json'):
-                    raise ValueError
-                body = json.loads(self.rfile.read(int(lengths[0])))
-                if not isinstance(body, dict):
-                    raise ValueError
-                if self.path == '/api/testing':
-                    revision = enqueue_test_news(self.server.worker.directory, body)
-                    self.reply(202, {'result': 'test_news_queued', 'revision': revision})
-                    return
-                code, result = self.server.worker.configure(self.path.removeprefix('/api/'), body)
-            except (ValueError, TimeoutError):
-                code, result = 400, 'invalid_test_news' if self.path == '/api/testing' else 'invalid_request'
-            except (OSError, psycopg.Error):
-                code, result = 503, 'archive_unavailable' if self.path == '/api/testing' else 'settings_unavailable'
-            self.reply(code, {'result': result})
-        else:
-            self.reply(404, {'result': 'not_found'})
-
-
-class OperatorServer(ThreadingHTTPServer):
-    def __init__(self, worker: Worker, channels: list[str], port: int, catalog: dict[str, Any] | None = None,
-                 series: dict[str, Any] | None = None, *, bind: str = '127.0.0.1',
+class Operator:
+    def __init__(self, worker: Worker, channels: list[str], catalog: dict[str, Any] | None = None,
+                 series: dict[str, Any] | None = None, *,
                  share_companies: dict[str, str] | None = None, ca_file: Path | None = None,
                  frontend: Path | None = None):
         self.worker = worker
@@ -166,8 +50,6 @@ class OperatorServer(ThreadingHTTPServer):
         self.market_cache: dict[str, Any] = {}
         self.market_until = 0.0
         self.session = token_urlsafe(32)
-        super().__init__((bind, port), OperatorHandler)
-        self.host = f'127.0.0.1:{self.server_port}'
 
     def account_balance(self) -> dict[str, Any]:
         with sandbox_client(self.ca_file, read_only=True) as client, limit_broker_read(4):
@@ -191,8 +73,214 @@ class OperatorServer(ThreadingHTTPServer):
             self.market_until = monotonic() + 25
             return self.market_cache
 
-    def handle_error(self, request: Any, client_address: Any) -> None:
-        pass
+
+def create_app(operator: Operator, host: str) -> FastAPI:
+    worker = operator.worker
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        try:
+            yield
+        finally:
+            await run_in_threadpool(worker.close)
+
+    app = FastAPI(lifespan=lifespan, openapi_url=None, redirect_slashes=False)
+
+    def authorized(request: Request) -> bool:
+        tokens = request.headers.getlist('X-Operator-Session')
+        return len(tokens) == 1 and compare_digest(tokens[0].encode(), operator.session.encode())
+
+    @app.middleware('http')
+    async def protect(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+        response: Response
+        if (request.headers.getlist('Host') != [host]
+                or (request.method == 'POST' and (
+                    not authorized(request) or request.headers.getlist('Origin') != [f'http://{host}']
+                ))):
+            response = JSONResponse({'result': 'forbidden'}, status_code=403)
+        else:
+            response = await call_next(request)
+        response.headers['Cache-Control'] = 'no-store'
+        response.headers['Content-Security-Policy'] = (
+            "default-src 'none'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; "
+            "script-src 'self'; style-src 'self'; form-action 'self'"
+        )
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['Cross-Origin-Resource-Policy'] = 'same-origin'
+        return response
+
+    @app.exception_handler(StarletteHTTPException)
+    async def http_error(request: Request, error: StarletteHTTPException) -> JSONResponse:
+        if error.status_code in (404, 405):
+            return JSONResponse({'result': 'not_found'}, status_code=404)
+        return JSONResponse({'result': error.detail}, status_code=error.status_code)
+
+    def require_no_query(request: Request) -> None:
+        if request.url.query:
+            raise HTTPException(404)
+
+    @app.get('/api/session', dependencies=[Depends(require_no_query)])
+    def session() -> dict[str, str]:
+        return {'session': operator.session}
+
+    def require_session(request: Request) -> None:
+        if not authorized(request):
+            raise HTTPException(403, 'forbidden')
+
+    reads = APIRouter(prefix='/api', dependencies=[Depends(require_session)])
+
+    @contextmanager
+    def read_errors(unavailable: str = 'archive_unavailable') -> Iterator[None]:
+        try:
+            yield
+        except (SQLAlchemyError, httpx.HTTPError, OSError, ValueError, KeyError, TypeError) as error:
+            raise HTTPException(503, unavailable) from error
+
+    def query_value(request: Request, key: str) -> str:
+        return parse_qs(request.url.query).get(key, [''])[0]
+
+    @reads.get('/overview')
+    def overview() -> JSONResponse:
+        with read_errors():
+            return JSONResponse(worker.overview())
+
+    @reads.get('/account-balance')
+    def account_balance() -> JSONResponse:
+        with read_errors('balance_unavailable'):
+            return JSONResponse(operator.account_balance())
+
+    @reads.get('/tickers')
+    def tickers() -> JSONResponse:
+        with read_errors('market_unavailable'):
+            return JSONResponse(operator.market_tickers())
+
+    @reads.get('/news')
+    def news(request: Request) -> JSONResponse:
+        with read_errors():
+            value = news_view(worker.directory, worker.profile, operator.catalog, operator.series,
+                              query_value(request, 'company'))
+            return JSONResponse(visible(value))
+
+    @reads.get('/trace')
+    def trace(request: Request) -> JSONResponse:
+        with read_errors():
+            value = trace_view(worker.directory, worker.profile['account_id'], query_value(request, 'revision'))
+        if value is None:
+            raise HTTPException(404)
+        return JSONResponse(value)
+
+    @reads.get('/trades')
+    def trades(request: Request) -> JSONResponse:
+        with read_errors():
+            value = trades_view(worker.directory, worker.profile['account_id'], query_value(request, 'cycle'))
+        if value is None:
+            raise HTTPException(404)
+        return JSONResponse(value)
+
+    @reads.get('/testing')
+    def testing() -> JSONResponse:
+        with read_errors():
+            return JSONResponse(visible(testing_view(worker.directory)))
+
+    @reads.get('/controls')
+    def controls() -> JSONResponse:
+        with read_errors():
+            return JSONResponse(worker.controls())
+
+    app.include_router(reads)
+
+    commands = APIRouter(prefix='/api', dependencies=[Depends(require_no_query)])
+
+    def command_result(code: int, result: str) -> JSONResponse:
+        return JSONResponse({'result': result}, status_code=code)
+
+    @commands.post('/start')
+    def start_worker() -> JSONResponse:
+        return command_result(*worker.request('start'))
+
+    @commands.post('/stop')
+    def stop_worker() -> JSONResponse:
+        return command_result(*worker.request('stop'))
+
+    @commands.post('/restart')
+    def restart_worker() -> JSONResponse:
+        return command_result(*worker.request('restart'))
+
+    async def read_json(request: Request) -> dict[str, Any]:
+        lengths = request.headers.getlist('Content-Length')
+        mime = request.headers.get('Content-Type', '').partition(';')[0].strip().lower()
+        if (len(lengths) != 1 or not 0 < int(lengths[0]) <= 32768
+                or 'Transfer-Encoding' in request.headers or mime != 'application/json'):
+            raise ValueError
+        with fail_after(5):
+            body = json.loads(await request.body())
+        if not isinstance(body, dict):
+            raise ValueError
+        return body
+
+    async def configure_worker(action: str, request: Request) -> JSONResponse:
+        try:
+            body = await read_json(request)
+            code, result = await run_in_threadpool(worker.configure, action, body)
+        except (ValueError, TimeoutError) as error:
+            raise HTTPException(400, 'invalid_request') from error
+        except (OSError, SQLAlchemyError) as error:
+            raise HTTPException(503, 'settings_unavailable') from error
+        return command_result(code, result)
+
+    @commands.post('/pause')
+    async def pause(request: Request) -> JSONResponse:
+        return await configure_worker('pause', request)
+
+    @commands.post('/close')
+    async def close_position(request: Request) -> JSONResponse:
+        return await configure_worker('close', request)
+
+    @commands.post('/settings')
+    async def save_settings(request: Request) -> JSONResponse:
+        return await configure_worker('settings', request)
+
+    @commands.post('/testing')
+    async def submit_test_news(request: Request) -> JSONResponse:
+        try:
+            body = await read_json(request)
+            revision = await run_in_threadpool(enqueue_test_news, worker.directory, body)
+        except (ValueError, TimeoutError) as error:
+            raise HTTPException(400, 'invalid_test_news') from error
+        except (OSError, SQLAlchemyError) as error:
+            raise HTTPException(503, 'archive_unavailable') from error
+        return JSONResponse({'result': 'test_news_queued', 'revision': revision}, status_code=202)
+
+    app.include_router(commands)
+
+    def frontend_file(path: str, mime: str) -> Response:
+        root = operator.frontend
+        if root is None:
+            raise HTTPException(404)
+        file = root / path
+        if not file.resolve().is_relative_to(root):
+            raise HTTPException(404)
+        try:
+            return Response(file.read_bytes(), media_type=mime)
+        except FileNotFoundError as error:
+            raise HTTPException(404) from error
+
+    @app.get('/')
+    def home() -> Response:
+        return frontend_file('index.html', 'text/html')
+
+    @app.get('/index.html')
+    def index_html() -> Response:
+        return frontend_file('index.html', 'text/html')
+
+    @app.get('/assets/{name}')
+    def asset_file(name: str) -> Response:
+        if not re.fullmatch(r'[a-zA-Z0-9_.-]+\.(js|css)', name):
+            raise HTTPException(404)
+        mime = 'text/css' if name.endswith('.css') else 'text/javascript'
+        return frontend_file(f'assets/{name}', mime)
+
+    return app
 
 
 def serve_operator(config: Path, port: int, bind: str, *, frontend: Path | None = None) -> int:
@@ -213,7 +301,7 @@ def serve_operator(config: Path, port: int, bind: str, *, frontend: Path | None 
     except RuntimeErrorInfo as error:
         print(error, file=sys.stderr)
         return 1
-    except (OSError, ValueError, TypeError, KeyError, psycopg.Error):
+    except (OSError, ValueError, TypeError, KeyError, SQLAlchemyError):
         print('Проверьте общую конфигурацию и список источников. См. docs/runtime.md.', file=sys.stderr)
         return 1
     worker = Worker(settings.data_dir, profile, [sys.executable, '-m', 'news_futures.api.worker'],
@@ -228,16 +316,19 @@ def serve_operator(config: Path, port: int, bind: str, *, frontend: Path | None 
         share_companies = {row.share_id: row.company_id for row in catalog_rows(content) if row.share_id}
     except (OSError, ValueError, KeyError, TypeError):
         pass
+
+    operator = Operator(worker, channels, catalog, series, share_companies=share_companies,
+                        ca_file=settings.ca_file, frontend=frontend)
     try:
-        with OperatorServer(worker, channels, port, catalog, series, bind=bind, share_companies=share_companies,
-                            ca_file=settings.ca_file, frontend=frontend) as server:
-            print(f'API оператора: {bind}:{server.server_port}', flush=True)
-            server.serve_forever()
+        with create_server((bind, port)) as listener:
+            port = listener.getsockname()[1]
+            app = create_app(operator, f'127.0.0.1:{port}')
+            server = Server(Config(app, host=bind, port=port, access_log=False, proxy_headers=False, ws='none'))
+            print(f'API оператора: {bind}:{port}', flush=True)
+            server.run(sockets=[listener])
+        return 0 if server.started else 1
     except KeyboardInterrupt:
         return 0
     except OSError:
         print('Не удалось запустить панель. Проверьте локальный порт и файлы приложения.', file=sys.stderr)
         return 1
-    finally:
-        worker.close()
-    return 0

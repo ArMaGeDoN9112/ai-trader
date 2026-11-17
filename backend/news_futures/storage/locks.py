@@ -10,7 +10,5 @@ from news_futures.storage.database import connect, lock_key
 @contextmanager
 def exclusive_operation(path: Path, operation: str = 'runtime') -> Iterator[bool]:
     with connect(path) as db:
-        row = db.execute('SELECT pg_try_advisory_lock(%s::bigint) AS acquired',
-                         (lock_key(path, operation),)).fetchone()
-        assert row is not None
-        yield bool(row['acquired'])
+        yield bool(db.exec_driver_sql('SELECT pg_try_advisory_lock(%s::bigint)',
+                                     (lock_key(path, operation),)).scalar_one())

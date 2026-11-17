@@ -21,19 +21,19 @@ def runtime_report(config: Path, decision: str | None) -> dict[str, Any]:
     archive = Archive(settings.publications)
     with closing(archive.db), EventArchive(settings.events) as events:
         if decision is None:
-            status = archive.db.execute('SELECT data FROM runtime_status WHERE id = 1').fetchone()
+            status = archive.db.exec_driver_sql('SELECT data FROM runtime_status WHERE id = 1').mappings().fetchone()
             return {
                 'broker': json.loads(status['data']) if status else None,
-                'channels': [dict(row) for row in archive.db.execute('SELECT * FROM channels')],
-                'notices': [dict(row) for row in archive.db.execute('SELECT * FROM notices ORDER BY id DESC LIMIT 20')],
-                'decisions': [json.loads(row['result']) for row in archive.db.execute(
+                'channels': [dict(row) for row in archive.db.exec_driver_sql('SELECT * FROM channels').mappings()],
+                'notices': [dict(row) for row in archive.db.exec_driver_sql('SELECT * FROM notices ORDER BY id DESC LIMIT 20').mappings()],
+                'decisions': [json.loads(row['result']) for row in archive.db.exec_driver_sql(
                     'SELECT result FROM runtime_decisions ORDER BY ordinal DESC LIMIT 20',
-                )],
+                ).mappings()],
             }
-        row = archive.db.execute("""
+        row = archive.db.exec_driver_sql("""
             SELECT runtime_decisions.revision, result, publication FROM runtime_decisions JOIN revisions USING(revision)
             WHERE revision = %s OR CAST((result::json ->> 'decision_id') AS TEXT) = %s
-        """, (decision, decision)).fetchone()
+        """, (decision, decision)).mappings().fetchone()
         if row is None:
             raise RuntimeErrorInfo('Решение не найдено. Возьмите decision_id или revision из runtime-status.')
         directory = settings.data_dir / 'decisions' / row['revision']

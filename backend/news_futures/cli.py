@@ -89,8 +89,9 @@ def main() -> int:
     database_errors: tuple[type[Exception], ...] = ()
     if args.command not in {'run', 'show', 'replay'}:
         from psycopg import Error
+        from sqlalchemy.exc import SQLAlchemyError
         from news_futures.storage.database import archive_exists
-        database_errors = (Error,)
+        database_errors = (Error, SQLAlchemyError)
     try:
         if args.command == 'replay':
             from datetime import timedelta
@@ -196,7 +197,6 @@ def main() -> int:
                 print(f'OpenRouter Decisions: {type(error).__name__}. См. docs/runtime.md.', file=sys.stderr)
                 return 1
         if args.command == 'entry-reason':
-            from psycopg import Error
             from news_futures.common.errors import StorageError
             from news_futures.schemas.company import EntryReason
             from news_futures.storage.events import EventArchive
@@ -207,7 +207,7 @@ def main() -> int:
             try:
                 with EventArchive(args.database) as events, events.transaction(immediate=True):
                     events.save_entry_reason(entry)
-            except (Error, StorageError) as error:
+            except (Error, SQLAlchemyError, StorageError) as error:
                 raise ValueError('Не удалось сохранить причину входа в базе событий') from error
             print('Причина входа сохранена.')
             return 0

@@ -3,6 +3,7 @@ from datetime import timedelta
 import json
 from pathlib import Path
 import psycopg
+from sqlalchemy.exc import IntegrityError
 import subprocess
 import sys
 import tempfile
@@ -54,12 +55,13 @@ class ArchiveTest(unittest.TestCase):
     def test_storage_failure_rolls_back_revision_job_and_cursor(self) -> None:
         original = self.publication
         self.archive.save_batch(original.source, 10, [])
-        self.archive.db.execute('ALTER TABLE channels ADD CONSTRAINT fail_cursor CHECK (pts <> 11)')
-        with self.assertRaises(psycopg.errors.CheckViolation):
+        self.archive.db.exec_driver_sql('ALTER TABLE channels ADD CONSTRAINT fail_cursor CHECK (pts <> 11)')
+        with self.assertRaises(IntegrityError) as failure:
             self.archive.save_batch(original.source, 11, [original])
         self.assertEqual(self.archive.report()['revisions'], [])
         self.assertEqual(self.archive.cursor(original.source)['pts'], 10)  # type: ignore[index]
-        self.archive.db.execute('ALTER TABLE channels DROP CONSTRAINT fail_cursor')
+        self.assertIsInstance(failure.exception.orig, psycopg.errors.CheckViolation)
+        self.archive.db.exec_driver_sql('ALTER TABLE channels DROP CONSTRAINT fail_cursor')
         self.archive.save_batch(original.source, 11, [original])
         self.assertEqual(self.archive.report()['revisions'][0]['status'], 'pending')
 

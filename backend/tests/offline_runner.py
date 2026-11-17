@@ -1,6 +1,7 @@
 """Run the real CLI with external I/O denied, including without API-key env vars."""
 
 from pathlib import Path
+import platform
 import runpy
 import sys
 
@@ -10,6 +11,9 @@ def deny_external_io(event: str, args: tuple[object, ...]) -> None:
         raise RuntimeError(f'FORBIDDEN_EXTERNAL_CALL: {event}')
 
 
+if sys.platform == 'win32':
+    # Cache the Windows version before denying subprocess calls.
+    platform.uname()
 sys.addaudithook(deny_external_io)
 if sys.argv[1:2] == ['--probe']:
     probe = sys.argv[2]

@@ -83,9 +83,9 @@ class Preferences:
             if db is not None:
                 if active_cycles(db, settings.account_id):
                     raise ValueError('account_has_operations')
-                if has_table(db, 'entry_reservations') and db.execute(
+                if has_table(db, 'entry_reservations') and db.exec_driver_sql(
                     'SELECT 1 FROM entry_reservations WHERE account_id = %s', (settings.account_id,),
-                ).fetchone():
+                ).mappings().fetchone():
                     raise ValueError('account_has_operations')
         try:
             with sandbox_client(settings.ca_file, read_only=True) as client:

@@ -17,7 +17,7 @@ from news_futures.agents.schemas import EventEvidence
 from news_futures.agents.analysis import AgentLimits, run_analysis
 from news_futures.schemas.contracts import Review, RoleSettings
 from news_futures.storage.checkpoints import checkpoint_serializer, checkpoints, migrate_model_paths
-from news_futures.storage.database import connect
+from news_futures.storage.database import connect, transaction
 from news_futures.storage.events import EventArchive
 from news_futures.storage.locks import exclusive_operation
 from news_futures.storage.migrate import migrate_checkpoints
@@ -36,15 +36,16 @@ class CheckpointLayoutTest(TestCase):
         fixture: dict[str, Any] = json.loads((FIXTURES / 'analysis.json').read_bytes())
         with checkpoints(self.directory / 'checkpoints'):
             pass
-        with connect(self.directory / 'checkpoints') as db, db.transaction():
+        with connect(self.directory / 'checkpoints') as db, transaction(db):
             for table, rows in fixture['tables'].items():
                 for row in rows:
                     values = [base64.b64decode(value['base64']) if isinstance(value, dict) and 'base64' in value
                               else Jsonb(value) if isinstance(value, dict) else value for value in row.values()]
-                    db.execute(sql.SQL('INSERT INTO {} ({}) VALUES ({})').format(
+                    query = sql.SQL('INSERT INTO {} ({}) VALUES ({})').format(
                         sql.Identifier(table), sql.SQL(', ').join(map(sql.Identifier, row)),
                         sql.SQL(', ').join(sql.Placeholder() for _ in values),
-                    ), values)
+                    )
+                    db.exec_driver_sql(query.as_string(), tuple(values))
         for name, content in fixture['files'].items():
             path = self.directory / 'decision' / name
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -53,9 +54,9 @@ class CheckpointLayoutTest(TestCase):
 
     def rows(self) -> dict[str, list[dict[str, Any]]]:
         with connect(self.directory / 'checkpoints') as db:
-            return {table: db.execute(sql.SQL('SELECT * FROM {} ORDER BY {}').format(
+            return {table: [dict(row) for row in db.exec_driver_sql(sql.SQL('SELECT * FROM {} ORDER BY {}').format(
                 sql.Identifier(table), sql.SQL(', ').join(map(sql.Identifier, keys)),
-            )).fetchall() for table, keys in (
+            ).as_string()).mappings()] for table, keys in (
                 ('checkpoints', ('thread_id', 'checkpoint_ns', 'checkpoint_id')),
                 ('checkpoint_blobs', ('thread_id', 'checkpoint_ns', 'channel', 'version')),
                 ('checkpoint_writes', ('thread_id', 'checkpoint_ns', 'checkpoint_id', 'task_id', 'idx')),
@@ -68,7 +69,7 @@ class CheckpointLayoutTest(TestCase):
         ))
         blob = ormsgpack.packb({'nested': [unknown]})
         with connect(self.directory / 'checkpoints') as db:
-            db.execute("INSERT INTO checkpoint_blobs VALUES ('unknown', '', 'test', '1', 'msgpack', %s)", (blob,))
+            db.exec_driver_sql("INSERT INTO checkpoint_blobs VALUES ('unknown', '', 'test', '1', 'msgpack', %s)", (blob,))
         before = self.rows()
         with self.assertRaisesRegex(ValueError, 'Unsupported checkpoint model'):
             migrate_checkpoints(self.directory)

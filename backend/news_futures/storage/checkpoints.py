@@ -3,14 +3,15 @@
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.checkpoint.serde.jsonplus import EXT_PYDANTIC_V2, JsonPlusSerializer
 import ormsgpack
+from psycopg import Connection
 
 from news_futures.common.errors import RuntimeErrorInfo
-from news_futures.storage.database import connect, initialize
+from news_futures.storage.database import connect, initialize, transaction
 from news_futures.storage.locks import exclusive_operation
 from news_futures.schemas.company import CompanyProposal
 from news_futures.schemas.contracts import Review
@@ -65,11 +66,13 @@ def checkpoint_serializer() -> JsonPlusSerializer:
 
 @contextmanager
 def checkpoints(path: Path) -> Iterator[PostgresSaver]:
-    with connect(path, client_cursor=False) as db:
+    with connect(path) as db:
         with exclusive_operation(path, 'checkpoint-setup') as acquired:
             if not acquired:
                 raise RuntimeError('Concurrent checkpoint setup')
-            initialize(db, path, '')
-            saver = PostgresSaver(db, serde=checkpoint_serializer())
+            with transaction(db):
+                initialize(db, path)
+            connection = cast(Connection[dict[str, Any]], db.connection.driver_connection)
+            saver = PostgresSaver(connection, serde=checkpoint_serializer())
             saver.setup()
         yield saver

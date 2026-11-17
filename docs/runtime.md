@@ -188,6 +188,7 @@ python -m news_futures replay ../.local/runtime/decisions --quotes history.jsonl
 
 - Начни с `docker compose exec backend python -m news_futures runtime-status .local/runtime.json --decision ID` или трассы в панели. Трассы лежат в `data_dir`, а контрольные точки в PostgreSQL привязаны к абсолютному пути этого каталога внутри контейнера.
 - Аргументы команд доступны через `docker compose run --rm backend <команда> --help`.
+- Панель работает на FastAPI и Uvicorn. SQLAlchemy Core обслуживает транзакции приложения в существующих схемах PostgreSQL. LangGraph использует драйвер psycopg для контрольных точек.
 - Образ бэкенда устанавливает [requirements.txt](../backend/requirements.txt). Файл [constraints.txt](../backend/constraints.txt) фиксирует версии для Docker и локальной установки.
 - Для тестов выполни `python -m pip install -r requirements-dev.txt` из `backend/` в окружении Python 3.11. Укажи в `DATABASE_URL` строку подключения к отдельной тестовой базе PostgreSQL, где тесты смогут создавать схемы. Затем выполни `python -m unittest discover -s tests -v` и `python -m mypy --strict news_futures tests`. Для проверки в Chrome собери фронтенд (`npm ci` и `npm run build` из `frontend/`) и перед запуском тестов укажи путь к браузеру в `OPERATOR_TEST_CHROME`. При правке Decisions проверь ID во всех трёх шагах и отказ без подмены.
 

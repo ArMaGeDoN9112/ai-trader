@@ -273,8 +273,8 @@ class RuntimeAcceptance(RiskFixture):
         revision = enqueue_test_news(self.root, {'text': 'SBER опубликовал повышенный прогноз.'})
         archive = Archive(self.publications_db)
         self.addCleanup(archive.db.close)
-        row = archive.db.execute('SELECT publication FROM revisions WHERE revision = %s',
-                                              (revision,)).fetchone()
+        row = archive.db.exec_driver_sql('SELECT publication FROM revisions WHERE revision = %s',
+                                              (revision,)).mappings().fetchone()
         assert row is not None
         saved = json.loads(row['publication'])
         at = datetime.fromisoformat(saved['published_at'])

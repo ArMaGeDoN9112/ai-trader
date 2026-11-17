@@ -3,8 +3,9 @@
 from decimal import Decimal
 import json
 from pathlib import Path
-import psycopg
 from typing import Any, cast
+
+from sqlalchemy import Connection, RowMapping
 
 from news_futures.api.news import REVISION, archive_news, event_rows, read_archive, runtime_rows, visible
 from news_futures.storage.database import has_table
@@ -29,8 +30,8 @@ def average(orders: list[dict[str, Any]], action: str) -> tuple[int | None, str 
     return lots, format((points / lots).quantize(Decimal('.000000001')).normalize(), 'f')
 
 
-def trade(root: Path, db: psycopg.Connection[dict[str, Any]], row: dict[str, Any],
-          publications: psycopg.Connection[dict[str, Any]] | None, *, detail: bool) -> dict[str, Any]:
+def trade(root: Path, db: Connection, row: RowMapping,
+          publications: Connection | None, *, detail: bool) -> dict[str, Any]:
     terms = json.loads(row['terms'])
     entry_side = 'buy' if terms['side'] == 'long' else 'sell'
     exit_side = 'sell' if entry_side == 'buy' else 'buy'
@@ -93,8 +94,8 @@ def trade(root: Path, db: psycopg.Connection[dict[str, Any]], row: dict[str, Any
     revision = linked_revision(root, row['approval'])
     if revision and next(archive_news(root, runtime_rows(publications, revision), event_rows(db, revision)), None):
         traces.append({'kind': 'entry', 'revision': revision})
-    reason = (db.execute('SELECT * FROM position_entry_reasons WHERE account_id = %s AND position_id = %s',
-                         (row['account_id'], row['id'])).fetchone()
+    reason = (db.exec_driver_sql('SELECT * FROM position_entry_reasons WHERE account_id = %s AND position_id = %s',
+                         (row['account_id'], row['id'])).mappings().fetchone()
               if has_table(db, 'position_entry_reasons') else None)
     protection = {'protected': 'confirmed', 'closed': 'none', 'no_fill': 'none'}.get(row['status'], 'unknown')
     return summary | {'traces': traces, 'events': events, 'orders': order_list, 'entry_reason': reason['reason'] if reason else None,
@@ -107,10 +108,10 @@ def trades_view(root: Path, account: str, cycle: str) -> dict[str, Any] | None:
     with (read_archive(root / 'events') as db, read_archive(root / 'publications') as publications):
         if db is None or not has_table(db, 'sandbox_cycles'):
             return None if cycle else {'trades': []}
-        rows = db.execute("""
+        rows = db.exec_driver_sql("""
             SELECT * FROM sandbox_cycles WHERE account_id = %s AND source IN ('sandbox', 'sandbox_mcp') AND (%s = '' OR id = %s)
             ORDER BY ordinal DESC
-        """, (account, cycle, cycle))
+        """, (account, cycle, cycle)).mappings()
         results = [trade(root, db, row, publications, detail=bool(cycle)) for row in rows]
     result = (results[0] if results else None) if cycle else {'trades': results}
     return cast(dict[str, Any] | None, visible(result))

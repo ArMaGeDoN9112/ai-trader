@@ -10,10 +10,11 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import Checkpoint
 
 from langgraph.checkpoint.postgres import PostgresSaver
-from psycopg import Connection, sql
+from psycopg import Connection as DriverConnection, sql
+from sqlalchemy import Connection
 
 from news_futures.storage.checkpoints import checkpoint_serializer, checkpoints, migrate_model_paths
-from news_futures.storage.database import archive_exists, connect, has_table, lock_writes, schema_name
+from news_futures.storage.database import archive_exists, connect, has_table, lock_writes, schema_name, transaction
 from news_futures.storage.events import EventArchive
 from news_futures.storage.locks import exclusive_operation
 from news_futures.storage.operator_state import OperatorState
@@ -38,26 +39,27 @@ def migrate_checkpoints(directory: Path) -> dict[str, int]:
           exclusive_operation(path, 'checkpoint-setup') as setup):
         if not runtime or not sandbox or not setup:
             raise ValueError('Stop the runtime and sandbox executor before checkpoint migration')
-        with connect(path, client_cursor=False) as db, db.transaction():
+        with connect(path) as db, transaction(db):
             report = {'checkpoint_blobs': 0, 'checkpoint_writes': 0}
             if not has_table(db, 'checkpoints'):
                 return report
             lock_writes(db, path)
-            db.execute('LOCK TABLE checkpoints, checkpoint_blobs, checkpoint_writes IN EXCLUSIVE MODE')
+            db.exec_driver_sql('LOCK TABLE checkpoints, checkpoint_blobs, checkpoint_writes IN EXCLUSIVE MODE')
             serializer = checkpoint_serializer()
             for table, keys in (
                 ('checkpoint_blobs', ('thread_id', 'checkpoint_ns', 'channel', 'version')),
                 ('checkpoint_writes', ('thread_id', 'checkpoint_ns', 'checkpoint_id', 'task_id', 'idx')),
             ):
-                rows = db.execute(sql.SQL('SELECT * FROM {} WHERE blob IS NOT NULL').format(sql.Identifier(table)))
-                for row in rows.fetchall():
+                name = sql.Identifier(table).as_string()
+                rows = db.exec_driver_sql(f'SELECT * FROM {name} WHERE blob IS NOT NULL').mappings()
+                for row in rows:
                     original = row['blob']
                     migrated = migrate_model_paths(row['type'], original)
                     serializer.loads_typed((row['type'], migrated))
                     if migrated != original:
-                        condition = sql.SQL(' AND ').join(sql.SQL('{} = %s').format(sql.Identifier(key)) for key in keys)
-                        db.execute(sql.SQL('UPDATE {} SET blob = %s WHERE {}').format(sql.Identifier(table), condition),
-                                   (migrated, *(row[key] for key in keys)))
+                        condition = ' AND '.join(f'{sql.Identifier(key).as_string()} = %s' for key in keys)
+                        db.exec_driver_sql(f'UPDATE {name} SET blob = %s WHERE {condition}',
+                                           (migrated, *(row[key] for key in keys)))
                         report[table] += 1
             return report
 
@@ -68,9 +70,10 @@ def require_migration(directory: Path) -> None:
             raise RuntimeErrorInfo('SQLite runtime data found. Run migrate-sqlite with the operator and worker stopped.')
 
 
-def import_tables(source: sqlite3.Connection, db: Connection[dict[str, Any]],
+def import_tables(source: sqlite3.Connection, db: Connection,
                   tables: dict[str, str | None]) -> dict[str, int]:
     source_tables = {name for name, in source.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    connection = cast(DriverConnection[tuple[Any, ...]], db.connection.driver_connection)
     counts = {}
     for table, sequence in tables.items():
         if table not in source_tables:
@@ -79,22 +82,23 @@ def import_tables(source: sqlite3.Connection, db: Connection[dict[str, Any]],
         rows = source.execute(f'SELECT {selection} FROM "{table}" ORDER BY rowid')
         columns = sql.SQL(', ').join(sql.Identifier(column[0]) for column in rows.description)
         count = 0
-        with db.cursor().copy(sql.SQL('COPY {} ({}) FROM STDIN').format(sql.Identifier(table), columns)) as copy:
+        with connection.cursor() as cursor, cursor.copy(
+            sql.SQL('COPY {} ({}) FROM STDIN').format(sql.Identifier(table), columns),
+        ) as copy:
             for row in rows:
                 copy.write_row(row)
                 count += 1
         counts[table] = count
         if sequence and count:
-            maximum = db.execute(sql.SQL('SELECT max({}) AS value FROM {}').format(
-                sql.Identifier(sequence), sql.Identifier(table),
-            )).fetchone()
-            assert maximum is not None
-            db.execute('SELECT setval(pg_get_serial_sequence(%s, %s), %s)', (table, sequence, maximum['value']))
+            column, name = (sql.Identifier(value).as_string() for value in (sequence, table))
+            maximum = db.exec_driver_sql(f'SELECT max({column}) FROM {name}').scalar_one()
+            db.exec_driver_sql('SELECT setval(pg_get_serial_sequence(%s, %s), %s)', (table, sequence, maximum))
     return counts
 
 
-def import_checkpoints(source: sqlite3.Connection, db: Connection[dict[str, Any]]) -> dict[str, int]:
-    saver = PostgresSaver(db, serde=checkpoint_serializer())
+def import_checkpoints(source: sqlite3.Connection, db: Connection) -> dict[str, int]:
+    connection = cast(DriverConnection[dict[str, Any]], db.connection.driver_connection)
+    saver = PostgresSaver(connection, serde=checkpoint_serializer())
     count = 0
     for thread, namespace, parent, kind, data, metadata in source.execute('''
         SELECT thread_id, checkpoint_ns, parent_checkpoint_id, type, checkpoint, metadata
@@ -109,7 +113,7 @@ def import_checkpoints(source: sqlite3.Connection, db: Connection[dict[str, Any]
     write_columns = {row[1] for row in source.execute('PRAGMA table_info(writes)')}
     task_path = 'task_path' if 'task_path' in write_columns else "''"
     writes = 0
-    with db.cursor().copy('''
+    with connection.cursor() as cursor, cursor.copy('''
         COPY checkpoint_writes (thread_id, checkpoint_ns, checkpoint_id, task_id, task_path, idx, channel, type, blob)
         FROM STDIN
     ''') as copy:
@@ -141,19 +145,20 @@ def migrate(directory: Path) -> dict[str, Any]:
         with EventArchive(directory / 'events') as events:
             events.trades.initialize()
         state = OperatorState(directory)
-        with connect(state.path) as db:
+        with connect(state.path) as db, transaction(db):
             state.initialize(db)
         with checkpoints(directory / 'checkpoints'):
             pass
 
-        with connect(publications, client_cursor=False) as db, db.transaction():
+        with connect(publications) as db, transaction(db):
             report = {}
             for name, tables in ARCHIVES.items():
                 path = directory / name
                 lock_writes(db, path)
-                db.execute(sql.SQL('SET LOCAL search_path TO {}').format(sql.Identifier(schema_name(path))))
+                db.exec_driver_sql(f'SET LOCAL search_path TO {schema_name(path)}')
                 for table in tables:
-                    data = db.execute(sql.SQL('SELECT 1 FROM {} LIMIT 1').format(sql.Identifier(table))).fetchone()
+                    table_name = sql.Identifier(table).as_string()
+                    data = db.exec_driver_sql(f'SELECT 1 FROM {table_name} LIMIT 1').first()
                     if data:
                         raise ValueError(f'Target PostgreSQL table {name}.{table} already contains data')
                 if name in sources:
@@ -162,7 +167,7 @@ def migrate(directory: Path) -> dict[str, Any]:
                         report[name] = (import_checkpoints(source, db) if name == 'checkpoints'
                                         else import_tables(source, db, tables))
 
-            marker = sql.Identifier(schema_name(publications), 'sqlite_import')
-            db.execute(sql.SQL('CREATE TABLE {} (imported_at timestamptz NOT NULL DEFAULT now())').format(marker))
-            db.execute(sql.SQL('INSERT INTO {} DEFAULT VALUES').format(marker))
+            marker = f'{schema_name(publications)}.sqlite_import'
+            db.exec_driver_sql(f'CREATE TABLE {marker} (imported_at timestamptz NOT NULL DEFAULT now())')
+            db.exec_driver_sql(f'INSERT INTO {marker} DEFAULT VALUES')
             return report

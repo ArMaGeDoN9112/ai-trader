@@ -5,11 +5,12 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import re
-import psycopg
 from typing import Any, Iterator, cast
 from urllib.parse import parse_qsl, urlsplit
 
-from news_futures.storage.database import connect, has_table
+from sqlalchemy import Connection
+
+from news_futures.storage.database import connect, has_table, transaction
 from news_futures.storage.publications import Archive
 from news_futures.storage.trades import journal_events
 from news_futures.common.paths import persistent_path
@@ -31,9 +32,9 @@ CREDENTIAL = re.compile(
 )
 
 @contextmanager
-def read_archive(path: Path) -> Iterator[psycopg.Connection[dict[str, Any]]]:
-    with connect(path) as db, db.transaction():
-        db.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+def read_archive(path: Path) -> Iterator[Connection]:
+    with connect(path) as db, transaction(db):
+        db.exec_driver_sql('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
         yield db
 
 
@@ -110,34 +111,35 @@ def when(path: Path, record: dict[str, Any]) -> str:
         return ''
 
 
-def runtime_rows(db: psycopg.Connection[dict[str, Any]] | None, revision: str | None) -> dict[str, tuple[dict[str, Any], Any]]:
+def runtime_rows(db: Connection | None, revision: str | None) -> dict[str, tuple[dict[str, Any], Any]]:
     if db is None or not has_table(db, 'runtime_decisions'):
         return {}
     return {row['revision']: (json.loads(row['publication']), json.loads(row['result']))
-            for row in db.execute('''
+            for row in db.exec_driver_sql('''
                 SELECT revision, publication, result FROM runtime_decisions JOIN revisions USING (revision)
                 WHERE (%s::text IS NULL OR revision = %s)
                   AND (%s::text IS NOT NULL OR (publication::json ->> 'source') IS DISTINCT FROM %s)
-            ''', (revision, revision, revision, TEST_SOURCE))}
+            ''', (revision, revision, revision, TEST_SOURCE)).mappings()}
 
 
-def telegram_rows(db: psycopg.Connection[dict[str, Any]] | None, revision: str | None = None) -> Iterator[dict[str, Any]]:
+def telegram_rows(db: Connection | None, revision: str | None = None) -> Iterator[dict[str, Any]]:
     if db is not None and has_table(db, 'revisions'):
-        yield from db.execute("""
+        rows = db.exec_driver_sql("""
             SELECT revision, publication, status FROM revisions
             WHERE historical = 0
               AND ((publication::json ->> 'source') LIKE 'telegram:%%'
                    OR (%s::text IS NOT NULL AND (publication::json ->> 'source') = %s))
               AND (%s::text IS NULL OR revision = %s)
-        """, (revision, TEST_SOURCE, revision, revision))
+        """, (revision, TEST_SOURCE, revision, revision)).mappings()
+        yield from map(dict, rows)
 
 
-def event_rows(db: psycopg.Connection[dict[str, Any]] | None, revision: str | None, *,
+def event_rows(db: Connection | None, revision: str | None, *,
                include_unlinked: bool = False) -> dict[str, list[dict[str, Any]]]:
     if db is None or not has_table(db, 'event_decisions'):
         return {}
     events: dict[str, list[dict[str, Any]]] = {}
-    for row in db.execute('''
+    for row in db.exec_driver_sql('''
         SELECT d.id, r.revision, linked, publication, links, details
         FROM (
             SELECT revision, json_array_length(links::json) > 0 AS linked,
@@ -147,7 +149,7 @@ def event_rows(db: psycopg.Connection[dict[str, Any]] | None, revision: str | No
               AND (%s::text IS NOT NULL OR (publication::json ->> 'source') IS DISTINCT FROM %s)
         ) r JOIN event_decisions d USING (revision)
         ORDER BY d.id
-    ''', (include_unlinked, include_unlinked, revision, revision, revision, TEST_SOURCE)):
+    ''', (include_unlinked, include_unlinked, revision, revision, revision, TEST_SOURCE)).mappings():
         history = events.setdefault(row['revision'], [])
         if row['linked'] or include_unlinked:
             history.append(json.loads(row['details']) | {
@@ -156,12 +158,12 @@ def event_rows(db: psycopg.Connection[dict[str, Any]] | None, revision: str | No
     return events
 
 
-def cycle_rows(db: psycopg.Connection[dict[str, Any]] | None, account: str) -> list[dict[str, Any]]:
+def cycle_rows(db: Connection | None, account: str) -> list[dict[str, Any]]:
     if db is None or not has_table(db, 'sandbox_cycles'):
         return []
-    return [dict(row) | {'terms': json.loads(row['terms'])} for row in db.execute(
+    return [dict(row) | {'terms': json.loads(row['terms'])} for row in db.exec_driver_sql(
         'SELECT id, terms, approval FROM sandbox_cycles WHERE account_id = %s', (account,),
-    )]
+    ).mappings()]
 
 
 def archive_news(root: Path, runtime: dict[str, tuple[dict[str, Any], Any]],
@@ -209,12 +211,12 @@ def testing_view(root: Path) -> dict[str, Any]:
     decisions = []
     with read_archive(root / 'publications') as db:
         if db is not None and has_table(db, 'runtime_decisions'):
-            for row in db.execute("""
+            for row in db.exec_driver_sql("""
                 SELECT revision, publication, revisions.status, result
                 FROM revisions LEFT JOIN runtime_decisions USING (revision)
                 WHERE (publication::json ->> 'source') = %s
                 ORDER BY revisions.ordinal DESC LIMIT 20
-            """, (TEST_SOURCE,)):
+            """, (TEST_SOURCE,)).mappings():
                 publication = json.loads(row['publication'])
                 result = json.loads(row['result']) if row['result'] else {'status': row['status']}
                 result.setdefault('at', publication['received_at'])

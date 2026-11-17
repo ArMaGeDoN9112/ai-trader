@@ -9,6 +9,7 @@ from unittest.mock import patch
 from tests.support.risk import RiskFixture
 
 from news_futures.trading.execution import Fill
+from news_futures.storage.database import transaction
 from news_futures.storage.events import EventArchive
 from news_futures.storage.publications import Archive
 from news_futures.trading.terms import EntryReservation
@@ -57,8 +58,8 @@ class SandboxExecutionTest(RiskFixture):
         entry = self.start(approval)
         self.assertEqual(entry['status'], 'protected')
         with EventArchive(self.events_db) as events:
-            with events.db.transaction():
-                events.db.execute("""
+            with transaction(events.db):
+                events.db.exec_driver_sql("""
                     INSERT INTO sandbox_cycles (id, account_id, proposal_id, terms, approval, source, status)
                     SELECT 'conflicting-cycle', account_id, 'other-proposal', terms, approval, source, 'reserved'
                     FROM sandbox_cycles WHERE id = %s
@@ -68,7 +69,7 @@ class SandboxExecutionTest(RiskFixture):
                 self.assertEqual(executor.reconcile(close=True, cycle_id=entry['cycle_id']),
                                  {'status': 'blocked', 'reason': 'conflicting_active_cycles'})
                 read_trade.assert_not_called()
-            row = events.db.execute('SELECT sum(close_requested) AS total FROM sandbox_cycles').fetchone()
+            row = events.db.exec_driver_sql('SELECT sum(close_requested) AS total FROM sandbox_cycles').mappings().fetchone()
             assert row is not None
             self.assertEqual(row['total'], 0)
         with patch.object(self.broker, 'read_risk') as read_risk:

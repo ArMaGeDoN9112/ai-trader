@@ -1,4 +1,5 @@
 -c constraints.txt
+fastapi
 httpx
 jsonschema
 langchain-core
@@ -13,4 +14,6 @@ ormsgpack
 psycopg[binary]
 pydantic
 referencing
+sqlalchemy
 telethon
+uvicorn

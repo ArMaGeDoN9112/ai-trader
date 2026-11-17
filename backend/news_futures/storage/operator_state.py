@@ -4,10 +4,11 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 import json
 from pathlib import Path
-import psycopg
 from typing import Any
 
-from news_futures.storage.database import connect, has_table, initialize
+from sqlalchemy import Connection
+
+from news_futures.storage.database import connect, has_table, initialize, transaction
 from news_futures.dataflows.publications import utc_now
 from news_futures.trading.terms import CloseIntent
 
@@ -16,7 +17,7 @@ class OperatorState:
     def __init__(self, directory: Path):
         self.path = directory / 'operator'
 
-    def initialize(self, db: psycopg.Connection[dict[str, Any]]) -> None:
+    def initialize(self, db: Connection) -> None:
         initialize(db, self.path, """
             CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS close_intents (
@@ -27,15 +28,15 @@ class OperatorState:
         """)
 
     @contextmanager
-    def _write(self) -> Iterator[psycopg.Connection[dict[str, Any]]]:
-        with connect(self.path) as db, db.transaction():
+    def _write(self) -> Iterator[Connection]:
+        with connect(self.path) as db, transaction(db):
             self.initialize(db)
             yield db
 
     def _get(self, key: str, default: dict[str, Any]) -> dict[str, Any]:
         with connect(self.path) as db:
             if has_table(db, 'preferences'):
-                row = db.execute('SELECT value FROM preferences WHERE key = %s', (key,)).fetchone()
+                row = db.exec_driver_sql('SELECT value FROM preferences WHERE key = %s', (key,)).mappings().fetchone()
                 if row:
                     return dict(json.loads(row['value']))
         return default
@@ -45,10 +46,10 @@ class OperatorState:
 
     def set_pause(self, paused: bool) -> None:
         with self._write() as db:
-            row = db.execute("SELECT value FROM preferences WHERE key = 'pause'").fetchone()
+            row = db.exec_driver_sql("SELECT value FROM preferences WHERE key = 'pause'").mappings().fetchone()
             current = json.loads(row['value'])['paused'] if row else False
             if current != paused:
-                db.execute("INSERT INTO preferences VALUES ('pause', %s) ON CONFLICT (key) DO UPDATE SET value = excluded.value", (json.dumps({
+                db.exec_driver_sql("INSERT INTO preferences VALUES ('pause', %s) ON CONFLICT (key) DO UPDATE SET value = excluded.value", (json.dumps({
                     'paused': paused, 'changed_at': utc_now().isoformat(),
                 }),))
 
@@ -57,10 +58,10 @@ class OperatorState:
 
     def save_settings(self, values: dict[str, Any], *, expected: dict[str, Any] | None = None) -> None:
         with self._write() as db:
-            row = db.execute("SELECT value FROM preferences WHERE key = 'settings'").fetchone()
+            row = db.exec_driver_sql("SELECT value FROM preferences WHERE key = 'settings'").mappings().fetchone()
             if expected is not None and expected != (json.loads(row['value']) if row else {}):
                 raise ValueError('settings_conflict')
-            db.execute("INSERT INTO preferences VALUES ('settings', %s) ON CONFLICT (key) DO UPDATE SET value = excluded.value", (
+            db.exec_driver_sql("INSERT INTO preferences VALUES ('settings', %s) ON CONFLICT (key) DO UPDATE SET value = excluded.value", (
                 json.dumps(values | {'changed_at': utc_now().isoformat()}),
             ))
 
@@ -68,27 +69,27 @@ class OperatorState:
         with connect(self.path) as db:
             if not has_table(db, 'close_intents'):
                 return None
-            row = db.execute("""SELECT request_id, cycle_id, contract_id, side, quantity, at, status, reason
+            row = db.exec_driver_sql("""SELECT request_id, cycle_id, contract_id, side, quantity, at, status, reason
                              FROM close_intents WHERE (NOT %s OR status = 'queued')
                              AND (%s::text IS NULL OR request_id = %s) ORDER BY ordinal DESC LIMIT 1""",
-                             (pending, request_id, request_id)).fetchone()
+                             (pending, request_id, request_id)).mappings().fetchone()
             return dict(row) if row else None
 
     def queue(self, intent: CloseIntent) -> tuple[int, str]:
         with self._write() as db:
-            existing = db.execute('SELECT * FROM close_intents WHERE request_id = %s', (intent.request_id,)).fetchone()
+            existing = db.exec_driver_sql('SELECT * FROM close_intents WHERE request_id = %s', (intent.request_id,)).mappings().fetchone()
             if existing:
                 same = (existing['cycle_id'], existing['contract_id'], existing['side'], existing['quantity']) == (
                     intent.cycle_id, intent.contract_id, intent.side, intent.quantity)
                 return (202, 'close_queued') if same else (409, 'invalid_request')
-            if db.execute("SELECT 1 FROM close_intents WHERE status = 'queued' OR (cycle_id = %s AND status = 'accepted')",
-                          (intent.cycle_id,)).fetchone():
+            if db.exec_driver_sql("SELECT 1 FROM close_intents WHERE status = 'queued' OR (cycle_id = %s AND status = 'accepted')",
+                          (intent.cycle_id,)).mappings().fetchone():
                 return 409, 'close_already_requested'
-            db.execute('INSERT INTO close_intents VALUES (%s, %s, %s, %s, %s, %s, %s, %s)',
+            db.exec_driver_sql('INSERT INTO close_intents VALUES (%s, %s, %s, %s, %s, %s, %s, %s)',
                        (intent.request_id, intent.cycle_id, intent.contract_id, intent.side, intent.quantity,
                         utc_now().isoformat(), 'queued', ''))
         return 202, 'close_queued'
 
     def finish_close(self, request_id: str, status: str, reason: str) -> None:
         with self._write() as db:
-            db.execute('UPDATE close_intents SET status = %s, reason = %s WHERE request_id = %s', (status, reason, request_id))
+            db.exec_driver_sql('UPDATE close_intents SET status = %s, reason = %s WHERE request_id = %s', (status, reason, request_id))
