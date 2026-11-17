@@ -58,8 +58,9 @@ async def run_runtime(
         client = stack.enter_context(sandbox_client(settings.ca_file, read_only=use_mcp or settings.mode == 'observation'))
 
         def reader(contract: str, company: str | None) -> BrokerReader:
-            adapter = TBankMCPReader if use_mcp else TBankReader
-            return adapter(client, settings.account_id, contract, company)
+            if use_mcp:
+                return TBankMCPReader(client, settings.account_id, contract, company, settings.ca_file)
+            return TBankReader(client, settings.account_id, contract, company)
 
         def broker(contract: str, company: str | None) -> SandboxBroker:
             if use_mcp:

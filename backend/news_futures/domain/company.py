@@ -14,9 +14,35 @@ ObservationId = Annotated[str, Field(pattern=r'^[0-9a-f]{64}$')]
 MAX_SNAPSHOT_AGE = timedelta(minutes=5)
 
 
+class BookLevel(Contract):
+    price: float = Field(gt=0)
+    quantity_lots: int = Field(gt=0)
+
+
+class OrderBook(Contract):
+    observed_at: AwareDatetime
+    bid: BookLevel | None
+    ask: BookLevel | None
+
+    @model_validator(mode='after')
+    def ordered_prices(self) -> 'OrderBook':
+        if self.bid and self.ask and self.bid.price >= self.ask.price:
+            raise ValueError('crossed_order_book')
+        return self
+
+
+class MinuteCandle(Contract):
+    started_at: AwareDatetime
+    close: float = Field(gt=0)
+    volume_lots: int = Field(ge=0)
+
+
 class Market(Contract):
     observed_at: AwareDatetime
     last_price: float = Field(gt=0)
+    order_book: OrderBook | None = Field(default=None, exclude_if=lambda value: value is None)
+    trading_status: Nonempty | None = Field(default=None, exclude_if=lambda value: value is None)
+    trading_status_observed_at: AwareDatetime | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class MarketObservation(Contract):
@@ -29,7 +55,8 @@ class MarketObservation(Contract):
 
     @model_validator(mode='after')
     def chronological(self) -> 'MarketObservation':
-        if self.market.observed_at > self.received_at:
+        if (self.market.observed_at > self.received_at
+                or (self.market.order_book and self.market.order_book.observed_at > self.received_at)):
             raise ValueError('quote_observed_after_receipt')
         return self
 

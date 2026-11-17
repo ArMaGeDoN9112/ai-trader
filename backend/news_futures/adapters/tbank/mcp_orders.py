@@ -1,6 +1,9 @@
 """Official sandbox MCP writes, with receipt-based reconciliation via Sandbox REST."""
 
 import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from decimal import Decimal
 import ssl
 from pathlib import Path
 from typing import Any, Literal
@@ -12,8 +15,9 @@ from mcp.client.streamable_http import streamable_http_client
 from referencing import Registry
 
 from news_futures.adapters.credentials import load_token
+from news_futures.adapters.tbank.diagnostic_reads import schema_digest
 from news_futures.adapters.tbank.diagnostics import SANDBOX_URL
-from news_futures.adapters.tbank.rest import POINTS, STOP_TYPES, TBankReader, identifier
+from news_futures.adapters.tbank.rest import POINTS, STOP_TYPES, TBankReader, broker_read_timeout, identifier
 from news_futures.domain.execution import Fill
 from news_futures.domain.terms import EntryReservation
 
@@ -29,25 +33,73 @@ FIELDS = {
     CANCEL: ({'accountId', 'orderId'}, 'time'),
     CANCEL_STOP: ({'accountId', 'stopOrderId'}, 'time'),
 }
+MARKET_READS = {
+    'GetOrderBook': ('invest_get_orderbook', '60d11dbbfe05c213be87fead46e0b5ebae9203ac8925deb96eb05856a9119787'),
+    'GetCandles': ('invest_get_candles', '277376f5d15b1526fc8cb627b220c90255f043abae9c6d84642ff00aff45f315'),
+}
 
 
 class TBankMCPReader(TBankReader):
+    def __init__(self, client: httpx.Client, account_id: str, contract_id: str, company_id: str | None,
+                 ca_file: Path | None):
+        super().__init__(client, account_id, contract_id, company_id)
+        self.ca_file = ca_file
+        self._symbol: str | None = None
+
+    @asynccontextmanager
+    async def _session(self, seconds: float) -> AsyncIterator[ClientSession]:
+        tls = ssl.create_default_context(cafile=str(self.ca_file)) if self.ca_file else True
+
+        async def sandbox_only(request: httpx.Request) -> None:
+            if str(request.url) != SANDBOX_URL:
+                raise ValueError('sandbox_endpoint_required')
+
+        async with asyncio.timeout(seconds), httpx.AsyncClient(
+            verify=tls, headers={'Authorization': f"Bearer {load_token('sandbox', 'token')}"},
+            trust_env=False, follow_redirects=False, timeout=min(10, seconds), event_hooks={'request': [sandbox_only]},
+        ) as client:
+            async with streamable_http_client(SANDBOX_URL, http_client=client) as (read, write, _):
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
+                    yield session
+
+    def _market_data(self, method: str, **args: Any) -> dict[str, Any]:
+        name, digest = MARKET_READS[method]
+        instrument = self.instrument()
+        return asyncio.run(self._read_market_tool(name, digest, {'instrumentId': instrument, **args}))
+
+    def _market_price(self, value: Any) -> float:
+        return float(Decimal(identifier(value['value'])))
+
+    async def _read_market_tool(self, name: str, digest: str, args: dict[str, Any]) -> dict[str, Any]:
+        async with self._session(broker_read_timeout(10)) as session:
+            tools: list[types.Tool] = []
+            cursor = None
+            for _ in range(10):
+                page = await session.list_tools(cursor=cursor)
+                tools.extend(tool for tool in page.tools if tool.name == name)
+                cursor = page.nextCursor
+                if cursor is None:
+                    break
+            else:
+                raise ValueError('mcp_inventory_incomplete')
+            if len(tools) != 1:
+                raise ValueError('mcp_market_tool_missing_or_ambiguous')
+            tool = tools[0]
+            if not tool.annotations or tool.annotations.readOnlyHint is not True or schema_digest(tool) != digest:
+                raise ValueError('mcp_market_tool_schema_changed')
+            Draft202012Validator(tool.inputSchema, registry=Registry()).validate(args)
+            result = await session.call_tool(name, arguments=args)
+            if result.isError or not isinstance(result.structuredContent, dict):
+                raise ValueError('mcp_market_response_unconfirmed')
+            return result.structuredContent
+
     def read_order(self, order_id: str, *, request: bool, side: str,
                    receipt: str | None = None) -> tuple[bool, Fill | None, str | None]:
         if request and not receipt:
             # shortcut: MCP create tools lack a request key, so an absent receipt requires manual broker investigation.
             return False, None, None
         return super().read_order(receipt if request and receipt else order_id, request=False, side=side)
-
-
-class TBankMCPSandbox(TBankMCPReader):
-    source: Literal['sandbox_mcp'] = 'sandbox_mcp'
-
-    def __init__(self, client: httpx.Client, account_id: str, contract_id: str, company_id: str | None,
-                 ca_file: Path | None):
-        super().__init__(client, account_id, contract_id, company_id)
-        self.ca_file = ca_file
-        self._symbol: str | None = None
 
     def instrument(self) -> str:
         if self._symbol is None:
@@ -58,49 +110,41 @@ class TBankMCPSandbox(TBankMCPReader):
             self._symbol = f"{identifier(row['ticker'])}_{identifier(row['classCode'])}"
         return self._symbol
 
+
+class TBankMCPSandbox(TBankMCPReader):
+    source: Literal['sandbox_mcp'] = 'sandbox_mcp'
+
     async def _invoke(self, name: str | None, args: dict[str, Any]) -> dict[str, Any]:
-        tls = ssl.create_default_context(cafile=str(self.ca_file)) if self.ca_file else True
-
-        async def sandbox_only(request: httpx.Request) -> None:
-            if str(request.url) != SANDBOX_URL:
-                raise ValueError('sandbox_endpoint_required')
-
-        async with asyncio.timeout(20), httpx.AsyncClient(
-            verify=tls, headers={'Authorization': f"Bearer {load_token('sandbox', 'token')}"},
-            trust_env=False, follow_redirects=False, timeout=10, event_hooks={'request': [sandbox_only]},
-        ) as client:
-            async with streamable_http_client(SANDBOX_URL, http_client=client) as (read, write, _):
-                async with ClientSession(read, write) as session:
-                    await session.initialize()
-                    tools: dict[str, types.Tool] = {}
-                    cursor = None
-                    for _ in range(10):
-                        page = await session.list_tools(cursor=cursor)
-                        for tool in page.tools:
-                            if tool.name in FIELDS:
-                                if tool.name in tools:
-                                    raise ValueError('ambiguous_mcp_order_tool')
-                                tools[tool.name] = tool
-                        cursor = page.nextCursor
-                        if cursor is None:
-                            break
-                    else:
-                        raise ValueError('mcp_inventory_incomplete')
-                    for tool_name in (FIELDS if name is None else (name,)):
-                        reviewed_tool = tools.get(tool_name)
-                        fields, output_field = FIELDS[tool_name]
-                        if (reviewed_tool is None or not fields.issubset(reviewed_tool.inputSchema.get('properties', {}))
-                                or not set(reviewed_tool.inputSchema.get('required', ())).issubset(fields)
-                                or output_field not in (reviewed_tool.outputSchema or {}).get('properties', {})):
-                            raise ValueError('mcp_order_tool_schema_changed')
-                    if name is None:
-                        return {}
-                    schema = tools[name].inputSchema
-                    Draft202012Validator(schema, registry=Registry()).validate(args)
-                    result = await session.call_tool(name, arguments=args)
-                    if result.isError or not isinstance(result.structuredContent, dict):
-                        raise ValueError('mcp_order_response_unconfirmed')
-                    return result.structuredContent
+        async with self._session(20) as session:
+            tools: dict[str, types.Tool] = {}
+            cursor = None
+            for _ in range(10):
+                page = await session.list_tools(cursor=cursor)
+                for tool in page.tools:
+                    if tool.name in FIELDS:
+                        if tool.name in tools:
+                            raise ValueError('ambiguous_mcp_order_tool')
+                        tools[tool.name] = tool
+                cursor = page.nextCursor
+                if cursor is None:
+                    break
+            else:
+                raise ValueError('mcp_inventory_incomplete')
+            for tool_name in (FIELDS if name is None else (name,)):
+                reviewed_tool = tools.get(tool_name)
+                fields, output_field = FIELDS[tool_name]
+                if (reviewed_tool is None or not fields.issubset(reviewed_tool.inputSchema.get('properties', {}))
+                        or not set(reviewed_tool.inputSchema.get('required', ())).issubset(fields)
+                        or output_field not in (reviewed_tool.outputSchema or {}).get('properties', {})):
+                    raise ValueError('mcp_order_tool_schema_changed')
+            if name is None:
+                return {}
+            schema = tools[name].inputSchema
+            Draft202012Validator(schema, registry=Registry()).validate(args)
+            result = await session.call_tool(name, arguments=args)
+            if result.isError or not isinstance(result.structuredContent, dict):
+                raise ValueError('mcp_order_response_unconfirmed')
+            return result.structuredContent
 
     def prepare(self) -> None:
         self.instrument()

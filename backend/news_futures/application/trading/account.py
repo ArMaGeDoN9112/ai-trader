@@ -71,10 +71,9 @@ class BrokerAccount:
     def observe(self, catalog: bytes, contract_id: str, company_id: str) -> MarketReading:
         companies = load_catalog(catalog)
         listed = {(row.company_id, row.share_id) for row in catalog_rows(catalog)}
+        reader = self.reader(contract_id, company_id)
         try:
-            risk = RiskSnapshot.model_validate(self.reader(contract_id, company_id).read_risk(
-                self.account_id, contract_id,
-            ))
+            risk = RiskSnapshot.model_validate(reader.read_risk(self.account_id, contract_id))
         except UnsupportedFuturesUnits as error:
             raise NoSupportedFutures('no_supported_futures') from error
         contract = risk.contract
@@ -84,11 +83,14 @@ class BrokerAccount:
             raise RuntimeErrorInfo('market_contract_mismatch')
         if risk.execution_uncertain or risk.has_position or risk.has_active_orders:
             raise RuntimeErrorInfo('На счёте есть неподтверждённая позиция или заявки. Сверьте брокера.')
-        received_at = utc_now()
-        if contract.last_trade_at <= received_at:
+        if contract.last_trade_at <= utc_now():
             raise NoSupportedFutures('no_supported_futures')
+        order_book = reader.read_order_book()
+        received_at = utc_now()
         observation = MarketObservation(
-            contract_id=contract_id, market=Market(observed_at=contract.quote_at, last_price=float(contract.last_price)),
+            contract_id=contract_id, market=Market(observed_at=contract.quote_at, last_price=float(contract.last_price),
+                                                  order_book=order_book, trading_status=contract.trading_status,
+                                                  trading_status_observed_at=contract.observed_at if contract.trading_status else None),
             received_at=received_at, price_unit=contract.price_unit, limit_buy_available=contract.limit_buy_available,
             limit_sell_available=contract.limit_sell_available,
         )

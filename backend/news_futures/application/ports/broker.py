@@ -1,10 +1,11 @@
 """Broker interfaces owned by the trading use cases."""
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal, Protocol
 
 from news_futures.common.errors import RuntimeErrorInfo
-from news_futures.domain.company import MarketObservation, Snapshot
+from news_futures.domain.company import MarketObservation, MinuteCandle, OrderBook, Snapshot
 from news_futures.domain.terms import EntryReservation
 
 
@@ -30,10 +31,22 @@ class ReadMarket(Protocol):
     def __call__(self, contract_id: str, timeout: float, /) -> MarketReading: ...
 
 
+class ReadCandles(Protocol):
+    def __call__(self, contract_id: str, start: datetime, end: datetime, timeout: float, /) -> list[MinuteCandle]: ...
+
+
+class ReadComparison(Protocol):
+    def __call__(self, contract_id: str, start: datetime, end: datetime, timeout: float, /) -> dict[str, tuple[str, list[MinuteCandle]]]: ...
+
+
 class BrokerReader(Protocol):
     def account_activity(self) -> tuple[bool, bool]: ...
 
     def read_risk(self, account_id: str, contract_id: str) -> object: ...
+    def read_order_book(self) -> OrderBook: ...
+    def read_candles(self, start: datetime, end: datetime) -> list[MinuteCandle]: ...
+    def read_reference_candles(self, instrument: str, start: datetime, end: datetime) -> list[MinuteCandle]: ...
+    def resolve_share(self, position_uid: str) -> str: ...
     def read_trade(
         self, entry: EntryReservation, operations: dict[str, str], receipts: dict[str, str | None],
     ) -> object: ...

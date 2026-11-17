@@ -2,7 +2,7 @@
 
 from contextlib import contextmanager
 from contextvars import ContextVar
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 import ssl
@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from news_futures.adapters.credentials import load_token
 from news_futures.application.ports.broker import SubmissionRejected, UnsupportedFuturesUnits
 from news_futures.common.errors import RuntimeErrorInfo
+from news_futures.domain.company import BookLevel, MinuteCandle, OrderBook
 from news_futures.domain.execution import Fill, Protection, TradeState
 from news_futures.domain.execution import close_requests
 from news_futures.domain.publications import utc_now
@@ -33,9 +34,10 @@ READ_METHODS = {
     ('SandboxService', 'GetSandboxPortfolio'), ('SandboxService', 'GetSandboxWithdrawLimits'),
     ('SandboxService', 'GetSandboxOrders'), ('SandboxService', 'GetSandboxOrderState'),
     ('SandboxService', 'GetSandboxStopOrders'), ('InstrumentsService', 'FutureBy'),
-    ('InstrumentsService', 'Futures'), ('InstrumentsService', 'Shares'),
+    ('InstrumentsService', 'Futures'), ('InstrumentsService', 'Shares'), ('InstrumentsService', 'GetInstrumentBy'),
     ('MarketDataService', 'GetLastPrices'), ('MarketDataService', 'GetTradingStatus'),
     ('MarketDataService', 'GetTradingStatuses'),
+    ('MarketDataService', 'GetOrderBook'), ('MarketDataService', 'GetCandles'),
 }
 READ_URLS = {f'{SANDBOX_REST}{service}/{method}' for service, method in READ_METHODS}
 _read_until: ContextVar[float | None] = ContextVar('broker_read_until', default=None)
@@ -48,6 +50,16 @@ def limit_broker_read(seconds: float) -> Iterator[None]:
         yield
     finally:
         _read_until.reset(token)
+
+
+def broker_read_timeout(maximum: float) -> float:
+    deadline = _read_until.get()
+    if deadline is None:
+        return maximum
+    remaining = deadline - monotonic()
+    if remaining <= 0:
+        raise RuntimeErrorInfo('broker_read_timeout')
+    return min(maximum, remaining)
 
 
 class Amount(BaseModel):
@@ -107,11 +119,8 @@ class TBankReader:
         if account:
             args['accountId'] = self.account_id
         options: dict[str, Any] = {}
-        if (deadline := _read_until.get()) is not None:
-            remaining = deadline - monotonic()
-            if remaining <= 0:
-                raise RuntimeErrorInfo('broker_read_timeout')
-            options['timeout'] = min(8, remaining)
+        if _read_until.get() is not None:
+            options['timeout'] = broker_read_timeout(8)
         response = self.client.post(f'{SANDBOX_REST}{service}/{method}', json=args, **options)
         response.raise_for_status()
         payload = response.json()
@@ -156,6 +165,69 @@ class TBankReader:
         if portfolio['accountId'] != self.account_id:
             raise ValueError('sandbox_portfolio_mismatch')
         return amount(portfolio['totalAmountPortfolio'], rubles=True)
+
+    def _market_data(self, method: str, **args: Any) -> dict[str, Any]:
+        data = self.call(method, service='MarketDataService', account=False, instrumentId=self.contract_id, **args)
+        if method == 'GetOrderBook' and data['instrumentUid'] != self.contract_id:
+            raise ValueError('market_contract_mismatch')
+        return data
+
+    def _market_price(self, value: Any) -> float:
+        return float(amount(value))
+
+    def read_order_book(self) -> OrderBook:
+        book = self._market_data('GetOrderBook', depth=1)
+        if book['priceCurrency'] not in ('pt', 'pt.'):
+            raise ValueError('market_contract_or_price_unit_mismatch')
+
+        def level(side: str) -> BookLevel | None:
+            levels = rows(book, side)
+            if not levels:
+                return None
+            best, = levels
+            return BookLevel(price=self._market_price(best['price']), quantity_lots=integer(best['quantity']))
+
+        return OrderBook(observed_at=datetime.fromisoformat(book['orderbookTs']), bid=level('bids'), ask=level('asks'))
+
+    def read_candles(self, start: datetime, end: datetime) -> list[MinuteCandle]:
+        return self._read_candles(start, end)
+
+    def resolve_share(self, position_uid: str) -> str:
+        share = self.call('GetInstrumentBy', service='InstrumentsService', account=False,
+                          id=position_uid, idType='INSTRUMENT_ID_TYPE_POSITION_UID')['instrument']
+        if share['positionUid'] != position_uid or share['instrumentType'] != 'share':
+            raise ValueError('underlying_share_mismatch')
+        return identifier(share['uid'])
+
+    def read_reference_candles(self, instrument: str, start: datetime, end: datetime) -> list[MinuteCandle]:
+        return self._read_candles(start, end, reference=instrument)
+
+    def _read_candles(self, start: datetime, end: datetime, *, reference: str | None = None) -> list[MinuteCandle]:
+        args = {'interval': 'CANDLE_INTERVAL_1_MIN', 'candleSourceType': 'CANDLE_SOURCE_EXCHANGE',
+                'from': start.isoformat(), 'to': end.isoformat()}
+        units: tuple[str, ...]
+        if reference is not None:
+            data = self.call('GetCandles', service='MarketDataService', account=False, instrumentId=reference, **args)
+            units = ('rub', '', 'pt', 'pt.')
+        else:
+            data = self._market_data('GetCandles', **args)
+            units = ('pt', 'pt.')
+        candles = rows(data, 'candles')
+        if candles and data['priceCurrency'] not in units:
+            raise ValueError('invalid_candle_price_unit')
+        completed = []
+        for candle in candles:
+            at = datetime.fromisoformat(candle['time'])
+            if not start <= at <= end or at.second or at.microsecond or type(candle['isComplete']) is not bool:
+                raise ValueError('invalid_candle')
+            if candle['isComplete'] and at + timedelta(minutes=1) <= end:
+                close = candle['close']
+                completed.append(MinuteCandle(started_at=at,
+                                              close=self._market_price(close) if reference is None else float(amount(close)),
+                                              volume_lots=integer(candle['volume'])))
+        if len({item.started_at for item in completed}) != len(completed):
+            raise ValueError('duplicate_candle')
+        return sorted(completed, key=lambda candle: candle.started_at)
 
     def read_risk(self, account_id: str, contract_id: str) -> RiskSnapshot:
         if self.company_id is None or (account_id, contract_id) != (self.account_id, self.contract_id):
@@ -210,6 +282,7 @@ class TBankReader:
                 'round_trip_cost_per_lot': (price * Decimal('0.001')).quantize(Decimal('0.01'), rounding='ROUND_UP'),
                 'limit_buy_available': available and future['buyAvailableFlag'] is True,
                 'limit_sell_available': available and future['sellAvailableFlag'] is True,
+                'trading_status': identifier(status['tradingStatus']),
             },
         })
 

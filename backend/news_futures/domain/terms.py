@@ -35,6 +35,7 @@ class ContractSnapshot(Contract):
     round_trip_cost_per_lot: Money
     limit_buy_available: bool
     limit_sell_available: bool
+    trading_status: Nonempty | None = None
 
 
 class RiskSnapshot(Contract):

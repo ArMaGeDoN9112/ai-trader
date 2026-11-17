@@ -44,6 +44,7 @@ class RiskFixture(unittest.TestCase):
                 'margin_per_lot_buy': Decimal('1000'), 'margin_per_lot_sell': Decimal('2000'),
                 'round_trip_cost_per_lot': Decimal('25'),
                 'limit_buy_available': True, 'limit_sell_available': True,
+                'trading_status': 'SECURITY_TRADING_STATUS_NORMAL_TRADING',
             },
         }
 

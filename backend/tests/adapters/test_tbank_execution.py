@@ -166,6 +166,7 @@ class TBankExecutionTest(RiskFixture):
                     {'instrumentUid': self.contract_id, 'price': price, 'time': self.now.isoformat()},
                 ]},
                 'GetTradingStatus': {'instrumentUid': self.contract_id, 'apiTradeAvailableFlag': True,
+                                     'tradingStatus': 'SECURITY_TRADING_STATUS_NORMAL_TRADING',
                                      'limitOrderAvailableFlag': True, 'marketOrderAvailableFlag': True},
                 'GetSandboxPositions': {
                     'accountId': self.account_id, 'limitsLoadingInProgress': False,
