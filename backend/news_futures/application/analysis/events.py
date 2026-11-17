@@ -104,6 +104,7 @@ def revision_key(record: dict[str, Any]) -> str:
             received_at=datetime.fromisoformat(record['received_at']),
             edited_at=datetime.fromisoformat(record['edited_at']) if record.get('edited_at') else None,
             unread_media=record.get('unread_media', False), change=record.get('change', 'new'),
+            cited_urls=tuple(record.get('cited_urls', ())),
         )
         if (any(not isinstance(value, str) or not value.strip() for value in (
                 publication.source, publication.external_id, publication.url, publication.text))

@@ -287,7 +287,8 @@ class TelethonAdapterTest(unittest.IsolatedAsyncioTestCase):
         from telethon import functions, types
         now = utc_now()
         message = types.Message(1, types.PeerChannel(123), date=now,
-                                message='Подпись', media=types.MessageMediaUnsupported())
+                                message='Подпись', media=types.MessageMediaUnsupported(),
+                                entities=[types.MessageEntityTextUrl(0, 7, 'https://issuer.example/report')])
         edited = types.Message(1, types.PeerChannel(123), date=now,
                                message='Исправленная подпись', edit_date=now)
         requests: list[Any] = []
@@ -312,6 +313,12 @@ class TelethonAdapterTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(difference.pts, 12)
         self.assertEqual([item.text for item in difference.publications], ['Подпись', 'Исправленная подпись'])
         self.assertTrue(difference.publications[0].unread_media)
+        self.assertEqual(difference.publications[0].record()['cited_urls'], ['https://issuer.example/report'])
+        self.assertNotIn('cited_urls', difference.publications[1].record())
+        first = difference.publications[0]
+        self.assertNotEqual(first.revision_key(), replace(first, cited_urls=('https://issuer.example/correction',)).revision_key())
+        from news_futures.application.analysis.events import revision_key
+        self.assertEqual(first.revision_key(), revision_key(first.record()))
         with self.assertRaises(ValueError):
             transport.publication(source, types.Message(1, types.PeerChannel(999), date=now, message='foreign'))
 

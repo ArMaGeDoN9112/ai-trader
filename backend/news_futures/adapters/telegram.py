@@ -200,6 +200,9 @@ class TelethonTransport:
             return None
         if not isinstance(message.peer_id, types.PeerChannel) or message.peer_id.channel_id != source.channel_id:
             raise ValueError('Message from an unconfigured channel')
+        links = tuple(dict.fromkeys(entity.url for entity in message.entities or []
+                                    if isinstance(entity, types.MessageEntityTextUrl)
+                                    and entity.url.startswith(('https://', 'http://')) and len(entity.url) <= 300))[:12]
         return Publication(
             source=source.id, external_id=str(message.id),
             url=f'https://t.me/{source.username}/{message.id}',
@@ -207,6 +210,7 @@ class TelethonTransport:
             edited_at=message.edit_date,
             unread_media=message.media is not None and not isinstance(message.media, types.MessageMediaEmpty),
             change=change if change == 'delete' else ('edit' if message.edit_date else change),
+            cited_urls=links,
         )
 
     async def history(self, source: Source, since: datetime, until: datetime) -> list[Publication]:
