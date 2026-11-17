@@ -529,7 +529,7 @@ def trace_view(root: Path, account: str, key: str) -> dict[str, Any] | None:
         if stage and not checking_risk:
             step('outcome', stage, result['status'], at=result.get('at'),
                  output=fields(result, 'reason', 'execution', 'reconcile_pending', 'audit_error',
-                               'proposal', 'critic_status'))
+                               'proposal', 'critic_status', 'queue_wait_ms', 'deadline_at', 'latency_ms'))
         steps[1:] = sorted(steps[1:], key=lambda item: item['_sort_at'])
         for item in steps:
             del item['_sort_at']

@@ -1,8 +1,10 @@
 """Broker interfaces owned by the trading use cases."""
 
+from dataclasses import dataclass
 from typing import Literal, Protocol
 
 from news_futures.common.errors import RuntimeErrorInfo
+from news_futures.domain.company import MarketObservation, Snapshot
 from news_futures.domain.terms import EntryReservation
 
 
@@ -16,6 +18,16 @@ class UnsupportedFuturesUnits(ValueError):
 
 class NoSupportedFutures(RuntimeErrorInfo):
     """The account snapshot has no supported, unexpired contracts."""
+
+
+@dataclass(frozen=True)
+class MarketReading:
+    snapshot: Snapshot
+    observation: MarketObservation
+
+
+class ReadMarket(Protocol):
+    def __call__(self, contract_id: str, timeout: float, /) -> MarketReading: ...
 
 
 class BrokerReader(Protocol):

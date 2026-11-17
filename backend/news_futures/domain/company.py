@@ -3,18 +3,39 @@
 from datetime import timedelta
 from typing import Annotated, Any, Literal
 
-from pydantic import AwareDatetime, Field
+from pydantic import AwareDatetime, Field, model_validator
 
 from news_futures.domain.contracts import Contract, Position, ProposalTerms, ReviewContext
+from news_futures.domain.publications import publication_digest
 
 
 Nonempty = Annotated[str, Field(min_length=1)]
+ObservationId = Annotated[str, Field(pattern=r'^[0-9a-f]{64}$')]
 MAX_SNAPSHOT_AGE = timedelta(minutes=5)
 
 
 class Market(Contract):
     observed_at: AwareDatetime
     last_price: float = Field(gt=0)
+
+
+class MarketObservation(Contract):
+    contract_id: Nonempty
+    market: Market
+    received_at: AwareDatetime
+    price_unit: Literal['points']
+    limit_buy_available: bool
+    limit_sell_available: bool
+
+    @model_validator(mode='after')
+    def chronological(self) -> 'MarketObservation':
+        if self.market.observed_at > self.received_at:
+            raise ValueError('quote_observed_after_receipt')
+        return self
+
+    @property
+    def id(self) -> str:
+        return publication_digest(self.model_dump(mode='json'))
 
 
 class AccountBalance(Contract):
@@ -35,6 +56,7 @@ class Instrument(Contract):
     contract_id: Nonempty
     allowed_for_entry: bool
     market: Market
+    market_observation_id: ObservationId | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class OpenPosition(Position):
@@ -95,3 +117,23 @@ class CompanyProposal(ProposalTerms):
     contract_id: Nonempty | None
     assessments: list[CandidateAssessment]
     level_rationale: LevelRationale | None
+
+
+class SignalCandidate(Contract):
+    revision: str = Field(pattern=r'^[0-9a-f]{64}$')
+    event_decision_id: int = Field(gt=0)
+    strategy: Literal['fixed', 'tool_agent']
+    proposal_id: Nonempty
+    proposal: CompanyProposal
+    observation_id: ObservationId
+    received_at: AwareDatetime
+    decided_at: AwareDatetime
+    deadline_at: AwareDatetime
+
+    @model_validator(mode='after')
+    def valid_signal(self) -> 'SignalCandidate':
+        if self.proposal.action != 'enter' or self.proposal.contract_id is None or self.proposal.side is None:
+            raise ValueError('entry_candidate_required')
+        if not self.received_at <= self.decided_at < self.deadline_at:
+            raise ValueError('invalid_candidate_timing')
+        return self

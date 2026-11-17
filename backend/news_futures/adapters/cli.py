@@ -26,6 +26,10 @@ def main() -> int:
     run_command.add_argument('directory', nargs='?', type=Path)
     show_command = commands.add_parser('show', help='Прочитать сохранённую трассу')
     show_command.add_argument('directory', type=Path)
+    replay_command = commands.add_parser('replay', help='Оценить исходы сохранённых прогнозов по наблюдениям рынка')
+    replay_command.add_argument('decisions', type=Path)
+    replay_command.add_argument('--quotes', type=Path, required=True)
+    replay_command.add_argument('--max-outcome-lag-seconds', type=int, required=True)
     analyze_command = commands.add_parser('analyze', help='Аналитик и критик через OpenRouter, без брокера')
     analyze_command.add_argument('directory', nargs='?', type=Path)
     analyze_command.add_argument('--config', type=Path, default=REVIEW_SETTINGS)
@@ -89,12 +93,24 @@ def main() -> int:
         command.add_argument('--database', type=Path, default=Path('.local/events'))
     args = parser.parse_args()
     database_errors: tuple[type[Exception], ...] = ()
-    if args.command not in {'run', 'show'}:
+    if args.command not in {'run', 'show', 'replay'}:
         from psycopg import Error
         from news_futures.adapters.postgres.database import archive_exists
         database_errors = (Error,)
     try:
         if args.command == 'migrate-sqlite':
+        if args.command == 'replay':
+            from datetime import timedelta
+            from news_futures.application.analysis.replay import replay
+            from news_futures.domain.company import MarketObservation
+
+            if not args.decisions.is_dir():
+                raise ValueError('Каталог решений не найден.')
+            with args.quotes.open('rb') as source:
+                report = replay(args.decisions, (MarketObservation.model_validate_json(line) for line in source),
+                                max_outcome_lag=timedelta(seconds=args.max_outcome_lag_seconds))
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+            return 0
             from news_futures.adapters.postgres.migrate import migrate
             from news_futures.application.config import load_settings
             print(json.dumps(migrate(load_settings(args.config).data_dir)))

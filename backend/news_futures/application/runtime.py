@@ -13,18 +13,18 @@ from uuid import uuid4
 from news_futures.application.catalog import catalog_contracts
 from news_futures.application.artifact_paths import review_path
 from news_futures.application.config import RuntimeSettings, cycle_inputs, groq_models, role_models
-from news_futures.application.ports.broker import BrokerReader, SandboxBroker
+from news_futures.application.ports.broker import BrokerReader, MarketReading, SandboxBroker
 from news_futures.application.ports.models import AnalysisModels
 from news_futures.application.ports.storage import EventStore, RuntimePublications, RuntimeStorage
 from news_futures.application.trading.account import BrokerAccount
 from news_futures.application.trading.executor import AUTONOMOUS_PROTECTION_UNAVAILABLE, SandboxExecutor
-from news_futures.application.workflow import Shutdown, analyze_news
+from news_futures.application.workflow import Shutdown, analyze_news, signal_deadline
 from news_futures.common.artifacts import replace_json
 from news_futures.common.errors import error_code
 from news_futures.domain.company import OpenPosition, Snapshot
 from news_futures.domain.contracts import Aggregator
-from news_futures.domain.publications import TEST_SOURCE, utc_now
-from news_futures.domain.terms import CloseIntent, ContractSnapshot
+from news_futures.domain.publications import TEST_SOURCE, publication_digest, utc_now
+from news_futures.domain.terms import CloseIntent
 
 
 class Runtime:
@@ -60,6 +60,8 @@ class Runtime:
 
     def _entry_block(self, result: dict[str, Any]) -> str | None:
         pause = self._pause()
+        if utc_now() >= datetime.fromisoformat(result['deadline_at']):
+            return 'signal_deadline'
         if pause['paused']:
             return 'entries_paused'
         if pause['changed_at'] != result.get('entry_pause_version'):
@@ -140,7 +142,7 @@ class Runtime:
                     break
                 publication = json.loads(row['publication'])
                 if row['result'] is None:
-                    if not self.broker_ready and not tool_agent:
+                    if not self.broker_ready and not tool_agent and utc_now() < signal_deadline(settings, publication):
                         continue
                     result = {'revision': row['revision'], 'mode': settings.mode, 'status': 'processing',
                               'publication_id': publication['id'], 'inputs_saved': False,
@@ -180,8 +182,6 @@ class Runtime:
             result.update(status='skipped', stage='source', reason='publication_before_start')
             return
         tool_agent = settings.analysis_strategy == 'tool_agent'
-        if not self.broker_ready and not tool_agent:
-            return
         frozen = directory / 'runtime.json'
         previous = (RuntimeSettings.model_validate_json(frozen.read_bytes())
                     if result['inputs_saved'] else settings)
@@ -191,6 +191,16 @@ class Runtime:
             result.update(status='skipped', reason='runtime_profile_changed')
             return
         if not result['inputs_saved']:
+        deadline = signal_deadline(previous, publication)
+        received_at = datetime.fromisoformat(publication['received_at'])
+        now = utc_now()
+        result['deadline_at'] = deadline.isoformat()
+        if now < deadline and not self.broker_ready and not tool_agent:
+            return
+        result.setdefault('queue_wait_ms', max(0, round((now - received_at).total_seconds() * 1000)))
+        if now >= deadline:
+            result.update(status='skipped', stage='freshness', reason='signal_deadline')
+            return
             saved = self.operator.saved() if self.on_controls is not None else {}
             if saved.get('account_id') != settings.account_id:
                 saved = {}
@@ -222,27 +232,37 @@ class Runtime:
         except FileNotFoundError:
             contracts = {}
 
-        def read_snapshot(candidates: dict[str, str]) -> Snapshot:
-            snapshot, _ = self.account.snapshot(catalog, candidates)
-            return snapshot
-
-        def read_market(uid: str, seconds: float) -> tuple[Snapshot, ContractSnapshot]:
+        def read_market(uid: str, seconds: float) -> MarketReading:
             with self.read_limit(seconds):
-                snapshot, readings = self.account.snapshot(catalog, {uid: contracts[uid]})
-            return snapshot, readings[0].contract
+                return self.account.observe(catalog, uid, contracts[uid])
 
         state = analyze_news(
-            previous, directory, publication, result['revision'], contracts=contracts, read_snapshot=read_snapshot,
+            previous, directory, publication, result['revision'], contracts=contracts, read_market=read_market,
             current_position=lambda: self.position, stop=self.stop, models=self.models, storage=self.storage,
-            **({'read_market': read_market} if tool_agent else {}),
+            deadline=deadline,
         )
         result.update(stage=state['stage'], status=state['status'], reason=state.get('reason'))
         if 'decision_id' in state:
             result['decision_id'] = state['decision_id']
         if tool_agent:
-            for key in ('proposal', 'critic_status'):
-                if key in state:
-                    result[key] = state[key]
+        proposal = state.get('proposal')
+        if (not testing and state['status'] in ('candidate', 'approved_for_checks')
+                and proposal is not None and proposal['action'] == 'enter' and 'observation_id' in state):
+            candidate = SignalCandidate(
+                revision=result['revision'], event_decision_id=state['decision_id'], strategy=previous.analysis_strategy,
+                proposal_id=proposal['id'], proposal=CompanyProposal.model_validate(
+                    {name: value for name, value in proposal.items() if name != 'id'},
+                ), observation_id=state['observation_id'], received_at=received_at, deadline_at=deadline,
+                decided_at=datetime.fromisoformat(state['decided_at']),
+            )
+            candidates = directory / 'candidates'
+            candidates.mkdir(exist_ok=True)
+            key = publication_digest({'proposal_id': candidate.proposal_id})
+            replace_json(candidates / f'{key}.json', candidate.model_dump(mode='json'))
+            if 'proposal' in state:
+                result['proposal'] = state['proposal']
+            if 'critic_status' in state:
+                result['critic_status'] = state['critic_status']
             return
         result.pop('review_attempt', None)
         if attempt := state.get('review_attempt'):
@@ -250,7 +270,6 @@ class Runtime:
         result.pop('reconcile_pending', None)
         if testing or state['status'] != 'approved_for_checks':
             return
-        proposal = state['proposal']
         assert proposal is not None
         if proposal['action'] == 'enter' and (blocked := self._entry_block(result)):
             result.update(status='skipped', reason=blocked)

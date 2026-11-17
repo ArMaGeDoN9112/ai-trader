@@ -8,6 +8,7 @@
   "account_id": "SANDBOX_ACCOUNT_ID",
   "futures_refresh_seconds": 86400,
   "broker_refresh_seconds": 15,
+  "signal_timeout_seconds": 60,
   "agent_limits": {
     "max_turns": 8,
     "max_reads": 7,

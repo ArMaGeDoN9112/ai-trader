@@ -4,11 +4,13 @@ from collections.abc import Callable
 from typing import Any
 
 from news_futures.application.catalog import catalog_rows, load_catalog
-from news_futures.application.ports.broker import BrokerReader, NoSupportedFutures, SandboxBroker, UnsupportedFuturesUnits
+from news_futures.application.ports.broker import (
+    BrokerReader, MarketReading, NoSupportedFutures, SandboxBroker, UnsupportedFuturesUnits,
+)
 from news_futures.application.ports.storage import EventStore, PublicationStore
 from news_futures.application.trading.executor import SandboxExecutor
 from news_futures.common.errors import RuntimeErrorInfo
-from news_futures.domain.company import Account, Instrument, Market, OpenPosition, Snapshot
+from news_futures.domain.company import Account, Instrument, Market, MarketObservation, OpenPosition, Snapshot
 from news_futures.domain.execution import TRADE_STATE, reconciled_fills, verified_protection
 from news_futures.domain.publications import utc_now
 from news_futures.domain.terms import EntryReservation, RiskSnapshot
@@ -66,36 +68,35 @@ class BrokerAccount:
                 raise RuntimeErrorInfo('На счёте есть неподтверждённая позиция или заявки. Сверьте брокера.')
         return position, protection
 
-    def snapshot(self, catalog: bytes, contracts: dict[str, str]) -> tuple[Snapshot, list[RiskSnapshot]]:
+    def observe(self, catalog: bytes, contract_id: str, company_id: str) -> MarketReading:
         companies = load_catalog(catalog)
         listed = {(row.company_id, row.share_id) for row in catalog_rows(catalog)}
-        instruments = []
-        readings = []
-        account = None
-        for contract_id, company_id in contracts.items():
-            try:
-                risk = RiskSnapshot.model_validate(self.reader(contract_id, company_id).read_risk(
-                    self.account_id, contract_id,
-                ))
-            except UnsupportedFuturesUnits:
-                continue
-            contract = risk.contract
-            if (risk.account_id != self.account_id or contract.contract_id != contract_id
-                    or contract.company_id != company_id or (company_id, contract.share_id) not in listed
-                    or len({contract_id, company_id, contract.share_id}) != 3):
-                raise RuntimeErrorInfo('market_contract_mismatch')
-            if risk.execution_uncertain or risk.has_position or risk.has_active_orders:
-                raise RuntimeErrorInfo('На счёте есть неподтверждённая позиция или заявки. Сверьте брокера.')
-            if contract.last_trade_at <= utc_now():
-                continue
-            readings.append(risk)
-            account = Account(id=risk.account_id, observed_at=risk.account_observed_at, currency=risk.currency,
-                              equity=float(risk.equity), available_margin=float(risk.available_margin))
-            instruments.append(Instrument(
-                company_id=contract.company_id, company_name=companies[contract.company_id]['names'][0],
-                contract_id=contract.contract_id, share_id=contract.share_id, allowed_for_entry=True,
-                market=Market(observed_at=contract.quote_at, last_price=float(contract.last_price)),
+        try:
+            risk = RiskSnapshot.model_validate(self.reader(contract_id, company_id).read_risk(
+                self.account_id, contract_id,
             ))
-        if account is None:
+        except UnsupportedFuturesUnits as error:
+            raise NoSupportedFutures('no_supported_futures') from error
+        contract = risk.contract
+        if (risk.account_id != self.account_id or contract.contract_id != contract_id
+                or contract.company_id != company_id or (company_id, contract.share_id) not in listed
+                or len({contract_id, company_id, contract.share_id}) != 3):
+            raise RuntimeErrorInfo('market_contract_mismatch')
+        if risk.execution_uncertain or risk.has_position or risk.has_active_orders:
+            raise RuntimeErrorInfo('На счёте есть неподтверждённая позиция или заявки. Сверьте брокера.')
+        received_at = utc_now()
+        if contract.last_trade_at <= received_at:
             raise NoSupportedFutures('no_supported_futures')
-        return Snapshot(account=account, position=None, instruments=instruments), readings
+        observation = MarketObservation(
+            contract_id=contract_id, market=Market(observed_at=contract.quote_at, last_price=float(contract.last_price)),
+            received_at=received_at, price_unit=contract.price_unit, limit_buy_available=contract.limit_buy_available,
+            limit_sell_available=contract.limit_sell_available,
+        )
+        account = Account(id=risk.account_id, observed_at=risk.account_observed_at, currency=risk.currency,
+                          equity=float(risk.equity), available_margin=float(risk.available_margin))
+        instrument = Instrument(
+            company_id=company_id, company_name=companies[company_id]['names'][0],
+            contract_id=contract_id, share_id=contract.share_id, allowed_for_entry=True,
+            market=observation.market, market_observation_id=observation.id,
+        )
+        return MarketReading(Snapshot(account=account, position=None, instruments=[instrument]), observation)

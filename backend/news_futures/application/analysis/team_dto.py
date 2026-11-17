@@ -168,6 +168,7 @@ class AgentOutcome(DTO):
     reason: str
     proposal: IdentifiedProposal | None = None
     critic_status: Literal['approved', 'rejected'] | None = None
+    observation_id: str | None = None
 
 
 class AgentCall(DTO):

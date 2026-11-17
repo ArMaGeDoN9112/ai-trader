@@ -7,10 +7,19 @@ from typing import Any
 
 from news_futures.application.catalog import catalog_contracts
 from news_futures.application.analysis.team_dto import AgentTrace, AnalystInput, CriticTask
+from news_futures.application.artifact_paths import read_observation
 from news_futures.common.errors import Rejected
-from news_futures.domain.company import CompanyProposal
+from news_futures.domain.company import CompanyProposal, Instrument
 from news_futures.domain.contracts import Review
 from news_futures.domain.publications import publication_digest
+
+
+def check_observation(directory: Path, instrument: Instrument, formed_at: datetime) -> None:
+    if observation_id := instrument.market_observation_id:
+        quote = read_observation(directory, observation_id)
+        if (quote.contract_id != instrument.contract_id or quote.market != instrument.market
+                or quote.received_at > formed_at):
+            raise Rejected('proposal_not_reviewed')
 
 
 def read_agent_approval(directory: Path, trace: AgentTrace) -> tuple[CompanyProposal, str, datetime, dict[str, Any]]:
@@ -43,6 +52,11 @@ def read_agent_approval(directory: Path, trace: AgentTrace) -> tuple[CompanyProp
         raise Rejected('proposal_not_reviewed')
     check_company_proposal(proposal, evidence)
     inputs = directory.parent
+    instrument = next(item for item in evidence.candidates if item.contract_id == proposal.contract_id)
+    formed_at = datetime.fromisoformat(analyst.at)
+    if instrument.market_observation_id != outcome.observation_id:
+        raise Rejected('proposal_not_reviewed')
+    check_observation(inputs, instrument, formed_at)
     runtime = json.loads((inputs / 'runtime.json').read_bytes())
     account = runtime['account_id']
     if (runtime['mode'] not in ('observation', 'sandbox') or runtime['analysis_strategy'] != 'tool_agent'
@@ -55,7 +69,7 @@ def read_agent_approval(directory: Path, trace: AgentTrace) -> tuple[CompanyProp
             or selection['selected']['contract_id'] != proposal.contract_id
             or selection['selected']['company_id'] != proposal.company_id):
         raise Rejected('invalid_approval_record')
-    return proposal, proposal_id, datetime.fromisoformat(analyst.at), context | {
+    return proposal, proposal_id, formed_at, context | {
         'account': context['account'] | {'id': account},
     }
 
@@ -90,6 +104,9 @@ def read_approval(directory: Path) -> tuple[CompanyProposal, str, datetime, dict
             raise Rejected('proposal_not_reviewed')
         proposal = CompanyProposal.model_validate({key: value for key, value in payload.items() if key != 'id'})
         formed_at = datetime.fromisoformat(analyst['formed_at'])
+        for candidate in critic['input']['context']['candidates']:
+            if candidate['contract_id'] == proposal.contract_id and 'market_observation_id' in candidate:
+                check_observation(directory.parent.parent, Instrument.model_validate_json(json.dumps(candidate)), formed_at)
     except Rejected:
         raise
     except (OSError, ValueError, KeyError, TypeError, IndexError, OverflowError) as error:

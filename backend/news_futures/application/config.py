@@ -34,6 +34,7 @@ class RuntimeSettings(Contract):
     groq: Path = GROQ_SETTINGS
     futures_categories: Path = FUTURES_CATEGORIES
     agent_limits: AgentLimits = AgentLimits()
+    signal_timeout_seconds: int = Field(default=60, gt=0)
     futures_refresh_seconds: int = Field(default=86400, gt=0)
     broker_refresh_seconds: int = Field(default=15, gt=0)
     ca_file: Path | None = None

@@ -82,6 +82,7 @@ const labels = {
   candidate: 'Кандидат на вход', insufficient_data: 'Недостаточно данных', cached: 'Из истории запуска',
   agent_budget: 'Исчерпан бюджет анализа',
   agent_deadline: 'Истекло время анализа',
+  signal_deadline: 'Истёк срок обработки сигнала',
   unknown_tool: 'Инструмент недоступен', invalid_tool_call: 'Вызов инструмента не прошёл проверку',
   unknown_proposal_reference: 'Предложение не найдено',
   unknown_contract: 'Контракт недоступен для назначенной компании',
