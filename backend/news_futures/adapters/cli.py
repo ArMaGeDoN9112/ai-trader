@@ -98,7 +98,6 @@ def main() -> int:
         from news_futures.adapters.postgres.database import archive_exists
         database_errors = (Error,)
     try:
-        if args.command == 'migrate-sqlite':
         if args.command == 'replay':
             from datetime import timedelta
             from news_futures.application.analysis.replay import replay
@@ -111,6 +110,7 @@ def main() -> int:
                                 max_outcome_lag=timedelta(seconds=args.max_outcome_lag_seconds))
             print(json.dumps(report, ensure_ascii=False, indent=2))
             return 0
+        if args.command == 'migrate-sqlite':
             from news_futures.adapters.postgres.migrate import migrate
             from news_futures.application.config import load_settings
             print(json.dumps(migrate(load_settings(args.config).data_dir)))

@@ -21,7 +21,7 @@ from news_futures.application.trading.executor import AUTONOMOUS_PROTECTION_UNAV
 from news_futures.application.workflow import Shutdown, analyze_news, signal_deadline
 from news_futures.common.artifacts import replace_json
 from news_futures.common.errors import error_code
-from news_futures.domain.company import OpenPosition, Snapshot
+from news_futures.domain.company import CompanyProposal, OpenPosition, SignalCandidate
 from news_futures.domain.contracts import Aggregator
 from news_futures.domain.publications import TEST_SOURCE, publication_digest, utc_now
 from news_futures.domain.terms import CloseIntent
@@ -59,9 +59,9 @@ class Runtime:
         return pause
 
     def _entry_block(self, result: dict[str, Any]) -> str | None:
-        pause = self._pause()
         if utc_now() >= datetime.fromisoformat(result['deadline_at']):
             return 'signal_deadline'
+        pause = self._pause()
         if pause['paused']:
             return 'entries_paused'
         if pause['changed_at'] != result.get('entry_pause_version'):
@@ -190,7 +190,6 @@ class Runtime:
                 or result['mode'] != settings.mode or previous.account_id != settings.account_id):
             result.update(status='skipped', reason='runtime_profile_changed')
             return
-        if not result['inputs_saved']:
         deadline = signal_deadline(previous, publication)
         received_at = datetime.fromisoformat(publication['received_at'])
         now = utc_now()
@@ -201,6 +200,7 @@ class Runtime:
         if now >= deadline:
             result.update(status='skipped', stage='freshness', reason='signal_deadline')
             return
+        if not result['inputs_saved']:
             saved = self.operator.saved() if self.on_controls is not None else {}
             if saved.get('account_id') != settings.account_id:
                 saved = {}
@@ -244,7 +244,6 @@ class Runtime:
         result.update(stage=state['stage'], status=state['status'], reason=state.get('reason'))
         if 'decision_id' in state:
             result['decision_id'] = state['decision_id']
-        if tool_agent:
         proposal = state.get('proposal')
         if (not testing and state['status'] in ('candidate', 'approved_for_checks')
                 and proposal is not None and proposal['action'] == 'enter' and 'observation_id' in state):
@@ -259,6 +258,7 @@ class Runtime:
             candidates.mkdir(exist_ok=True)
             key = publication_digest({'proposal_id': candidate.proposal_id})
             replace_json(candidates / f'{key}.json', candidate.model_dump(mode='json'))
+        if tool_agent:
             if 'proposal' in state:
                 result['proposal'] = state['proposal']
             if 'critic_status' in state:
