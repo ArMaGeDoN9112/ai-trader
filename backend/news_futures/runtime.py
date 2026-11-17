@@ -8,20 +8,17 @@ import json
 from pathlib import Path
 from threading import Event
 from typing import Any
-from uuid import uuid4
 
 from news_futures.dataflows.catalog import catalog_contracts
-from news_futures.common.artifact_paths import review_path
 from news_futures.config import RuntimeSettings, cycle_inputs, groq_models, role_models
 from news_futures.brokers.contracts import BrokerReader, MarketReading, SandboxBroker
 from news_futures.llm_clients.contracts import AnalysisModels
 from news_futures.storage.contracts import EventStore, RuntimePublications, RuntimeStorage
 from news_futures.trading.account import BrokerAccount
-from news_futures.trading.executor import AUTONOMOUS_PROTECTION_UNAVAILABLE, SandboxExecutor
+from news_futures.trading.executor import SandboxExecutor
 from news_futures.workflow import Shutdown, analyze_news, signal_deadline
 from news_futures.common.artifacts import replace_json
 from news_futures.common.errors import error_code
-from news_futures.common.paths import persistent_path
 from news_futures.schemas.company import CompanyProposal, MinuteCandle, OpenPosition, SignalCandidate
 from news_futures.dataflows.catalog import listed_futures
 from news_futures.schemas.contracts import Aggregator
@@ -58,7 +55,6 @@ class Runtime:
         self.pause_version: str | None = None
         self.stop = Event()
         self.failed = False
-        self.broker_ready = False
         self.sources_ready = False
         self.position: OpenPosition | None = None
 
@@ -68,16 +64,6 @@ class Runtime:
             self.pause_version = pause['changed_at']
             self.on_controls(pause_version=self.pause_version)
         return pause
-
-    def _entry_block(self, result: dict[str, Any]) -> str | None:
-        if utc_now() >= datetime.fromisoformat(result['deadline_at']):
-            return 'signal_deadline'
-        pause = self._pause()
-        if pause['paused']:
-            return 'entries_paused'
-        if pause['changed_at'] != result.get('entry_pause_version'):
-            return 'entry_pause_changed'
-        return None
 
     def _manual_close(self, events: EventStore) -> None:
         if self.broker is None or self.on_controls is None or self.stop.is_set():
@@ -119,9 +105,7 @@ class Runtime:
         last_confirmed = None
         try:
             if self.broker is not None:
-                reconciliation = self.account.reconcile(
-                    events, self.broker, archive if self.sources_ready else None,
-                )
+                reconciliation = self.account.reconcile(events, self.broker)
                 if reconciliation is not None:
                     status['reconciliation'] = reconciliation
             self.position, protection = self.account.position(events)
@@ -140,64 +124,48 @@ class Runtime:
                                   'protection': status['protection']}
         finally:
             status['checked_at'] = utc_now().isoformat()
-            self.broker_ready = status.get('broker') == 'connected'
             archive.save_broker_status(status, last_confirmed)
             print(json.dumps(status, ensure_ascii=False), flush=True)
 
     def process(self) -> None:
         settings = self.settings
-        tool_agent = settings.analysis_strategy == 'tool_agent'
-        with self.storage.publications() as archive, self.storage.events() as events:
+        with self.storage.publications() as archive:
             for row in archive.pending_revisions():
                 if self.stop.is_set():
                     break
                 publication = json.loads(row['publication'])
                 if row['result'] is None:
-                    if not self.broker_ready and not tool_agent and utc_now() < signal_deadline(settings, publication):
-                        continue
                     result = {'revision': row['revision'], 'mode': settings.mode, 'status': 'processing',
-                              'publication_id': publication['id'], 'inputs_saved': False,
-                              'analysis_strategy': settings.analysis_strategy}
+                              'publication_id': publication['id'], 'inputs_saved': False}
                     archive.save_result(result)
                 else:
                     result = json.loads(row['result'])
                 try:
-                    self.process_revision(archive, events, publication, result)
+                    self.process_revision(archive, publication, result)
                 except Shutdown:
                     break
                 except Exception as error:
-                    status = 'processing' if result.get('stage') == 'execution' else 'failed'
-                    result.update(status=status, reason=error_code(error))
-                    if publication['source'] != TEST_SOURCE:
-                        self.failed = True
-                if publication['source'] != TEST_SOURCE:
-                    self.failed |= result['status'] == 'failed' or (
-                        result['status'] == 'rejected' and result.get('stage') == 'review'
-                    )
+                    result.update(status='failed', reason=error_code(error))
+                if publication['source'] != TEST_SOURCE and result['status'] == 'failed':
+                    self.failed = True
                 result['latency_ms'] = round((utc_now() - datetime.fromisoformat(
                     publication['received_at'],
                 )) / timedelta(milliseconds=1))
                 archive.save_result(result)
                 print(json.dumps(result, ensure_ascii=False), flush=True)
 
-    def process_revision(self, archive: RuntimePublications, events: EventStore, publication: dict[str, Any],
+    def process_revision(self, archive: RuntimePublications, publication: dict[str, Any],
                          result: dict[str, Any]) -> None:
         settings = self.settings
         testing = publication['source'] == TEST_SOURCE
         directory = settings.data_dir / 'decisions' / result['revision']
-        if not testing and result['mode'] == 'sandbox' and result.get('stage') == 'execution':
-            approval = review_path(directory, result['review_attempt'])
-            if self._recover_execution(events, approval, result):
-                return
         if not testing and datetime.fromisoformat(publication['published_at']) < self.started_at:
             result.update(status='skipped', stage='source', reason='publication_before_start')
             return
-        tool_agent = settings.analysis_strategy == 'tool_agent'
         frozen = directory / 'runtime.json'
         previous = (RuntimeSettings.model_validate_json(frozen.read_bytes())
                     if result['inputs_saved'] else settings)
-        if (result.get('analysis_strategy', 'fixed') != settings.analysis_strategy
-                or previous.order_transport != settings.order_transport
+        if (previous.order_transport != settings.order_transport
                 or result['mode'] != settings.mode or previous.account_id != settings.account_id):
             result.update(status='skipped', reason='runtime_profile_changed')
             return
@@ -205,8 +173,6 @@ class Runtime:
         received_at = datetime.fromisoformat(publication['received_at'])
         now = utc_now()
         result['deadline_at'] = deadline.isoformat()
-        if now < deadline and not self.broker_ready and not tool_agent:
-            return
         result.setdefault('queue_wait_ms', max(0, round((now - received_at).total_seconds() * 1000)))
         if now >= deadline:
             result.update(status='skipped', stage='freshness', reason='signal_deadline')
@@ -220,7 +186,6 @@ class Runtime:
             if aggregator == 'groq':
                 models = saved.get('groq_models') or groq_models(settings)
             inputs = cycle_inputs(settings, models, aggregator=aggregator)
-            result['entry_pause_version'] = self._pause()['changed_at']
             directory.mkdir(parents=True, exist_ok=True)
             replace_json(directory / 'runtime.json', settings.model_dump(mode='json'))
             replace_json(directory / 'publication.json', publication)
@@ -278,10 +243,10 @@ class Runtime:
         if 'decision_id' in state:
             result['decision_id'] = state['decision_id']
         proposal = state.get('proposal')
-        if (not testing and state['status'] in ('candidate', 'approved_for_checks')
+        if (not testing and state['status'] == 'candidate'
                 and proposal is not None and proposal['action'] == 'enter' and 'observation_id' in state):
             candidate = SignalCandidate(
-                revision=result['revision'], event_decision_id=state['decision_id'], strategy=previous.analysis_strategy,
+                revision=result['revision'], event_decision_id=state['decision_id'], strategy='tool_agent',
                 proposal_id=proposal['id'], proposal=CompanyProposal.model_validate(
                     {name: value for name, value in proposal.items() if name != 'id'},
                 ), observation_id=state['observation_id'], received_at=received_at, deadline_at=deadline,
@@ -291,90 +256,10 @@ class Runtime:
             candidates.mkdir(exist_ok=True)
             key = publication_digest({'proposal_id': candidate.proposal_id})
             replace_json(candidates / f'{key}.json', candidate.model_dump(mode='json'))
-        if tool_agent:
-            if 'proposal' in state:
-                result['proposal'] = state['proposal']
-            if 'critic_status' in state:
-                result['critic_status'] = state['critic_status']
-            return
-        result.pop('review_attempt', None)
-        if attempt := state.get('review_attempt'):
-            result['review_attempt'] = attempt
-        result.pop('reconcile_pending', None)
-        if testing or state['status'] != 'approved_for_checks':
-            return
-        assert proposal is not None
-        if proposal['action'] == 'enter' and (blocked := self._entry_block(result)):
-            result.update(status='skipped', reason=blocked)
-            return
-        if self.broker is None:
-            return
-        if self.stop.is_set():
-            result.update(status='processing', reason='shutdown_before_execution')
-            return
-        assert attempt is not None
-        uid = state['selected_contract_id']
-        self._execute_review(
-            archive, events, review_path(directory, attempt), proposal, state.get('position_id'), result,
-            {uid: contracts[uid]} if uid in contracts else {},
-        )
-
-    def _recover_execution(self, events: EventStore, approval: Path, result: dict[str, Any]) -> bool:
-        trades = events.trades.report(approval=approval)
-        if not trades:
-            return False
-        trade, = trades
-        cycle = trade['reservation']['id']
-        status, reason = trade['status'], trade['reason']
-        approval_path = persistent_path(approval)
-        is_close = trade['approval'] != approval_path
-        abandoned = next((event['details'] for event in reversed(trade['events'])
-                          if event['kind'] == 'reviewed_close_abandoned'
-                          and event['details']['approval'] == approval_path), None)
-        result.pop('reconcile_pending', None)
-        if abandoned:
-            status, reason = 'rejected', abandoned['reason']
-        elif (status in ('reserved', 'blocked') or (is_close and status != 'closed')
-                or (status == 'protected' and not self.broker_ready)):
-            result['reconcile_pending'] = True
-            status, reason = result['status'], reason or 'broker_reconciliation_required'
-        result.update(stage='execution', status=status, reason=reason,
-                      execution={'cycle_id': cycle, 'status': status, 'reason': reason})
-        return True
-
-    def _execute_review(
-        self, archive: RuntimePublications, events: EventStore, review: Path, proposal: dict[str, Any],
-        position_id: str | None, result: dict[str, Any], contracts: dict[str, str],
-    ) -> None:
-        assert self.broker is not None
-        result.update(stage='execution', status='processing', reason='broker_reconciliation_required')
-        archive.save_result(result)
-        executor = SandboxExecutor(events, self.broker(proposal['contract_id'], contracts.get(proposal['contract_id'])))
-        risk_path = review / f'risk-{uuid4().hex}.json'
-        risk_audit_error = False
-
-        def record_risk(status: str, inputs: dict[str, Any], output: object) -> None:
-            nonlocal risk_audit_error
-            try:
-                replace_json(risk_path, {'at': utc_now().isoformat(), 'status': status,
-                                         'input': inputs, 'output': output})
-            except OSError:
-                risk_audit_error = True
-
-        if proposal['action'] == 'enter':
-            execution = executor.start(archive, review, allowed_contracts=contracts.keys(),
-                                       record_risk=record_risk, entry_block=lambda: self._entry_block(result))
-            if execution['reason'] == 'independent_stops_require_opt_in':
-                execution['reason'] = AUTONOMOUS_PROTECTION_UNAVAILABLE
-        else:
-            assert position_id is not None
-            execution = executor.reconcile(contract_id=proposal['contract_id'], cycle_id=position_id,
-                                           review=(archive, review), record_risk=record_risk)
-        result.update(status=execution['status'], reason=execution['reason'], execution=execution)
-        if risk_audit_error:
-            result['audit_error'] = 'risk_audit_unavailable'
-        if execution['status'] == 'blocked':
-            result['reconcile_pending'] = True
+        if 'proposal' in state:
+            result['proposal'] = state['proposal']
+        if 'critic_status' in state:
+            result['critic_status'] = state['critic_status']
 
 
 async def run(

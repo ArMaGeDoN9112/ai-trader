@@ -8,22 +8,17 @@ from uuid import UUID, uuid5
 
 from pydantic import ValidationError
 
-from news_futures.trading.approval import read_approval
 from news_futures.trading.entry_context import entry_sources
 from news_futures.brokers.contracts import SandboxBroker, SubmissionRejected
-from news_futures.storage.contracts import EventStore, PublicationStore, checked_publication
-from news_futures.trading.risk import (
-    check_publication, reserve_entry,
-)
+from news_futures.storage.contracts import EventStore, PublicationStore
+from news_futures.trading.risk import reserve_entry
 from news_futures.common.errors import Rejected
-from news_futures.common.paths import local_path, persistent_path
 from news_futures.schemas.company import CompanyProposal, EntryReason
 from news_futures.trading.execution import TRADE_STATE, TradeState, close_requests, reconciled_fills, verified_protection
 from news_futures.trading.sizing import MAX_RISK_DATA_AGE, fresh
 from news_futures.trading.terms import CloseIntent, EntryReservation, RiskSnapshot
 
 
-AUTONOMOUS_PROTECTION_UNAVAILABLE = 'autonomous_protection_unavailable'
 SANDBOX_SOURCES = ('sandbox', 'sandbox_mcp')
 
 
@@ -37,8 +32,6 @@ class SandboxExecutor:
     def start(
         self, publications: PublicationStore, approval: Path, *,
         allowed_contracts: Set[str], allow_independent_stops: bool = False,
-        record_risk: Callable[[str, dict[str, Any], object], None] | None = None,
-        entry_block: Callable[[], str | None] | None = None,
     ) -> dict[str, str]:
         if self.broker.source not in ('control', *SANDBOX_SOURCES):
             return {'status': 'rejected', 'reason': 'unsupported_broker_source'}
@@ -54,36 +47,21 @@ class SandboxExecutor:
         with self.trades.exclusive() as acquired:
             if not acquired:
                 return {'status': 'blocked', 'reason': 'executor_busy'}
-            if entry_block is not None and (reason := entry_block()):
-                return {'status': 'skipped', 'reason': reason}
             if len(self.trades.active(self.broker.account_id)) > 1:
                 return {'status': 'blocked', 'reason': 'conflicting_active_cycles'}
-            risk_input: dict[str, Any] = {'allowed_contracts': sorted(allowed_contracts)}
-            if record_risk is not None:
-                record_risk('processing', risk_input, None)
             admission = reserve_entry(
                 self.events, publications, approval, account_id=self.broker.account_id,
                 allowed_contracts=allowed_contracts, read_snapshot=self.broker.read_risk, on_reserve=record,
-                risk_input=risk_input if record_risk is not None else None,
             )
             entry = admission.reservation
-            if record_risk is not None:
-                record_risk('approved' if entry else 'rejected', risk_input,
-                            entry.model_dump(mode='json') if entry else {'reason': admission.reason})
             if entry is None:
                 return {'status': 'rejected', 'reason': admission.reason or 'admission_failed'}
-            if entry_block is not None and (reason := entry_block()):
-                self._finish(entry, 'no_fill', reason)
-                return {'status': 'skipped', 'reason': reason, 'cycle_id': entry.id}
             operations: dict[str, str] = {}
             self._send(entry, operations, 'enter', lambda key: self.broker.enter(entry, key))
             return self._advance(entry, operations, close=False)
 
     def reconcile(self, *, close: bool = False, contract_id: str | None = None,
                   cycle_id: str | None = None,
-                  review: tuple[PublicationStore, Path] | None = None,
-                  publications: PublicationStore | None = None,
-                  record_risk: Callable[[str, dict[str, Any], object], None] | None = None,
                   manual: CloseIntent | None = None) -> dict[str, str]:
         with self.trades.exclusive() as acquired:
             if not acquired:
@@ -117,75 +95,13 @@ class SandboxExecutor:
                 return self._confirm_manual_close(entry, operations, manual)
             if 'enter' not in operations:
                 return self._finish(entry, 'no_fill', 'entry_never_submitted')
-            if review is not None:
-                risk_input: dict[str, Any] = {}
-                if record_risk is not None:
-                    record_risk('processing', risk_input, None)
-                try:
-                    self._record_reviewed_close(
-                        entry, *review, risk_input=risk_input if record_risk is not None else None,
-                    )
-                except Rejected as error:
-                    if record_risk is not None:
-                        record_risk('rejected', risk_input, {'reason': str(error)})
-                    return {'status': 'rejected', 'reason': str(error), 'cycle_id': entry.id}
-                if record_risk is not None:
-                    record_risk('approved', risk_input, None)
-                close = True
-            elif close:
+            if close:
                 with self.events.transaction():
                     self.trades.set_close_requested(entry.id, True)
             elif row['close_requested']:
-                close = True
-                if 'cancel_protection' not in operations and not close_requests(operations):
-                    approval = self.trades.pending_reviewed_close(entry.id)
-                    if approval is not None:
-                        close = False
-                        if publications is not None:
-                            try:
-                                self._record_reviewed_close(entry, publications, local_path(approval), persist=False)
-                            except Rejected as error:
-                                with self.events.transaction():
-                                    self.trades.set_close_requested(entry.id, False)
-                                    self.trades.append(entry.id, 'reviewed_close_abandoned',
-                                                 approval=approval, reason=str(error))
-                            else:
-                                close = True
+                close = bool('cancel_protection' in operations or close_requests(operations)
+                             or self.trades.pending_reviewed_close(entry.id) is None)
             return self._advance(entry, operations, close=close)
-
-    def _record_reviewed_close(self, entry: EntryReservation, publications: PublicationStore, approval: Path, *,
-                               persist: bool = True, risk_input: dict[str, Any] | None = None) -> None:
-        proposal, proposal_id, formed_at, context = read_approval(approval)
-        if risk_input is not None:
-            risk_input['proposal'] = proposal.model_dump(mode='json')
-        position = context.get('position')
-        if (proposal.action != 'close' or proposal.contract_id != entry.contract_id or not position
-                or position['id'] != entry.id or position['side'] != entry.side
-                or position['contract_id'] != entry.contract_id
-                or context['account']['id'] != entry.account_id):
-            raise Rejected('close_position_mismatch')
-        try:
-            snapshot = RiskSnapshot.model_validate(self.broker.read_risk(entry.account_id, entry.contract_id))
-        except Exception as error:
-            raise Rejected('risk_data_unavailable_or_invalid') from error
-        if risk_input is not None:
-            risk_input['snapshot'] = snapshot.model_dump(mode='json')
-        contract = snapshot.contract
-        with checked_publication(publications, self.events):
-            now = check_publication(self.events, publications, context, proposal, formed_at)
-            if (snapshot.account_id != entry.account_id or contract.contract_id != entry.contract_id
-                    or contract.company_id != proposal.company_id or snapshot.execution_uncertain
-                    or not snapshot.has_position
-                    or not any(row['contract_id'] == entry.contract_id and row['share_id'] == contract.share_id
-                               for row in context['candidates'])
-                    or not (contract.limit_sell_available if entry.side == 'long' else contract.limit_buy_available)
-                    or contract.last_trade_at <= now
-                    or not all(fresh(at, now, MAX_RISK_DATA_AGE)
-                               for at in (snapshot.account_observed_at, contract.observed_at, contract.quote_at))):
-                raise Rejected('close_market_or_position_unconfirmed')
-            if persist:
-                self.trades.set_close_requested(entry.id, True)
-                self.trades.append(entry.id, 'reviewed_close', proposal_id=proposal_id, approval=persistent_path(approval))
 
     def _log(self, entry: EntryReservation, kind: str, **details: Any) -> None:
         with self.events.transaction():

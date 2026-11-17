@@ -13,7 +13,7 @@ const inset = 14;
 
 function nodeId(step) {
   if (step.id === 'outcome') return 'outcome';
-  return step.kind === 'revision' ? 'analyst' : step.kind;
+  return step.kind;
 }
 
 function traceGraph(steps) {

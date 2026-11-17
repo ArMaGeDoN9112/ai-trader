@@ -12,14 +12,10 @@ import ormsgpack
 from psycopg import sql
 from psycopg.types.json import Jsonb
 
-from news_futures.agents.decisions import SYSTEM, news_record, validate_company_proposal
-from news_futures.agents.review import review_cycle
+from news_futures.agents.decisions import news_record
 from news_futures.agents.schemas import EventEvidence
-from news_futures.agents.tool_agent import AgentLimits, run_tool_agent
-from news_futures.cli import main
-from news_futures.common.artifacts import replace_json
-from news_futures.schemas.company import CompanyContext, CompanyProposal
-from news_futures.schemas.contracts import Review, RoleSettings, Settings
+from news_futures.agents.analysis import AgentLimits, run_analysis
+from news_futures.schemas.contracts import Review, RoleSettings
 from news_futures.storage.checkpoints import checkpoint_serializer, checkpoints, migrate_model_paths
 from news_futures.storage.database import connect
 from news_futures.storage.events import EventArchive
@@ -36,8 +32,8 @@ class CheckpointLayoutTest(TestCase):
     def setUp(self) -> None:
         self.directory = Path(self.enterContext(TemporaryDirectory()))
 
-    def restore(self, strategy: str) -> dict[str, Any]:
-        fixture: dict[str, Any] = json.loads((FIXTURES / f'{strategy}.json').read_bytes())
+    def restore(self) -> dict[str, Any]:
+        fixture: dict[str, Any] = json.loads((FIXTURES / 'analysis.json').read_bytes())
         with checkpoints(self.directory / 'checkpoints'):
             pass
         with connect(self.directory / 'checkpoints') as db, db.transaction():
@@ -65,37 +61,8 @@ class CheckpointLayoutTest(TestCase):
                 ('checkpoint_writes', ('thread_id', 'checkpoint_ns', 'checkpoint_id', 'task_id', 'idx')),
             )}
 
-    def test_migration_preserves_history_versions_pending_writes_and_nested_models(self) -> None:
-        self.restore('fixed')
-        before = self.rows()
-        with checkpoints(self.directory / 'checkpoints') as saver:
-            with self.assertRaisesRegex(ValueError, 'migrate-checkpoints'):
-                list(saver.list(None))
-        report = migrate_checkpoints(self.directory)
-        self.assertGreater(report['checkpoint_blobs'], 0)
-        self.assertGreater(report['checkpoint_writes'], 0)
-        models = set()
-        for table, rows in self.rows().items():
-            for original, migrated in zip(before[table], rows, strict=True):
-                expected = dict(original)
-                if original.get('blob') is not None:
-                    expected['blob'] = migrate_model_paths(original['type'], original['blob'])
-                    value = checkpoint_serializer().loads_typed((migrated['type'], migrated['blob']))
-                    models.add(type(value))
-                    if isinstance(value, CompanyContext):
-                        self.assertEqual(value.account.id, 'sandbox-account')
-                self.assertEqual(expected, migrated)
-        self.assertTrue({CompanyContext, CompanyProposal, Review}.issubset(models))
-        profile = self.directory / 'runtime.json'
-        replace_json(profile, {'data_dir': '.', 'catalog': 'catalog.json', 'account_id': 'sandbox-account'})
-        with patch('sys.argv', ['news_futures', 'migrate-checkpoints', str(profile)]), patch('builtins.print') as output:
-            self.assertEqual(main(), 0)
-        self.assertEqual(json.loads(output.call_args.args[0]), {'checkpoint_blobs': 0, 'checkpoint_writes': 0})
-        with checkpoints(self.directory / 'checkpoints') as saver:
-            self.assertEqual(len(list(saver.list(None))), len(before['checkpoints']))
-
     def test_unknown_nested_type_aborts_the_whole_migration(self) -> None:
-        self.restore('fixed')
+        self.restore()
         unknown = ormsgpack.Ext(EXT_PYDANTIC_V2, ormsgpack.packb(
             ['news_futures.domain.company', 'UnknownModel', {}, 'model_validate_json'],
         ))
@@ -120,7 +87,7 @@ class CheckpointLayoutTest(TestCase):
                          {'nested': [record], 'text': 'news_futures.domain.contracts'})
 
     def test_migration_requires_stopped_runtime_and_sandbox(self) -> None:
-        self.restore('fixed')
+        self.restore()
         before = self.rows()
         for path, operation in ((self.directory / 'runtime-lock', 'runtime'),
                                 (self.directory / 'events', 'sandbox'),
@@ -131,35 +98,8 @@ class CheckpointLayoutTest(TestCase):
                     migrate_checkpoints(self.directory)
         self.assertEqual(self.rows(), before)
 
-    def test_fixed_resumes_old_checkpoint_at_critic_once(self) -> None:
-        fixture = self.restore('fixed')
-        migrate_checkpoints(self.directory)
-        thread = next(row['thread_id'] for row in fixture['tables']['checkpoints'] if ':review:' in row['thread_id'])
-        directory = self.directory / 'decision'
-        attempt = directory / 'review' / thread.rsplit(':', 1)[1]
-        endpoint = ScriptedEndpoint([review()])
-        executor = self.enterContext(patch('news_futures.trading.executor.SandboxExecutor.start'))
-        with checkpoints(self.directory / 'checkpoints') as saver:
-            saved = saver.get({'configurable': {'thread_id': thread}})
-            assert saved is not None
-            context = saved['channel_values']['context']
-            for _ in range(2):
-                trace = review_cycle(Settings.model_validate_json((directory / 'review.json').read_bytes()),
-                                     attempt, context, model_factory=endpoint.model, mode='observation',
-                                     system=SYSTEM, proposal_schema=CompanyProposal, validate=validate_company_proposal,
-                                     checkpointer=saver, thread_id=thread)
-                self.assertEqual(trace['status'], 'approved_for_checks')
-                self.assertEqual(trace['approved_proposal']['entry_price'], 301)
-        replace_json(attempt / 'trace.json', trace)
-        self.assertEqual(trace['calls'][:3], [json.loads(fixture['files'][
-            f'review/{attempt.name}/call-{index:02}.json']) for index in (1, 2, 3)])
-        with self.assertRaisesRegex(ValueError, 'sandbox_approval_required'):
-            read_approval(attempt)
-        self.assertEqual([request['model'] for request in endpoint.requests], ['test/critic'])
-        executor.assert_not_called()
-
-    def test_tool_agent_resumes_old_pending_writes_without_repeating_reads_or_execution(self) -> None:
-        fixture = self.restore('tool_agent')
+    def test_analysis_resumes_old_pending_writes_without_repeating_reads_or_execution(self) -> None:
+        fixture = self.restore()
         self.assertEqual(migrate_checkpoints(self.directory), {'checkpoint_blobs': 0, 'checkpoint_writes': 0})
         directory = self.directory / 'decision'
         event = EventEvidence.model_validate(news_record(json.loads((directory / 'event.json').read_bytes())))
@@ -169,9 +109,9 @@ class CheckpointLayoutTest(TestCase):
         now = datetime.fromisoformat(fixture['publication']['received_at']) + timedelta(seconds=3)
         with (checkpoints(self.directory / 'checkpoints') as saver,
               EventArchive(self.directory / 'events') as events,
-              patch('news_futures.agents.tool_agent.utc_now', return_value=now)):
+              patch('news_futures.agents.analysis.utc_now', return_value=now)):
             for _ in range(2):
-                outcome = run_tool_agent(
+                outcome = run_analysis(
                     directory, fixture['revision'], event, 'sandbox-account', {'control-future': 'sber'},
                     events, broker.read_market, lambda: None, lambda: None, saver,
                     RoleSettings(model='test/coordinator'), AgentLimits(), endpoint.model,

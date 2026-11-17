@@ -46,7 +46,6 @@ export function Overview({ status, news, online, busy, command, controls }) {
   const actions = online ? status.allowed || [] : [];
   const channels = Object.entries(status.sources || {});
   const connected = online ? channels.filter(([, state]) => state === 'connected').length : 0;
-  const nextStart = ['stopped', 'failed'].includes(worker) ? controls?.settings?.saved : null;
   const close = controls?.close;
   const canClose = online && controls && status.mode === 'sandbox' && worker === 'running' && position?.cycle_id && !busy
     && !(['queued', 'accepted'].includes(close?.status) && close.cycle_id === position.cycle_id);
@@ -56,9 +55,7 @@ export function Overview({ status, news, online, busy, command, controls }) {
       <div className="hero-content">
         <div className="kicker"><span /> УПРАВЛЕНИЕ СЕССИЕЙ</div>
         <h2>Обработчик новостей</h2>
-        <p>{(nextStart?.analysis_strategy || status.analysis_strategy) === 'tool_agent'
-          ? 'Координатор отбирает публикации, аналитик собирает данные, критик проверяет предложения.'
-          : 'Сбор публикаций, проверка решений и сверка с брокером.'}</p>
+        <p>Координатор отбирает публикации, аналитик собирает данные, критик проверяет предложения.</p>
         <div className="actions">
           {actions.includes('start') || worker !== 'running' ? <button className="button primary" type="button" data-action="start"
             disabled={busy || !actions.includes('start')} onClick={() => command('start')}><Play size={16} />Запустить</button> : null}
@@ -102,7 +99,6 @@ export function Overview({ status, news, online, busy, command, controls }) {
           ['Последняя подтверждённая защита', last ? label(last.protection) : '—'],
         ]} />
         {online && broker?.reason && <Notice>{label(broker.reason)}</Notice>}
-        {online && status.entry_block && <Notice>{label(status.entry_block)}</Notice>}
         {close && <Notice error={close.status === 'rejected'}>
           Ручное закрытие · {close.reason ? label(close.reason) : label(close.status)}
         </Notice>}

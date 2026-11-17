@@ -9,8 +9,7 @@ from news_futures.storage.database import archive_exists
 from news_futures.storage.events import EventArchive
 from news_futures.storage.publications import Archive
 from news_futures.storage.trades import trade_journal
-from news_futures.agents.tool_agent import TEAM_DIRECTORY
-from news_futures.common.artifact_paths import review_path
+from news_futures.agents.analysis import TEAM_DIRECTORY
 from news_futures.config import load_settings
 from news_futures.common.errors import RuntimeErrorInfo
 
@@ -39,8 +38,6 @@ def runtime_report(config: Path, decision: str | None) -> dict[str, Any]:
             raise RuntimeErrorInfo('Решение не найдено. Возьмите decision_id или revision из runtime-status.')
         directory = settings.data_dir / 'decisions' / row['revision']
         result = json.loads(row['result'])
-        attempt = result.get('review_attempt')
-        review = review_path(directory, attempt) if attempt else None
         report = {'result': result, 'publication': json.loads(row['publication'])}
         for name, file in (
             ('settings', directory / 'runtime.json'), ('category', directory / 'route' / 'category.json'),
@@ -51,15 +48,8 @@ def runtime_report(config: Path, decision: str | None) -> dict[str, Any]:
         ):
             if file.is_file():
                 report[name] = json.loads(file.read_bytes())
-        if review is not None:
-            for name, file in (('context', review / 'context.json'), ('review', review / 'trace.json')):
-                if file.is_file():
-                    report[name] = json.loads(file.read_bytes())
-        if cycle_id := result.get('execution', {}).get('cycle_id'):
-            report['trades'] = trade_journal(events.db, cycle_id=cycle_id)
-        previous_reviews = [str(path) for path in (directory / 'review').glob('*/context.json') if path.parent != review]
-        if previous_reviews:
-            report['previous_reviews'] = previous_reviews
+        if trades := trade_journal(events.db, approval=directory / TEAM_DIRECTORY):
+            report['trades'] = trades
         if interrupted_routes := sorted(directory.glob('route-interrupted-*')):
             report['interrupted_routes'] = [str(path) for path in interrupted_routes]
         return report

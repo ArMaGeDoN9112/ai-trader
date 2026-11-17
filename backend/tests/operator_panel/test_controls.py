@@ -68,7 +68,7 @@ class PreferencesTest(unittest.TestCase):
             self.preferences.save(update, stopped=False)
 
     def test_mode_changes_only_when_the_worker_is_stopped_and_the_account_is_flat(self) -> None:
-        update = self.form(mode='sandbox', analysis_strategy='tool_agent')
+        update = self.form(mode='sandbox')
         with self.assertRaisesRegex(ValueError, 'mode_requires_stop'):
             self.preferences.save(update, stopped=False)
         with patch('news_futures.api.settings.sandbox_client', side_effect=lambda *args, **kw: httpx.Client()), patch(
@@ -88,10 +88,10 @@ class PreferencesTest(unittest.TestCase):
             self.preferences.save(update, stopped=True)
         self.assertEqual(self.preferences.active['mode'], 'sandbox')
         profile, _, payload = Preferences(self.settings, ['example'], self.state).prepare()
-        self.assertEqual((profile['mode'], profile['analysis_strategy']), ('sandbox', 'tool_agent'))
+        self.assertEqual(profile['mode'], 'sandbox')
         self.assertEqual(RuntimeSettings.model_validate_json(json.dumps(
             json.loads(payload)['settings'],
-        )).analysis_strategy, 'tool_agent')
+        )).mode, 'sandbox')
 
     def test_groq_preferences_preserve_openrouter_models_and_reject_missing_key(self) -> None:
         original = self.preferences.saved()
@@ -151,9 +151,10 @@ class ManualCloseTest(RiskFixture):
     def open_position(self, *, short: bool = False) -> CloseIntent:
         approval = self.approved(side='short', stop_loss=310, take_profit=280) if short else self.approved()
         revision = self.publication.revision_key()
-        saved = self.root / 'decisions' / revision / 'review' / revision
-        saved.parent.mkdir(parents=True)
-        approval.rename(saved)
+        directory = self.root / 'decisions' / revision
+        directory.parent.mkdir()
+        approval.parent.rename(directory)
+        saved = directory / approval.name
         archive = Archive(self.publications_db)
         with EventArchive(self.events_db) as events, closing(archive.db):
             archive.initialize_runtime()

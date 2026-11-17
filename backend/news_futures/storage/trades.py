@@ -74,7 +74,7 @@ def read_evidence(db: psycopg.Connection[dict[str, Any]], cycle_id: str) -> Trad
 
 
 def trade_journal(
-    db: psycopg.Connection[dict[str, Any]], *, cycle_id: str | None = None, approval: Path | None = None,
+    db: psycopg.Connection[dict[str, Any]], *, approval: Path | None = None,
 ) -> list[dict[str, Any]]:
     approval_path = persistent_path(approval) if approval else None
     if not has_table(db, 'sandbox_cycles'):
@@ -86,13 +86,9 @@ def trade_journal(
                     for event in journal_events(db, row['id'])]}
         for row in db.execute("""
             SELECT * FROM sandbox_cycles
-            WHERE (%s::text IS NULL OR id = %s)
-              AND (%s::text IS NULL OR approval = %s OR EXISTS (
-                  SELECT 1 FROM sandbox_journal WHERE cycle_id = sandbox_cycles.id
-                  AND kind = 'reviewed_close' AND (details::json ->> 'approval') = %s
-              ))
+            WHERE (%s::text IS NULL OR approval = %s)
             ORDER BY ordinal
-        """, (cycle_id, cycle_id, approval_path, approval_path, approval_path))
+        """, (approval_path, approval_path))
     ]
 
 
@@ -115,9 +111,6 @@ class TradeJournal:
 
     def evidence(self, cycle_id: str) -> TradeEvidence:
         return read_evidence(self.db, cycle_id)
-
-    def report(self, *, approval: Path) -> list[dict[str, Any]]:
-        return trade_journal(self.db, approval=approval)
 
     def require_available(self, account_id: str) -> None:
         if self.db.execute('SELECT 1 FROM entry_reservations WHERE account_id = %s', (account_id,)).fetchone():

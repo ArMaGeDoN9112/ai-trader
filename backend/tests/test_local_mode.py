@@ -13,11 +13,11 @@ class LocalModeTest(TestCase):
         workspace = Path(__file__).resolve().parents[2]
         data = workspace / '.local' / 'runtime'
         revision = 'a' * 64
-        approval = data / 'decisions' / revision / 'review' / 'attempt'
+        approval = data / 'decisions' / revision / 'tool-agent'
         root = '/app/backend/.local/runtime'
         with patch.dict('os.environ', {'TRADER_CONTAINER_LOCAL': '/app/backend/.local'}):
             stored = persistent_path(approval)
-            self.assertEqual(stored, f'{root}/decisions/{revision}/review/attempt')
+            self.assertEqual(stored, f'{root}/decisions/{revision}/tool-agent')
             self.assertEqual(local_path(stored), approval)
             self.assertEqual(linked_revision(data, stored), revision)
             expected = sha256(f'{root}/publications'.encode()).hexdigest()[:32]

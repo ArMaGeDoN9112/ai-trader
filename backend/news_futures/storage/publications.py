@@ -201,8 +201,7 @@ class Archive:
             WHERE historical = 0 AND revisions.status IN ('pending', 'context_only')
               AND (publication::json ->> 'change') != 'delete'
               AND trim((publication::json ->> 'text')) != ''
-              AND (result IS NULL OR (result::json ->> 'status') = 'processing'
-                   OR (result::json ->> 'reconcile_pending') = 'true')
+              AND (result IS NULL OR (result::json ->> 'status') = 'processing')
             ORDER BY revisions.ordinal
         """).fetchall()
         return [dict(row) for row in rows]

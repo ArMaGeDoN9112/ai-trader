@@ -5,10 +5,6 @@ from pathlib import Path
 from news_futures.schemas.company import MarketObservation
 
 
-def review_path(directory: Path, attempt: str) -> Path:
-    return directory / 'review' / attempt
-
-
 def market_path(directory: Path, observation_id: str) -> Path:
     return directory / 'market' / f'{observation_id}.json'
 

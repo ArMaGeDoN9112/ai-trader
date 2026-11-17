@@ -1,6 +1,5 @@
 {
   "mode": "observation",
-  "analysis_strategy": "fixed",
   "order_transport": "rest",
   "chat_aggregator": "openrouter",
   "data_dir": "runtime",

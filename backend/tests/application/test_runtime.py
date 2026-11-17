@@ -14,7 +14,7 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from typing import Any, cast
 import unittest
-from unittest.mock import ANY, AsyncMock, patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 
@@ -253,18 +253,19 @@ class RuntimeAcceptance(RiskFixture):
     def sandbox(self) -> None:
         self.profile.write_text(json.dumps(self.profile_data | {'mode': 'sandbox'}), encoding='utf-8')
 
-    def tool_agent(self, *, mode: str = 'observation') -> None:
-        self.profile.write_text(json.dumps(self.profile_data | {
-            'mode': mode,
-            'analysis_strategy': 'tool_agent',
-            'coordinator': {'model': 'test/coordinator'},
-        }), encoding='utf-8')
+    def open_position(self) -> None:
+        from news_futures.trading.executor import SandboxExecutor
+
+        approval = self.approved()
+        with EventArchive(self.events_db) as events, Archive(self.publications_db) as archive:
+            result = SandboxExecutor(events, self.broker).start(archive, approval, allowed_contracts={self.contract_id})
+        self.assertEqual(result['status'], 'protected')
 
     def delegate(self) -> dict[str, str]:
         return {'status': 'delegate', 'company_id': 'sber', 'reason': 'Проверь прогноз.'}
 
     def test_manual_news_runs_in_sandbox_and_is_ineligible_for_execution(self) -> None:
-        from news_futures.common.artifact_paths import review_path
+        from news_futures.agents.analysis import TEAM_DIRECTORY
         from news_futures.api.news import enqueue_test_news, testing_view
         from news_futures.trading.risk import reserve_entry
 
@@ -278,9 +279,10 @@ class RuntimeAcceptance(RiskFixture):
         saved = json.loads(row['publication'])
         at = datetime.fromisoformat(saved['published_at'])
         incoming = Publication(saved['source'], saved['external_id'], saved['url'], saved['text'], at, at)
-        self.serve(self.proposal('enter', incoming), review(), started_at=at + timedelta(microseconds=1))
+        self.serve(self.delegate(), self.market_call(), self.analyst_answer(self.proposal('enter', incoming)),
+                   review(), started_at=at + timedelta(microseconds=1))
         result = self.report(incoming)['result']
-        self.assertEqual(result['status'], 'approved_for_checks')
+        self.assertEqual(result['status'], 'candidate')
         self.write_broker.assert_not_called()
         self.assertEqual(testing_view(self.root)['decisions'][0]['revision'], revision)
         view = trace_view(self.root, self.account_id, revision)
@@ -288,7 +290,7 @@ class RuntimeAcceptance(RiskFixture):
         self.assertNotIn(revision, {row['revision'] for row in news_view(
             self.root, self.profile_data, {}, {}, '',
         )['decisions']})
-        directory = review_path(self.root / 'decisions' / revision, result['review_attempt'])
+        directory = self.root / 'decisions' / revision / TEAM_DIRECTORY
         with EventArchive(self.events_db) as events:
             self.assertNotIn(revision, {row['revision'] for row in events.history(current_only=True)})
             admission = reserve_entry(events, archive, directory, account_id=self.account_id,
@@ -305,13 +307,13 @@ class RuntimeAcceptance(RiskFixture):
     def analyst_answer(self, proposal: dict[str, Any]) -> dict[str, Any]:
         return self.tool_call('AnalystAnswer', {'proposal': proposal, 'missing_data': []})
 
-    def test_tool_agent_delegates_and_publishes_a_reviewed_candidate_without_execution(self) -> None:
+    def test_analysis_delegates_and_publishes_a_reviewed_candidate_without_execution(self) -> None:
         from news_futures.trading.approval import read_approval
-        from news_futures.agents.tool_agent import TEAM_DIRECTORY
+        from news_futures.agents.analysis import TEAM_DIRECTORY
         from news_futures.common.errors import Rejected
         from news_futures.api.news import trace_view
 
-        self.tool_agent(mode='sandbox')
+        self.sandbox()
         incoming = self.news(self.market, 'SBER опубликовал повышенный прогноз.')
 
         def follow_up(body: dict[str, Any]) -> dict[str, Any]:
@@ -368,10 +370,10 @@ class RuntimeAcceptance(RiskFixture):
         self.assertNotEqual(proposals[0]['id'], proposals[1]['id'])
         self.assertEqual(report['result']['proposal']['id'], proposals[1]['id'])
         self.assertEqual([request['model'] for request in endpoint.requests], [
-            'test/coordinator', 'test/analyst', 'test/analyst', 'test/analyst', 'test/critic', 'test/analyst', 'test/critic',
+            'test/analyst', 'test/analyst', 'test/analyst', 'test/analyst', 'test/critic', 'test/analyst', 'test/critic',
         ])
-        for request in endpoint.requests:
-            if request['model'] == 'test/analyst':
+        for index, request in enumerate(endpoint.requests):
+            if index in (1, 2, 3, 5):
                 self.assertEqual(request['tool_choice'], 'required')
             else:
                 self.assertNotIn('tools', request)
@@ -414,7 +416,6 @@ class RuntimeAcceptance(RiskFixture):
         self.write_broker.assert_not_called()
 
     def test_market_reaction_respects_contract_scope_and_reaches_the_critic(self) -> None:
-        self.tool_agent()
         incoming = self.news(self.market, 'SBER опубликовал прогноз.')
         with patch.object(self.broker, 'read_candles', wraps=self.broker.read_candles) as read_candles:
             self.serve(self.delegate(), self.tool_call('get_market_reaction', {'contract_id': 'vtb-future'}),
@@ -431,7 +432,6 @@ class RuntimeAcceptance(RiskFixture):
         self.assertEqual(report['agent']['calls'][-1]['input']['context']['market_reaction'], evidence)
 
     def test_archive_comparison_and_calendar_evidence_reach_the_critic(self) -> None:
-        self.tool_agent()
         incoming = self.news(self.market, 'SBER опубликовал прогноз: https://example.com/report')
         self.serve(self.delegate(), self.tool_call('get_event_versions', {}),
                    self.tool_call('compare_market', {'contract_id': self.contract_id}),
@@ -455,72 +455,16 @@ class RuntimeAcceptance(RiskFixture):
             def slow_analyst(_: dict[str, Any]) -> dict[str, Any]:
                 clock.side_effect = None
                 clock.return_value = incoming.received_at + timedelta(seconds=61)
-                return self.proposal('enter', incoming)
+                return self.analyst_answer(self.proposal('enter', incoming))
 
-            endpoint = self.serve(slow_analyst)
+            endpoint = self.serve(self.delegate(), self.market_call(), slow_analyst)
         result = self.report(incoming)['result']
-        self.assertEqual((result['stage'], result['status'], result['reason']), ('review', 'skipped', 'signal_deadline'))
-        self.assertEqual(len(endpoint.requests), 1)
+        self.assertEqual((result['stage'], result['status'], result['reason']), ('agent', 'skipped', 'signal_deadline'))
+        self.assertEqual(len(endpoint.requests), 3)
         self.assertFalse((self.root / 'decisions' / incoming.revision_key() / 'candidates').exists())
         self.write_broker.assert_not_called()
 
-    def test_market_and_news_checks_overlap_and_fixed_review_links_the_quote(self) -> None:
-        from threading import Event
-
-        incoming = self.news(self.market, 'SBER опубликовал прогноз.')
-        market_reading = Event()
-        checking_news = Event()
-        reads = 0
-        read_risk = self.broker.read_risk
-        latest_revision = Archive.latest_revision
-
-        def read(account_id: str, contract_id: str) -> object:
-            market_reading.set()
-            self.assertTrue(checking_news.wait(3))
-            return read_risk(account_id, contract_id)
-
-        def latest(archive: Archive, publication_id: str) -> dict[str, Any] | None:
-            nonlocal reads
-            reads += 1
-            if reads == 2:
-                self.assertTrue(market_reading.wait(3))
-                checking_news.set()
-            return latest_revision(archive, publication_id)
-
-        with patch.object(self.broker, 'read_risk', side_effect=read), patch.object(Archive, 'latest_revision', latest):
-            endpoint = self.serve(self.proposal('enter', incoming), review())
-        directory = self.root / 'decisions' / incoming.revision_key()
-        path, = (directory / 'candidates').glob('*.json')
-        candidate = json.loads(path.read_bytes())
-        self.assertEqual(candidate['strategy'], 'fixed')
-        self.assertTrue((directory / 'market' / f"{candidate['observation_id']}.json").is_file())
-        analyst, critic = [json.loads(call['messages'][-1]['content']) for call in endpoint.requests]
-        self.assertEqual(analyst['context']['candidates'], critic['context']['candidates'])
-        self.assertEqual(critic['context']['candidates'][0]['market_observation_id'], candidate['observation_id'])
-
-    def test_deadline_during_risk_read_prevents_order_submission(self) -> None:
-        self.sandbox()
-        incoming = self.news(self.market, 'SBER опубликовал прогноз.')
-        read_risk = self.broker.read_risk
-        reads = 0
-        with patch('news_futures.runtime.utc_now', side_effect=utc_now) as clock:
-            def read(account_id: str, contract_id: str) -> object:
-                nonlocal reads
-                reads += 1
-                if reads == 2:
-                    clock.side_effect = None
-                    clock.return_value = incoming.received_at + timedelta(seconds=61)
-                return read_risk(account_id, contract_id)
-
-            with patch.object(self.broker, 'read_risk', side_effect=read):
-                self.serve(self.proposal('enter', incoming), review())
-        result = self.report(incoming)['result']
-        self.assertEqual((result['stage'], result['status'], result['reason']), ('execution', 'skipped', 'signal_deadline'))
-        self.assertEqual(reads, 2)
-        self.assertEqual(self.broker.calls, [])
-
-    def test_tool_agent_skips_without_broker_data_or_specialists(self) -> None:
-        self.tool_agent()
+    def test_analysis_skips_without_broker_data_or_specialists(self) -> None:
         incoming = self.news(self.market, 'SBER подтвердил расписание вебинара.')
         with patch.object(self.broker, 'read_risk', side_effect=OSError):
             endpoint = self.serve({'status': 'skip', 'reason': 'Нет существенного события.', 'company_id': None})
@@ -528,8 +472,7 @@ class RuntimeAcceptance(RiskFixture):
         self.assertEqual(len(endpoint.requests), 1)
         self.write_broker.assert_not_called()
 
-    def test_tool_agent_stops_after_market_finds_no_supported_futures(self) -> None:
-        self.tool_agent()
+    def test_analysis_stops_after_market_finds_no_supported_futures(self) -> None:
         incoming = self.news(self.market, 'SBER опубликовал прогноз.')
         with patch.object(self.broker, 'read_risk', side_effect=UnsupportedFuturesUnits) as read_risk:
             endpoint = self.serve(self.delegate(), self.market_call())
@@ -542,8 +485,7 @@ class RuntimeAcceptance(RiskFixture):
         self.assertEqual(len(endpoint.requests), 2)
         self.write_broker.assert_not_called()
 
-    def test_tool_agent_rejects_unknown_tool_from_analyst(self) -> None:
-        self.tool_agent()
+    def test_analysis_rejects_unknown_tool_from_analyst(self) -> None:
         incoming = self.news(self.market, 'SBER опубликовал прогноз.')
         with patch.object(self.broker, 'read_risk') as read_risk:
             self.assertEqual(len(self.serve(self.delegate(), self.tool_call('request_entry', {}), code=1).requests), 2)
@@ -555,8 +497,7 @@ class RuntimeAcceptance(RiskFixture):
         self.assertNotIn('proposal', report['result'])
         self.write_broker.assert_not_called()
 
-    def test_tool_agent_stops_after_second_critic_rejection(self) -> None:
-        self.tool_agent()
+    def test_analysis_stops_after_second_critic_rejection(self) -> None:
         incoming = self.news(self.market, 'SBER опубликовал прогноз.')
         first = self.proposal('enter', incoming)
         endpoint = self.serve(
@@ -570,8 +511,7 @@ class RuntimeAcceptance(RiskFixture):
         self.assertEqual(len(endpoint.requests), 6)
         self.write_broker.assert_not_called()
 
-    def test_tool_agent_resumes_at_critic_with_the_saved_proposal(self) -> None:
-        self.tool_agent()
+    def test_analysis_resumes_at_critic_with_the_saved_proposal(self) -> None:
         incoming = self.news(self.market, 'SBER опубликовал прогноз.')
         with self.assertRaises(Interrupted):
             self.serve(
@@ -590,7 +530,7 @@ class RuntimeAcceptance(RiskFixture):
         self.futures_snapshot['categories']['oil_gas'] = 'Нефтегаз'
         self.futures_snapshot['assets'][1]['categories'] = ['oil_gas']
         incoming = self.news(self.market, 'SBER опубликовал отчёт.')
-        self.serve(self.proposal('skip', incoming), review())
+        self.serve({'status': 'skip', 'reason': 'No signal.', 'company_id': None})
         self.assertEqual(len(self.category_requests), 1)
         self.assertEqual(list(self.jev_requests[0]['questions']), ['company_0'])
         self.assertEqual(self.jev_requests[0]['state']['company_0']['tickers'], ['SBER'])
@@ -600,16 +540,16 @@ class RuntimeAcceptance(RiskFixture):
         trace = trace_view(self.root, self.account_id, incoming.revision_key())
         assert trace is not None
         self.assertEqual([step['kind'] for step in trace['steps'][:3]], ['publication', 'category', 'route'])
-        self.assertEqual([step['kind'] for step in trace['steps'][3:6]], ['position', 'instrument', 'snapshot'])
+        self.assertEqual([step['kind'] for step in trace['steps'][3:6]], ['position', 'instrument', 'coordinator'])
 
-    def test_decisions_selects_the_only_contract_passed_to_the_fixed_analyst(self) -> None:
+    def test_decisions_selects_the_only_contract_passed_to_the_analyst(self) -> None:
         contracts = self.futures_snapshot['assets'][0]['contracts']
         contracts.insert(0, contracts[0] | {'uid': 'other-series', 'ticker': 'SBER2'})
         self.instrument_choice = 'contract_1'
         incoming = self.news(self.market, 'SBER опубликовал прогноз.')
 
         with patch.object(self.broker, 'read_risk', wraps=self.broker.read_risk) as read_risk:
-            self.serve(self.proposal('enter', incoming), review())
+            self.serve(self.delegate(), self.market_call(), self.analyst_answer(self.proposal('enter', incoming)), review())
         read_risk.assert_called_once_with(self.account_id, self.contract_id)
         request, = self.instrument_requests
         self.assertEqual(request['model'], self.category_requests[0]['model'])
@@ -618,8 +558,8 @@ class RuntimeAcceptance(RiskFixture):
         self.assertEqual(request['state']['contract_0']['contract_id'], 'other-series')
         report = self.report(incoming)
         self.assertEqual(report['instrument']['selected']['contract_id'], self.contract_id)
-        self.assertEqual([row['contract_id'] for row in report['context']['candidates']], [self.contract_id])
-        self.assertEqual(report['result']['status'], 'approved_for_checks')
+        self.assertEqual([row['contract_id'] for row in report['agent']['calls'][-1]['input']['context']['candidates']], [self.contract_id])
+        self.assertEqual(report['result']['status'], 'candidate')
 
     def test_instrument_selection_stops_before_chat_on_none_or_invalid_choice(self) -> None:
         for choice, status, reason, code in (
@@ -635,16 +575,6 @@ class RuntimeAcceptance(RiskFixture):
                 result = report['result']
                 self.assertEqual((result['stage'], result['status'], result['reason']), ('instrument', status, reason))
                 self.assertIsNone(report['instrument']['selected'])
-
-    def test_fixed_route_skips_when_market_finds_no_supported_futures(self) -> None:
-        incoming = self.news(self.market, 'SBER опубликовал прогноз.')
-        with patch.object(self.broker, 'read_risk', side_effect=UnsupportedFuturesUnits) as read_risk:
-            self.assertEqual(self.serve().requests, [])
-            read_risk.assert_called_once_with(self.account_id, self.contract_id)
-        result = self.report(incoming)['result']
-        self.assertEqual((result['stage'], result['status'], result['reason']),
-                         ('snapshot', 'skipped', 'no_supported_futures'))
-        self.write_broker.assert_not_called()
 
     def test_unrelated_category_result_skips_company_routing(self) -> None:
         self.futures_snapshot['categories'] = {'oil_gas': 'Нефтегаз'}
@@ -673,11 +603,11 @@ class RuntimeAcceptance(RiskFixture):
         incoming = self.news(self.market, '#HEAD HeadHunter выкупил собственные акции.')
         proposal = self.proposal('enter', incoming) | {'company_id': 'head'}
 
-        self.serve(proposal, review())
+        self.serve(self.delegate() | {'company_id': 'head'}, self.market_call(),
+                   self.analyst_answer(proposal), review())
 
-        self.assertEqual(self.report(incoming)['result']['status'], 'protected')
-        self.assertEqual(self.broker.calls, ['enter', 'sl', 'tp'])
-        self.write_broker.assert_any_call(ANY, self.account_id, self.contract_id, 'head')
+        self.assertEqual(self.report(incoming)['result']['status'], 'candidate')
+        self.write_broker.assert_not_called()
 
     def test_catalog_refreshes_on_each_start_and_keeps_last_snapshot_on_failure(self) -> None:
         output = self.root / 'futures-catalog' / 'catalog.json'
@@ -714,7 +644,7 @@ class RuntimeAcceptance(RiskFixture):
             raise Interrupted
 
         with self.assertRaises(Interrupted):
-            self.serve(self.proposal('enter', incoming), interrupt)
+            self.serve(self.delegate(), self.market_call(), self.analyst_answer(self.proposal('enter', incoming)), interrupt)
         self.market.differences.append(Difference(self.market.pts, [incoming]))
         self.assertEqual(self.serve(started_at=utc_now()).requests, [])
         self.assertEqual(len(self.jev_requests), 1)
@@ -731,28 +661,14 @@ class RuntimeAcceptance(RiskFixture):
         edited = replace(incoming, edited_at=utc_now(), change='edit', text='SBER updated its forecast.')
         fresh = self.news(self.market, 'SBER raised its dividend.')
         self.market.differences[-1] = Difference(self.market.pts, [incoming, edited, fresh])
-        self.serve(self.proposal('enter', fresh), review(), started_at=restarted_at)
+        self.serve(self.delegate(), self.market_call(), self.analyst_answer(self.proposal('enter', fresh)),
+                   review(), started_at=restarted_at)
         self.assertEqual(len(self.jev_requests), 1)
         self.assertEqual(self.jev_requests[0]['state']['publication'], fresh.text)
         self.assertEqual(self.report(incoming)['result']['reason'], 'publication_before_start')
         self.assertEqual(self.report(edited)['result']['reason'], 'publication_before_start')
-        self.assertEqual(self.report(fresh)['result']['status'], 'protected')
-        self.assertEqual(self.broker.calls, ['enter', 'sl', 'tp'])
-
-    def test_paused_entry_remains_skipped_after_restart_and_resume(self) -> None:
-        self.sandbox()
-        controls = OperatorState(self.root)
-        controls.set_pause(True)
-        paused = self.news(self.market, 'SBER raised its forecast.')
-        self.serve(self.proposal('enter', paused), review())
-        self.assertEqual(self.report(paused)['result']['reason'], 'entries_paused')
-        self.assertEqual(self.broker.calls, [])
-        self.assertTrue(OperatorState(self.root).pause()['paused'])
-        controls.set_pause(False)
-        fresh = self.news(self.market, 'SBER raised its dividend.')
-        self.serve(self.proposal('enter', fresh), review())
-        self.assertEqual(self.report(paused)['result']['status'], 'skipped')
-        self.assertEqual(self.report(fresh)['result']['status'], 'protected')
+        self.assertEqual(self.report(fresh)['result']['status'], 'candidate')
+        self.write_broker.assert_not_called()
 
     def test_panel_model_edit_applies_to_the_next_revision_and_keeps_frozen_review(self) -> None:
         controls = OperatorState(self.root)
@@ -761,7 +677,6 @@ class RuntimeAcceptance(RiskFixture):
                           models=AnalysisModels(chat_model, choices), storage=PostgresRuntimeStorage(settings),
                           read_limit=limit_broker_read,
                           on_controls=lambda **event: None)
-        runtime.broker_ready = True
         first = self.news(self.market, 'SBER raised its forecast.')
         second = self.news(self.market, 'SBER raised its dividend.')
         third = self.news(self.market, 'SBER published its results.')
@@ -772,25 +687,25 @@ class RuntimeAcceptance(RiskFixture):
             observed.append((analyst.get('aggregator', 'openrouter'), analyst['model']))
             if len(observed) == 1:
                 raise Shutdown
-            return {'stage': 'review', 'status': 'no_action'}
+            return {'stage': 'agent', 'status': 'skipped'}
 
         archive = Archive(self.publications_db)
-        with (closing(archive.db), EventArchive(self.events_db) as events,
+        with (closing(archive.db),
               patch('news_futures.runtime.analyze_news', side_effect=analyze)):
             archive.initialize_runtime()
             archive.save_batch(first.source, 1, [first, second, third])
             first_result = {'revision': first.revision_key(), 'mode': 'observation', 'inputs_saved': False}
             with self.assertRaises(Shutdown):
-                runtime.process_revision(archive, events, first.record(), first_result)
+                runtime.process_revision(archive, first.record(), first_result)
             models = {
                 'analyst': 'test/new-analyst', 'critic': 'test/critic',
             }
             controls.save_settings({'account_id': self.account_id, 'aggregator': 'groq', 'models': models})
-            runtime.process_revision(archive, events, first.record(), first_result)
-            runtime.process_revision(archive, events, second.record(),
+            runtime.process_revision(archive, first.record(), first_result)
+            runtime.process_revision(archive, second.record(),
                                      {'revision': second.revision_key(), 'mode': 'observation', 'inputs_saved': False})
             controls.save_settings({'account_id': self.account_id, 'aggregator': 'openrouter', 'models': models})
-            runtime.process_revision(archive, events, third.record(),
+            runtime.process_revision(archive, third.record(),
                                      {'revision': third.revision_key(), 'mode': 'observation', 'inputs_saved': False})
         self.assertEqual(observed, [('openrouter', 'test/analyst'), ('openrouter', 'test/analyst'),
                                     ('groq', 'openai/gpt-oss-120b'), ('openrouter', 'test/new-analyst')])
@@ -810,8 +725,8 @@ class RuntimeAcceptance(RiskFixture):
         first = self.news(self.market, 'SBER raised its profit forecast.')
         second = self.news(self.market, 'SBER raised its dividend.')
         endpoint = ScriptedEndpoint([
-            self.proposal('skip', first), review(),
-            self.proposal('skip', second), review(),
+            self.delegate(), self.market_call(), self.analyst_answer(self.proposal('enter', first)), review(),
+            self.delegate(), self.market_call(), self.analyst_answer(self.proposal('enter', second)), review(),
         ])
 
         def respond(request: httpx.Request) -> httpx.Response:
@@ -819,9 +734,11 @@ class RuntimeAcceptance(RiskFixture):
             self.assertEqual(request.headers['Authorization'], 'Bearer groq-test-key')
             body = json.loads(request.content)
             self.assertNotIn('provider', body)
-            self.assertEqual(body['response_format']['type'], 'json_schema')
-            self.assertTrue(body['response_format']['json_schema']['strict'])
-            self.assertNotIn('tools', body)
+            if 'tools' in body:
+                self.assertFalse(body['parallel_tool_calls'])
+            else:
+                self.assertEqual(body['response_format']['type'], 'json_schema')
+                self.assertTrue(body['response_format']['json_schema']['strict'])
             return endpoint.respond(request)
 
         applied: list[dict[str, Any]] = []
@@ -830,7 +747,6 @@ class RuntimeAcceptance(RiskFixture):
                           read_limit=limit_broker_read,
                           on_controls=lambda **event: applied.append(event),
                           started_at=self.started_at)
-        runtime.broker_ready = True
         archive = Archive(settings.publications)
         with closing(archive.db):
             archive.initialize_runtime()
@@ -840,23 +756,20 @@ class RuntimeAcceptance(RiskFixture):
               patch('news_futures.llm_clients.chat.load_token', return_value='groq-test-key') as token,
               patch('builtins.print')):
             runtime.process()
-        self.assertEqual(token.call_count, 4)
+        self.assertEqual(token.call_count, 8)
         token.assert_called_with('groq', 'api_key')
-        self.assertEqual([request['model'] for request in endpoint.requests], [
-            'openai/gpt-oss-120b', 'openai/gpt-oss-120b',
-            'openai/gpt-oss-120b', 'openai/gpt-oss-120b',
-        ])
+        self.assertEqual([request['model'] for request in endpoint.requests], ['openai/gpt-oss-120b'] * 8)
         self.assertEqual([request['model'] for request in self.jev_requests], ['parallel/decisions-fast:free'] * 2)
         decision = self.report(second)
-        self.assertEqual(decision['result']['status'], 'no_action')
-        self.assertEqual([call['provider'] for call in decision['review']['calls']], ['Groq', 'Groq'])
+        self.assertEqual(decision['result']['status'], 'candidate')
+        self.assertEqual([call['provider'] for call in decision['agent']['calls'] if call.get('provider')], ['Groq'] * 4)
         self.assertEqual(applied[-1]['aggregator'], 'groq')
         self.assertEqual(applied[-1]['models']['decisions'], 'parallel/decisions-fast:free')
 
     def test_failed_reconciliation_keeps_the_last_confirmed_broker_state(self) -> None:
         self.sandbox()
-        entry = self.news(self.market, 'SBER raised its forecast.')
-        self.serve(self.proposal('enter', entry), review())
+        self.open_position()
+        self.serve()
         last = self.report()['broker']['last_confirmed']
         self.assertEqual(last['position']['quantity'], 3)
         settings = load_settings(self.profile)
@@ -892,58 +805,6 @@ class RuntimeAcceptance(RiskFixture):
         self.serve()
         self.assertTrue(archive_exists(self.root / 'publications', 'revisions'))
 
-    def test_restart_reconciles_entry_with_lost_response_before_processing(self) -> None:
-        self.sandbox()
-        incoming = self.news(self.market, 'SBER raised its forecast.')
-        enter = self.broker.enter
-
-        def interrupt(*args: Any) -> None:
-            enter(*args)
-            raise Interrupted
-
-        with patch.object(self.broker, 'enter', side_effect=interrupt), self.assertRaises(Interrupted):
-            self.serve(self.proposal('enter', incoming), review())
-        self.broker.state = replace(self.broker.state, settled=False)
-        self.serve(started_at=utc_now())
-        self.assertEqual(self.broker.calls, ['enter'])
-        self.assertEqual(self.report()['broker']['broker'], 'blocked')
-        self.assertEqual(self.report(incoming)['result']['status'], 'processing')
-        self.broker.state = replace(self.broker.state, settled=True)
-        self.serve(started_at=utc_now())
-        self.assertEqual(self.report(incoming)['result']['status'], 'protected')
-        self.assertEqual(self.broker.calls, ['enter', 'sl', 'tp'])
-        self.assertEqual(len(self.jev_requests), 1)
-
-    def test_restart_between_stop_submissions_confirms_both_without_resending_the_first(self) -> None:
-        self.sandbox()
-        incoming = self.news(self.market, 'SBER raised its forecast.')
-        protect = self.broker.protect
-
-        def interrupt(*args: Any) -> None:
-            protect(*args)
-            raise Interrupted
-
-        with patch.object(self.broker, 'protect', side_effect=interrupt), self.assertRaises(Interrupted):
-            self.serve(self.proposal('enter', incoming), review())
-        self.serve()
-        self.assertEqual(self.broker.calls, ['enter', 'sl', 'tp'])
-        self.assertEqual(self.report()['broker']['protection']['status'], 'confirmed')
-
-    def test_old_gap_publication_does_not_trigger_models_even_with_an_open_position(self) -> None:
-        self.sandbox()
-        old_time = utc_now() - timedelta(minutes=20)
-        entry = self.news(self.market, 'SBER raised its forecast.')
-        with patch('news_futures.dataflows.telegram.utc_now', return_value=old_time - timedelta(minutes=1)):
-            self.serve(self.proposal('enter', entry), review())
-        incoming = replace(self.news(self.rbc, 'SBER gave updated guidance.'), published_at=old_time)
-        self.rbc.messages = [incoming]
-        self.rbc.differences[-1] = Difference(self.rbc.pts, [], too_long=True)
-        self.assertEqual(self.serve().requests, [])
-        self.assertEqual(self.report(incoming)['publication']['published_at'], old_time.isoformat())
-        self.assertEqual(self.report(incoming)['result']['reason'], 'publication_before_start')
-        self.assertEqual(len(self.jev_requests), 1)
-        self.assertEqual(self.broker.calls, ['enter', 'sl', 'tp'])
-
     def test_initial_history_and_old_gap_publications_cannot_open_a_position(self) -> None:
         self.sandbox()
         now = utc_now()
@@ -965,39 +826,18 @@ class RuntimeAcceptance(RiskFixture):
         self.market.messages.append(fresh)
         self.market.differences.clear()
 
-        self.serve(self.proposal('enter', fresh), review())
+        self.serve(self.delegate(), self.market_call(), self.analyst_answer(self.proposal('enter', fresh)), review())
 
         self.assertEqual([request['state']['publication'] for request in self.jev_requests], [fresh.text])
-        self.assertEqual(self.report(fresh)['result']['status'], 'approved_for_checks')
-
-    def test_restart_skips_reviewed_entry_when_broker_execution_never_started(self) -> None:
-        self.sandbox()
-        incoming = self.news(self.rbc, 'SBER raised its forecast.')
-        settings = load_settings(self.profile)
-        runtime = Runtime(settings, lambda *_: self.broker, lambda *_: self.broker,
-                          models=AnalysisModels(chat_model, choices), storage=PostgresRuntimeStorage(settings),
-                          read_limit=limit_broker_read,
-
-                          started_at=self.started_at)
-
-        def stop(body: dict[str, Any]) -> dict[str, Any]:
-            runtime.stop.set()
-            return dict(review()(body))
-
-        with patch('news_futures.startup.Runtime', return_value=runtime):
-            self.serve(self.proposal('enter', incoming), stop)
-        self.assertEqual(self.report(incoming)['result']['reason'], 'shutdown_before_execution')
-        self.serve(started_at=utc_now())
-        self.assertEqual(self.report(incoming)['result']['reason'], 'publication_before_start')
-        self.assertEqual(self.broker.calls, [])
+        self.assertEqual(self.report(fresh)['result']['status'], 'candidate')
 
     def test_observation_never_writes_and_mode_switch_does_not_replay_approval(self) -> None:
         item = self.news(self.market, 'SBER raised its forecast.', media=True)
-        self.serve(self.proposal('enter', item), review())
+        self.serve(self.delegate(), self.market_call(), self.analyst_answer(self.proposal('enter', item)), review())
         decision = self.report(item)
         self.assertEqual(decision['result']['mode'], 'observation')
-        self.assertEqual(decision['result']['status'], 'approved_for_checks')
-        self.assertTrue(decision['context']['publication']['unread_media'])
+        self.assertEqual(decision['result']['status'], 'candidate')
+        self.assertTrue(decision['agent']['calls'][-1]['input']['context']['publication']['unread_media'])
         self.write_broker.assert_not_called()
         self.sandbox()
         self.market.differences.append(Difference(self.market.pts, [item]))
@@ -1018,21 +858,21 @@ class RuntimeAcceptance(RiskFixture):
         with closing(archive.db):
             archive.save_batch(item.source, 1, [item])
 
-        endpoint = self.serve(self.proposal('enter', item), review())
+        endpoint = self.serve(self.delegate(), self.market_call(), self.analyst_answer(self.proposal('enter', item)), review())
         decision = self.report(item)
         self.assertEqual(decision['publication'], item.record())
-        self.assertEqual(decision['context']['publication']['url'], item.url)
-        self.assertEqual(decision['result']['status'], 'approved_for_checks')
-        self.assertEqual([request['model'] for request in endpoint.requests], ['test/analyst', 'test/critic'])
+        self.assertEqual(decision['agent']['calls'][-1]['input']['context']['publication']['url'], item.url)
+        self.assertEqual(decision['result']['status'], 'candidate')
+        self.assertEqual([request['model'] for request in endpoint.requests],
+                         ['test/analyst', 'test/analyst', 'test/analyst', 'test/critic'])
         self.write_broker.assert_not_called()
 
     def test_open_position_skips_news_analysis_until_broker_confirms_exit(self) -> None:
         self.sandbox()
         self.snapshot['contract']['ticker'] = 'SRZ5'
         self.futures_snapshot['assets'][0]['contracts'][0]['ticker'] = 'SRZ5'
-        entry = self.news(self.market, 'SBER increased profit forecast.')
-        self.serve(self.proposal('enter', entry), review())
-        self.assertEqual(self.report(entry)['result']['status'], 'protected')
+        self.open_position()
+        self.serve()
         self.assertEqual(self.report()['broker']['protection']['status'], 'confirmed')
 
         update = self.news(self.rbc, 'SBER withdrew its forecast.')
@@ -1054,75 +894,14 @@ class RuntimeAcceptance(RiskFixture):
                                     protection=(replace(stop, status='executed'), take_profit),
                                     exits=(Fill('native-exit', 3, Decimal('290')),))
         fresh = self.news(self.market, 'SBER released a new forecast.')
-        endpoint = self.serve(self.proposal('skip', fresh), review())
-        self.assertEqual(self.report(fresh)['result']['status'], 'no_action')
-        self.assertEqual([request['model'] for request in endpoint.requests], ['test/analyst', 'test/critic'])
+        endpoint = self.serve(self.delegate(), self.market_call(), self.analyst_answer(self.proposal('skip', fresh)))
+        self.assertEqual(self.report(fresh)['result']['status'], 'skipped')
+        self.assertEqual([request['model'] for request in endpoint.requests], ['test/analyst'] * 3)
         self.assertIsNone(self.report()['broker']['position'])
 
         view = news_view(self.root, self.profile_data, {}, {}, 'sber')
-        self.assertEqual(view['contracts'][self.contract_id]['ticker'], 'SRZ5')
         self.assertIn('enter', [order['action'] for order in view['orders']])
         self.assertTrue(all(order['contract_id'] == self.contract_id for order in view['orders']))
-
-    def test_skips_and_rereads_account_after_approval(self) -> None:
-        self.sandbox()
-        skip = self.news(self.market, 'SBER forecasts.')
-        self.serve(self.proposal('skip', skip), review())
-        self.assertEqual(self.report(skip)['result']['status'], 'no_action')
-        incoming = self.news(self.rbc, 'SBER revised its forecast.')
-
-        def change_account(body: dict[str, Any]) -> dict[str, Any]:
-            self.snapshot['has_position'] = True
-            return dict(review()(body))
-
-        read_risk = self.broker.read_risk
-        observed: list[str] = []
-
-        def observe_risk(account_id: str, contract_id: str) -> object:
-            if self.snapshot['has_position']:
-                trace = trace_view(self.root, self.account_id, incoming.revision_key())
-                if trace is not None:
-                    observed.extend(step['status'] for step in trace['steps'] if step['kind'] == 'risk')
-            return read_risk(account_id, contract_id)
-
-        with patch.object(self.broker, 'read_risk', side_effect=observe_risk):
-            self.serve(self.proposal('enter', incoming), change_account)
-        self.assertIn('processing', observed)
-        self.assertEqual(self.report(incoming)['result']['reason'], 'account_has_exposure_or_unresolved_execution')
-        self.assertEqual(self.broker.calls, [])
-        trace = trace_view(self.root, self.account_id, incoming.revision_key())
-        assert trace is not None
-        risk, = [step for step in trace['steps'] if step['kind'] == 'risk']
-        self.assertEqual(risk['status'], 'rejected')
-        self.assertTrue(risk['input']['snapshot']['has_position'])
-        self.assertFalse(any(step['status'] == 'intent' for step in trace['steps']))
-
-    def test_risk_audit_failure_keeps_the_broker_result(self) -> None:
-        self.sandbox()
-        incoming = self.news(self.market, 'SBER forecasts.')
-
-        def save(path: Path, value: object) -> None:
-            if path.name.startswith('risk-'):
-                raise PermissionError('audit file unavailable')
-            replace_json(path, value)
-
-        with patch('news_futures.runtime.replace_json', side_effect=save):
-            self.serve(self.proposal('enter', incoming), review())
-        result = self.report(incoming)['result']
-        self.assertEqual(result['status'], 'protected')
-        self.assertEqual(result['audit_error'], 'risk_audit_unavailable')
-        self.assertEqual(self.broker.calls, ['enter', 'sl', 'tp'])
-
-    def test_tbank_independent_stops_block_autonomous_entry(self) -> None:
-        self.sandbox()
-        self.broker.source = 'sandbox'
-        incoming = self.news(self.market, 'SBER updated forecasts.')
-        self.serve(self.proposal('enter', incoming), review())
-        self.assertEqual(self.report(incoming)['result']['reason'], 'autonomous_protection_unavailable')
-        self.assertEqual(self.broker.calls, [])
-        trace = trace_view(self.root, self.account_id, incoming.revision_key())
-        assert trace is not None
-        self.assertNotIn('risk', [step['kind'] for step in trace['steps']])
 
     def test_reprint_of_initial_history_does_not_trigger_review(self) -> None:
         self.sandbox()

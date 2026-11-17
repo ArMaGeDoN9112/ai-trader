@@ -19,6 +19,7 @@ from uuid import uuid4
 import httpx
 from websockets.sync.client import connect
 
+from news_futures.agents.analysis import TEAM_DIRECTORY
 from news_futures.api.server import OperatorHandler, OperatorServer
 from news_futures.api.settings import Preferences
 from news_futures.api.supervisor import Worker
@@ -366,34 +367,26 @@ class OperatorTest(unittest.TestCase):
         archive = Archive(self.root / 'publications')
         with closing(archive.db):
             archive.initialize_runtime()
-            archive.save_result({'revision': revision, 'stage': 'review', 'status': 'rejected', 'decision_id': 1,
-                                  'review_attempt': revision})
+            archive.save_result({'revision': revision, 'stage': 'agent', 'status': 'rejected', 'decision_id': 1,
+                                 'critic_status': 'rejected'})
             archive.save_result({'revision': unlinked.revision_key(), 'stage': 'event', 'status': 'skipped',
                                   'reason': 'no_company_link'})
         directory = self.root / 'decisions' / revision
-        review = directory / 'review' / revision
-        review.mkdir(parents=True)
-        context = {'candidates': [{'company_id': 'company', 'contract_id': 'old-future'},
-                                  {'company_id': 'other', 'contract_id': 'other-future', 'ticker': 'XYZH6'}]}
-        replace_json(directory / 'snapshot.json', {'instruments': context['candidates']})
-        replace_json(directory / 'catalog.json', {'operations': {
-            'future': {'availability': 'available', 'data': {
-                'id': 'old-future', 'ticker': 'ABCZ5', 'underlying_share_id': 'share-a',
-            }},
-            'catalog': {'availability': 'available', 'data': [{'company_id': 'company', 'share_id': 'share-a'}]},
-        }})
+        agent = directory / TEAM_DIRECTORY
+        agent.mkdir(parents=True)
+        replace_json(directory / 'instrument.json', {
+            'at': earlier.isoformat(), 'status': 'completed', 'requested_model': 'typesafe/jev-1.14',
+            'selected': {'ticker': 'ABCZ6', 'company_id': 'company', 'contract_id': 'future'},
+        })
         replace_json(directory / 'runtime.json', {'session': 'private-session-path', 'api_key': 'private-key'})
-        replace_json(review / 'context.json', context)
-        replace_json(review / 'call-01.json', {'role': 'analyst', 'at': now.isoformat(), 'input': {'context': context},
-                     'output': {'action': 'skip', 'assessments': [{'contract_id': 'other-future', 'impact': 'unverified',
-                                'reason': 'Нет доказательств влияния'}]},
-                     'raw_output': json.dumps({'reason': 'Полный ответ аналитика. api_hash = "private-hash-in-text"',
-                                               'api_key': 'private-key-in-output', 'api_hash': 'private-hash-in-json'},
-                                              ensure_ascii=False),
-                     'metadata': {'session': 'private-session'}})
-        replace_json(review / 'call-02.json', {'role': 'critic', 'at': (now + timedelta(seconds=1)).isoformat(),
-                     'output': {'approved': False, 'objections': ['Нет подтверждения']}})
-        return revision, unlinked.revision_key(), review
+        replace_json(agent / 'trace.json', {'calls': [
+            {'id': '1', 'kind': 'analyst', 'started_at': now.isoformat(), 'status': 'completed', 'handoff_to': 'critic',
+             'output': {'reason': 'Полный ответ аналитика. api_hash = "private-hash-in-text"',
+                        'api_key': 'private-key-in-output'}},
+            {'id': '2', 'kind': 'critic', 'started_at': (now + timedelta(seconds=1)).isoformat(), 'status': 'completed',
+             'output': {'approved': False, 'objections': ['Нет подтверждения']}},
+        ]})
+        return revision, unlinked.revision_key(), agent
 
     def test_decisions_include_telegram_posts_before_and_after_processing(self) -> None:
         revision, unlinked, _ = self.save_news()
@@ -437,9 +430,7 @@ class OperatorTest(unittest.TestCase):
             self.assertEqual(news['publications'][0]['binding']['kind'], kind)
             self.assertEqual(news['publications'][1]['revision'], unlinked)
             self.assertFalse(news['publications'][1]['has_trace'])
-            self.assertIn('old-future', news['decisions'][0]['contracts'])
-            if kind == 'inferred':
-                self.assertEqual(news['publications'][0]['assessments'][0]['impact'], 'unverified')
+            self.assertIn('future', news['decisions'][0]['contracts'])
         code, body = self.request('GET', '/api/trace?revision=' + unlinked, **session)
         self.assertEqual(code, 200)
         trace = json.loads(body)
@@ -458,7 +449,7 @@ class OperatorTest(unittest.TestCase):
     @unittest.skipUnless(os.environ.get('OPERATOR_TEST_CHROME'), 'Set OPERATOR_TEST_CHROME to a Chromium executable')
     def test_ticker_to_rejected_trace_keeps_expansion_and_scroll_during_refresh(self) -> None:
         self.mock_market()
-        revision, unlinked, review = self.save_news()
+        revision, unlinked, agent = self.save_news()
         with database_connect(self.root / 'events') as db, db.transaction():
             saved = db.execute('SELECT details FROM event_decisions WHERE revision = %s', (unlinked,)).fetchone()
             candidates = [{'event_id': f'candidate-{index}'} for index in range(8)]
@@ -489,10 +480,6 @@ class OperatorTest(unittest.TestCase):
             'candidates': ['company'],
         })
         replace_json(completed / 'trace.json', {'status': 'completed', 'links': []})
-        replace_json(self.root / 'decisions' / revision / 'instrument.json', {
-            'at': utc_now().isoformat(), 'status': 'completed', 'requested_model': 'typesafe/jev-1.14',
-            'selected': {'ticker': 'ABCZ6', 'company_id': 'company'},
-        })
         catalog = self.root / 'catalog.json'
         replace_json(catalog, {'operations': {'catalog': {'availability': 'available', 'data': [{
             'company_id': 'company', 'company_name': 'Компания А', 'ticker': 'ABC', 'share_id': 'share',
@@ -506,12 +493,12 @@ class OperatorTest(unittest.TestCase):
             f'--user-data-dir={profile}', '--no-first-run', '--disable-background-networking', 'about:blank',
         ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) as browser:
             try:
-                self.exercise_browser(profile, revision, unlinked, review)
+                self.exercise_browser(profile, revision, unlinked, agent)
             finally:
                 if browser.poll() is None:
                     browser.terminate()
 
-    def exercise_browser(self, profile: Path, revision: str, unlinked: str, review: Path) -> None:
+    def exercise_browser(self, profile: Path, revision: str, unlinked: str, agent: Path) -> None:
         def until(check: Callable[[], object]) -> None:
             deadline = time.monotonic() + 8
             while not check():
@@ -597,8 +584,7 @@ class OperatorTest(unittest.TestCase):
             search('xyz')
             expect('document.querySelector("#company-name")?.textContent === "Компания Б"')
             evaluate('document.querySelector("#company-events details").open = true')
-            expect('document.querySelector("#company-events").innerText.includes("Гипотеза") && '
-                   'document.querySelector("#company-events").innerText.includes("Влияние не подтверждено")')
+            expect('document.querySelector("#company-events").innerText.includes("Гипотеза")')
             expect('document.querySelector("#company-events").innerText.includes("Материал того же события") && '
                    'document.querySelectorAll("#company-events a[href^=\'#trace/\']").length === 1')
             search('abc')
@@ -612,7 +598,7 @@ class OperatorTest(unittest.TestCase):
                    'document.querySelector("#active-tickers")?.innerText.includes("Экспирация")')
             evaluate('location.hash = "#decisions"')
             expect('document.querySelectorAll("#decisions a").length === 2')
-            for name, value in (('company', 'company'), ('contract', 'old-future'), ('result', 'rejected')):
+            for name, value in (('company', 'company'), ('contract', 'future'), ('result', 'rejected')):
                 evaluate(f'{{ const field = document.getElementById("decision-{name}"); field.value = "{value}";'
                          'field.dispatchEvent(new Event("change", {bubbles:true})); }')
             expect('document.querySelectorAll("#decisions a").length === 1')
@@ -627,7 +613,7 @@ class OperatorTest(unittest.TestCase):
             expect('document.querySelectorAll("#decisions a").length === 1')
             evaluate('document.querySelector("#decisions a").click()')
             expect(f'location.hash.startsWith("#trace/{revision}") && document.querySelector("#trace-steps")'
-                   '?.innerText.includes("Ответ критика")')
+                   '?.innerText.includes("Критик")')
             graph_history = 'document.querySelector("#trace-node-history")'
             evaluate('document.querySelector("[data-node=instrument]").click()')
             expect(f'{graph_history}.innerText.includes("ABCZ6") && '
@@ -639,17 +625,16 @@ class OperatorTest(unittest.TestCase):
             evaluate('document.querySelector("#trace-steps details").open = true; window.scrollTo(0, 550)')
             expect('window.scrollY === 550 && !document.querySelector("#trace-steps img")')
             expect('document.querySelector("#trace-steps a[href=\'https://t.me/source/1\']") !== null')
-            replace_json(review / 'call-03.json', {'role': 'analyst', 'at': utc_now().isoformat(),
-                         'input': {'review': {'approved': False}}, 'output': {'action': 'skip'}})
-            expect('document.querySelector("#trace-steps").innerText.includes("Пересмотр аналитика")')
+            trace_path = agent / 'trace.json'
+            trace = json.loads(trace_path.read_bytes())
+            trace['calls'].append({'id': '3', 'kind': 'analyst', 'status': 'completed',
+                                   'output': {'reason': 'Аналитик уточнил вывод.'}, 'started_at': utc_now().isoformat()})
+            replace_json(trace_path, trace)
+            expect('document.querySelector("#trace-steps").innerText.includes("Аналитик")')
             expect(f'{graph_history}.querySelectorAll(".step").length === 2 && '
                    'document.querySelector("[data-node=analyst]").getAttribute("aria-pressed") === "true"')
             expect('window.scrollY === 550 && document.querySelector("#trace-steps details").open')
             expect('document.documentElement.scrollWidth === document.documentElement.clientWidth')
-            from news_futures.agents.tool_agent import TEAM_DIRECTORY
-
-            agent = self.root / 'decisions' / revision / TEAM_DIRECTORY
-            agent.mkdir()
             replace_json(agent / 'trace.json', {'calls': [
                 {'id': '1', 'kind': 'coordinator', 'status': 'completed',
                  'handoff_to': 'analyst', 'started_at': utc_now().isoformat()},
@@ -668,8 +653,8 @@ class OperatorTest(unittest.TestCase):
             archive = Archive(self.root / 'publications')
             with closing(archive.db):
                 archive.save_result({'revision': revision, 'stage': 'agent', 'status': 'candidate',
-                                      'analysis_strategy': 'tool_agent', 'critic_status': 'approved'})
-            expect('document.querySelector(".agent-trace-summary")?.innerText.includes("Мультиагентный анализ")')
+                                      'critic_status': 'approved'})
+            expect('document.querySelector(".agent-trace-summary")?.innerText.includes("Одобрено")')
             evaluate('document.querySelector("[data-id=\'0/agent/1\'] details").open = true')
             expect('document.querySelector("[data-id=\'0/agent/1\']").innerText.includes("Аналитику")')
             evaluate('document.querySelector("[data-node=tool_selection]").click()')
@@ -704,10 +689,8 @@ class OperatorTest(unittest.TestCase):
                    'document.querySelector(".save-bar .primary").disabled')
             evaluate('((field) => { field.value = "sandbox"; field.dispatchEvent(new Event("change", {bubbles:true})); })'
                      '(document.querySelector("select:has(option[value=sandbox])"))')
-            expect('!document.querySelector("#analysis-strategy option[value=tool_agent]").disabled')
-            evaluate('((field) => { field.value = "tool_agent"; field.dispatchEvent(new Event("change", {bubbles:true})); })'
-                     '(document.querySelector("#analysis-strategy"))')
-            expect('!document.querySelector(".save-bar .primary").disabled')
+            expect('!document.querySelector("#analysis-strategy") && '
+                   '!document.querySelector(".save-bar .primary").disabled')
             evaluate('((field) => { field.value = "observation"; field.dispatchEvent(new Event("change", {bubbles:true})); })'
                      '(document.querySelector("select:has(option[value=sandbox])"))')
             evaluate('((field) => { field.value = "groq"; field.dispatchEvent(new Event("change", {bubbles:true})); })'
@@ -718,7 +701,6 @@ class OperatorTest(unittest.TestCase):
             with patch('news_futures.api.settings.load_token', return_value='test-key'):
                 evaluate('document.querySelector(".save-bar .primary").click()')
                 until(lambda: self.server.worker.controls_state.saved().get('aggregator') == 'groq')
-                self.assertEqual(self.server.worker.controls_state.saved()['analysis_strategy'], 'tool_agent')
                 expect('document.querySelector(".save-bar .primary").disabled && '
                        'document.querySelector("#chat-aggregator").value === "groq"')
             worker = self.server.worker

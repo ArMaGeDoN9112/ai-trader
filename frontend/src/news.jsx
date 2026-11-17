@@ -13,7 +13,7 @@ export function Decisions({ news }) {
   const { company, contract, result, from, to } = filters;
   const companies = Object.keys(news.companies).map(id => [id, companyName(news, id)]).sort((a, b) => a[1].localeCompare(b[1], 'ru'));
   const results = [...new Set(['processing', 'skipped', 'blocked', 'rejected', 'failed',
-    'no_action', 'approved_for_checks', 'protected', 'closed', ...news.decisions.map(row => row.status)])];
+    'candidate', 'protected', 'closed', ...news.decisions.map(row => row.status)])];
   const until = to ? new Date(to + 'T00:00:00') : null;
   if (until) until.setDate(until.getDate() + 1);
   const rows = news.decisions.filter(row => {
@@ -153,11 +153,11 @@ export function Tickers({ news, company, contract = '', broker, refresh }) {
 const steps = {
   publication: 'Исходная публикация', source: 'Получение публикации',
   category: 'Категория новости', route: 'Привязки к компаниям', event: 'Сопоставление события',
-  position: 'Проверка открытой позиции', instrument: 'Выбор фьючерса', snapshot: 'Подготовка контекста',
+  position: 'Проверка открытой позиции', instrument: 'Выбор фьючерса',
   analyst: 'Предложение аналитика', critic: 'Ответ критика',
-  revision: 'Пересмотр аналитика', review: 'Проверка предложения', risk: 'Проверка риска',
+  risk: 'Проверка риска',
   execution: 'Исполнитель', processing: 'Обработка',
-  agent: 'Решение команды', coordinator: 'Координатор',
+  agent: 'Анализ новости', coordinator: 'Координатор',
   tool_selection: 'Выбор инструмента', analyze: 'Передать аналитику',
   get_company_news: 'Поиск новостей компании', get_market_context: 'Проверка рынка',
   get_market_reaction: 'Реакция цены и объёма',
@@ -329,8 +329,7 @@ export function Trace({ revision, from, news, refresh }) {
     <Panel title={data?.title || 'Ход обработки публикации'} icon={Workflow} actions={data && <Badge value={data.status} />}
       hint={data && [...data.companies.map(id => companyName(news, id)), time(data.at)].join(' · ')}>
       {data?.testing && <div className="agent-trace-summary"><Badge value="testing_publication" tone="purple" /></div>}
-      {data?.analysis_strategy === 'tool_agent' && <div className="agent-trace-summary">
-        <Badge value="tool_agent" tone="purple" />
+      {data?.critic_status && <div className="agent-trace-summary">
         {data.critic_status && <span>Критик · {label(data.critic_status)}</span>}
       </div>}
       {data?.reason && <Notice error={data.status === 'failed'}>{label(eventError || data.reason)}</Notice>}

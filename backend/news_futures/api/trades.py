@@ -41,7 +41,6 @@ def trade(root: Path, db: psycopg.Connection[dict[str, Any]], row: dict[str, Any
     confirmed_at = None
     protection_orders = []
     exit_reason = None
-    approvals = [('entry', row['approval'])]
     for event in events:
         kind, data = event['kind'], event['details']
         operation = data.get('operation_id')
@@ -64,11 +63,6 @@ def trade(root: Path, db: psycopg.Connection[dict[str, Any]], row: dict[str, Any
                 exit_reason = 'protective_exit'
         elif kind == 'confirmed_fills':
             confirmed, confirmed_at = data['fills'], event['at']
-        elif kind == 'reviewed_close':
-            approvals.append(('exit', data['approval']))
-            exit_reason = 'news_exit'
-        elif kind == 'reviewed_close_abandoned' and exit_reason == 'news_exit':
-            exit_reason = None
         elif kind == 'manual_close':
             exit_reason = 'manual_exit'
     if entry_id:
@@ -96,14 +90,9 @@ def trade(root: Path, db: psycopg.Connection[dict[str, Any]], row: dict[str, Any
     if not detail:
         return summary
     traces = []
-    seen = set()
-    for kind, approval in approvals:
-        revision = linked_revision(root, approval)
-        if revision and revision not in seen and next(
-            archive_news(root, runtime_rows(publications, revision), event_rows(db, revision)), None
-        ):
-            traces.append({'kind': kind, 'revision': revision})
-            seen.add(revision)
+    revision = linked_revision(root, row['approval'])
+    if revision and next(archive_news(root, runtime_rows(publications, revision), event_rows(db, revision)), None):
+        traces.append({'kind': 'entry', 'revision': revision})
     reason = (db.execute('SELECT * FROM position_entry_reasons WHERE account_id = %s AND position_id = %s',
                          (row['account_id'], row['id'])).fetchone()
               if has_table(db, 'position_entry_reasons') else None)

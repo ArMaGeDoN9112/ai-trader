@@ -12,23 +12,19 @@ export function Settings({ settings, status, online, busy, command, error }) {
   if (!settings) return <Panel title="Конфигурация" icon={SlidersHorizontal}><Empty>Загрузка настроек…</Empty></Panel>;
   const { saved, active, changed_at, models_at, profile_at } = settings;
   const values = draft || { mode: saved.mode, channels: saved.channels.join('\n'),
-    analysis_strategy: saved.analysis_strategy || 'fixed',
     aggregator: saved.aggregator, models: saved.models, groq_models: saved.groq_models };
   const set = (field, value) => setDraft({ ...values, base: draft?.base || saved, [field]: value });
-  const restart = ['channels', 'analysis_strategy']
-    .some(key => JSON.stringify(active[key]) !== JSON.stringify(saved[key]));
+  const restart = JSON.stringify(active.channels) !== JSON.stringify(saved.channels);
   const activeModels = roles.map(([id, name]) => [name, <span className="mono">{active.models[id]}</span>]);
   return <form className="stack" onSubmit={async event => {
     event.preventDefault();
     const result = await command('settings', { base: draft?.base || saved, mode: values.mode, channels: lines(values.channels),
-      analysis_strategy: values.analysis_strategy,
       aggregator: values.aggregator, models: values.models, groq_models: values.groq_models });
     if (result) setDraft(null);
   }}>
     <div className="settings-grid">
       <Panel title="Режим работы" icon={SlidersHorizontal}>
         <Facts rows={[['Счёт', status.account_id || '—'], ['Активный режим', label(active.mode)],
-          ['Маршрут анализа', label(active.analysis_strategy || 'fixed')],
           ['Применено', time(profile_at)]]} />
         <label className="field">Сохранённый режим<select value={values.mode}
           disabled={!['stopped', 'failed'].includes(status.worker) || !online || busy}
@@ -36,14 +32,7 @@ export function Settings({ settings, status, online, busy, command, error }) {
           <option value="observation">Наблюдение</option><option value="sandbox">Песочница</option>
         </select></label>
         <p className="muted">Смена режима требует остановки обработчика и сверки свободного счёта.</p>
-        <label className="field">Маршрут анализа<select id="analysis-strategy" value={values.analysis_strategy}
-          onChange={event => set('analysis_strategy', event.target.value)}>
-          <option value="fixed">Фиксированный маршрут</option>
-          <option value="tool_agent">{label('tool_agent')}</option>
-        </select></label>
-        <p className="muted">Маршрут применяется при запуске обработчика.</p>
-        {values.mode === 'sandbox' && values.analysis_strategy === 'tool_agent' &&
-          <p className="muted">Команда готовит предложения для ручной отправки.</p>}
+        {values.mode === 'sandbox' && <p className="muted">Заявки по предложениям отправляются вручную.</p>}
       </Panel>
       <Panel title="Источники Telegram" icon={Radio}>
         <Facts rows={[['Активные каналы', active.channels.map(name => '@' + name).join(', ') || '—']]} />

@@ -59,7 +59,7 @@ def read_agent_approval(directory: Path, trace: AgentTrace) -> tuple[CompanyProp
     check_observation(inputs, instrument, formed_at)
     runtime = json.loads((inputs / 'runtime.json').read_bytes())
     account = runtime['account_id']
-    if (runtime['mode'] not in ('observation', 'sandbox') or runtime['analysis_strategy'] != 'tool_agent'
+    if (runtime['mode'] not in ('observation', 'sandbox')
             or not isinstance(account, str) or not account or account != trace.account_id):
         raise Rejected('invalid_approval_record')
     contracts = catalog_contracts((inputs / 'catalog.json').read_bytes(), (inputs / 'futures-catalog.json').read_bytes())
@@ -76,39 +76,9 @@ def read_agent_approval(directory: Path, trace: AgentTrace) -> tuple[CompanyProp
 
 def read_approval(directory: Path) -> tuple[CompanyProposal, str, datetime, dict[str, Any]]:
     try:
-        content = (directory / 'trace.json').read_bytes()
-        trace = json.loads(content)
-        if not isinstance(trace, dict):
-            raise Rejected('invalid_approval_record')
-        if trace.get('strategy') == 'tool_agent':
-            return read_agent_approval(directory, AgentTrace.model_validate_json(content))
-        if trace['mode'] != 'sandbox' or trace['status'] != 'approved_for_checks' or trace['error'] is not None:
-            raise Rejected('sandbox_approval_required')
-        payload = trace['approved_proposal']
-        count = len(trace['calls'])
-        analyst, critic = [
-            json.loads((directory / f'call-{index:02}.json').read_bytes())
-            for index in (count - 1, count)
-        ]
-        proposal_id = payload['id']
-        if (not isinstance(proposal_id, str) or not proposal_id.strip()
-                or analyst['role'] != 'analyst' or critic['role'] != 'critic'
-                or analyst['mode'] != 'sandbox' or critic['mode'] != 'sandbox'
-                or analyst['error'] is not None or critic['error'] is not None
-                or publication_digest(payload) != publication_digest(analyst['output'])
-                or publication_digest(payload) != publication_digest(critic['input']['proposal'])
-                or analyst['input']['context'] != critic['input']['context']):
-            raise Rejected('proposal_not_reviewed')
-        review = Review.model_validate(critic['output'])
-        if not review.approved or review.objections or review.proposal_id != proposal_id:
-            raise Rejected('proposal_not_reviewed')
-        proposal = CompanyProposal.model_validate({key: value for key, value in payload.items() if key != 'id'})
-        formed_at = datetime.fromisoformat(analyst['formed_at'])
-        for candidate in critic['input']['context']['candidates']:
-            if candidate['contract_id'] == proposal.contract_id and 'market_observation_id' in candidate:
-                check_observation(directory.parent.parent, Instrument.model_validate_json(json.dumps(candidate)), formed_at)
+        trace = AgentTrace.model_validate_json((directory / 'trace.json').read_bytes())
+        return read_agent_approval(directory, trace)
     except Rejected:
         raise
     except (OSError, ValueError, KeyError, TypeError, IndexError, OverflowError) as error:
         raise Rejected('invalid_approval_record') from error
-    return proposal, proposal_id, formed_at, critic['input']['context']

@@ -12,14 +12,14 @@ import ormsgpack
 from news_futures.common.errors import RuntimeErrorInfo
 from news_futures.storage.database import connect, initialize
 from news_futures.storage.locks import exclusive_operation
-from news_futures.schemas.company import CompanyContext, CompanyProposal
+from news_futures.schemas.company import CompanyProposal
 from news_futures.schemas.contracts import Review
 
 
-MODELS = {(model.__module__, model.__name__) for model in (CompanyContext, CompanyProposal, Review)}
+MODELS = {(model.__module__, model.__name__) for model in (CompanyProposal, Review)}
 LEGACY_MODELS = {
-    (f'news_futures.{package}.company', model.__name__): model.__module__
-    for package in ('agents', 'domain') for model in (CompanyContext, CompanyProposal)
+    (f'news_futures.{package}.company', 'CompanyProposal'): CompanyProposal.__module__
+    for package in ('agents', 'domain')
 } | {(f'news_futures.{package}.contracts', 'Review'): Review.__module__ for package in ('agents', 'domain')}
 
 

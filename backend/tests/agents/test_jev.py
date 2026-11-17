@@ -4,13 +4,9 @@ from tempfile import TemporaryDirectory
 import unittest
 
 import httpx
-from pydantic import ValidationError
 
-from news_futures.schemas.contracts import AnalysisContext
-from news_futures.agents.review import control_context
 from news_futures.llm_clients.decisions import choices
 from news_futures.agents.routing import route_publication
-from news_futures.dataflows.publications import publication_digest
 from tests.support.routing import answer
 
 
@@ -139,16 +135,6 @@ class JevTests(unittest.TestCase):
                     self.assertNotIn('fake secret', (root / name / 'batch-001.json').read_text(encoding='utf-8'))
                     if name != 'unavailable':
                         self.assertEqual(result['cost_usd'], 0.01)
-
-    def test_analyst_accepts_the_routed_publication_and_rejects_a_different_revision(self) -> None:
-        context = control_context()
-        context['company_link']['publication_sha256'] = 'old-byte-hash'
-        AnalysisContext.model_validate(context)
-        context['company_link']['publication_revision_sha256'] = publication_digest(context['publication'])
-        AnalysisContext.model_validate(context)
-        context['publication']['text'] += ' Исправление.'
-        with self.assertRaisesRegex(ValidationError, 'company_link_publication_revision_mismatch'):
-            AnalysisContext.model_validate(context)
 
     def test_later_batch_failure_keeps_the_audit_but_withholds_all_links(self) -> None:
         with TemporaryDirectory() as temp:

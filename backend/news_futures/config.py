@@ -9,7 +9,7 @@ from pydantic import Field
 from news_futures.dataflows.catalog import load_catalog
 from news_futures.agents.calendar import CALENDAR, EventCalendar
 from news_futures.agents.routing import DecisionsSettings
-from news_futures.agents.tool_agent import AgentLimits
+from news_futures.agents.analysis import AgentLimits
 from news_futures.common.errors import RuntimeErrorInfo
 from news_futures.common.paths import DECISIONS_SETTINGS, FUTURES_CATEGORIES, GROQ_SETTINGS, REVIEW_SETTINGS, TELEGRAM_SOURCES
 from news_futures.schemas.company import Nonempty
@@ -24,7 +24,6 @@ class RuntimeSettings(Contract):
     catalog: Path
     account_id: Nonempty
     mode: Literal['observation', 'sandbox'] = 'observation'
-    analysis_strategy: Literal['fixed', 'tool_agent'] = 'fixed'
     order_transport: Literal['rest', 'mcp'] = 'rest'
     chat_aggregator: Aggregator = 'openrouter'
     coordinator: RoleSettings | None = None
@@ -99,13 +98,12 @@ def cycle_inputs(settings: RuntimeSettings, models: dict[str, str] | None = None
         except (OSError, ValueError, KeyError, TypeError) as error:
             raise RuntimeErrorInfo(f'Проверьте файл настройки {field}.') from error
         inputs[field] = content
-    if settings.analysis_strategy == 'tool_agent':
-        try:
-            calendar = settings.events_calendar.read_bytes()
-            EventCalendar.model_validate_json(calendar)
-        except (OSError, ValueError) as error:
-            raise RuntimeErrorInfo('Проверьте файл настройки events_calendar.') from error
-        inputs['events-calendar'] = calendar
+    try:
+        calendar = settings.events_calendar.read_bytes()
+        EventCalendar.model_validate_json(calendar)
+    except (OSError, ValueError) as error:
+        raise RuntimeErrorInfo('Проверьте файл настройки events_calendar.') from error
+    inputs['events-calendar'] = calendar
     if models is None and aggregator is None:
         return inputs
     options = json.loads(inputs['review'])

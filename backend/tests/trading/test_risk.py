@@ -137,7 +137,7 @@ class RiskAdmissionTest(RiskFixture):
         directory = self.approved()
         path = directory / 'trace.json'
         trace = json.loads(path.read_bytes())
-        trace['approved_proposal']['stop_loss'] = 299.5
+        trace['outcome']['proposal']['stop_loss'] = 299.5
         trace['calls'][-2]['output']['stop_loss'] = 299.5
         trace['calls'][-1]['input']['proposal']['stop_loss'] = 299.5
         path.write_text(json.dumps(trace), encoding='utf-8')
@@ -153,13 +153,13 @@ class RiskAdmissionTest(RiskFixture):
         self.assertEqual(self.reserve(directory, reader=lambda a, c: invalid),
                          Admission(reason='risk_data_unavailable_or_invalid'))
 
-    def test_observation_approval_cannot_be_reused_in_sandbox(self) -> None:
+    def test_approval_cannot_be_used_with_another_runtime_account(self) -> None:
         directory = self.approved()
-        path = directory / 'trace.json'
-        trace = json.loads(path.read_bytes())
-        trace['mode'] = 'observation'
-        path.write_text(json.dumps(trace), encoding='utf-8')
-        self.assertEqual(self.reserve(directory), Admission(reason='sandbox_approval_required'))
+        path = directory.parent / 'runtime.json'
+        runtime = json.loads(path.read_bytes())
+        runtime['account_id'] = 'another-account'
+        path.write_text(json.dumps(runtime), encoding='utf-8')
+        self.assertEqual(self.reserve(directory), Admission(reason='invalid_approval_record'))
 
     def test_historical_publication_is_context_only_even_when_fresh(self) -> None:
         self.assertEqual(self.reserve(self.approved(historical=True)), Admission(reason='publication_context_only'))
@@ -220,7 +220,7 @@ class RiskAdmissionTest(RiskFixture):
     def test_proposal_expires_during_the_fresh_account_read(self) -> None:
         directory = self.approved()
         trace = json.loads((directory / 'trace.json').read_bytes())
-        formed = datetime.fromisoformat(trace['calls'][0]['formed_at'])
+        formed = datetime.fromisoformat(trace['calls'][0]['at'])
         for age, reason in (
             (timedelta(microseconds=-1), 'stale_or_future_proposal'),
             (timedelta(seconds=60, microseconds=1), 'stale_or_future_proposal'),

@@ -12,13 +12,13 @@ from urllib.parse import parse_qsl, urlsplit
 from news_futures.storage.database import connect, has_table
 from news_futures.storage.publications import Archive
 from news_futures.storage.trades import journal_events
-from news_futures.agents.tool_agent import TEAM_DIRECTORY, TOOLS
+from news_futures.common.paths import persistent_path
+from news_futures.agents.analysis import TEAM_DIRECTORY, TOOLS
 from news_futures.dataflows.publications import TEST_SOURCE
 from news_futures.dataflows.publications import publication_digest
 
 
 REVISION = re.compile(r'[0-9a-f]{64}')
-CALL = re.compile(r'call-\d+(?:-interrupted-[0-9a-f]{32})?\.json')
 PRIVATE = re.compile(r'(token|secret|password|authorization|api.?(?:key|hash)|auth.?key|cookie|session|header|^approval$)',
                      re.I)
 SOURCE_KEYS = {'url', 'publication_url', 'source_url'}
@@ -99,19 +99,6 @@ def route_attempts(directory: Path) -> list[Path]:
     return sorted((path for path in directory.glob('route*') if path.is_dir()
                    and (path.name == 'route' or path.name.startswith('route-interrupted-'))),
                   key=lambda path: when(path / 'trace.json', {}) or when(path, {}))
-
-
-def reviews(directory: Path) -> list[Path]:
-    base = directory / 'review'
-    return [path for path in base.glob('*') if path.is_dir() and REVISION.fullmatch(path.name)]
-
-
-def calls(directory: Path) -> list[tuple[Path, dict[str, Any]]]:
-    saved = [(path, artifact(path)) for path in directory.glob('call-*.json') if CALL.fullmatch(path.name)]
-    if not saved:
-        saved = [(directory / f'call-{index:02}.json', call)
-                 for index, call in enumerate(artifact(directory / 'trace.json').get('calls', []), 1)]
-    return sorted(saved, key=lambda item: (when(item[0], item[1]), item[0].name))
 
 
 def when(path: Path, record: dict[str, Any]) -> str:
@@ -202,7 +189,7 @@ def summary(key: str, event: dict[str, Any], result: dict[str, Any], contracts: 
             'at': result.get('at') or event.get('recorded_at') or publication.get('edited_at')
             or publication.get('published_at'),
             'status': result.get('status', event.get('kind', 'processing')), 'reason': result.get('reason'),
-            'analysis_strategy': result.get('analysis_strategy'), 'critic_status': result.get('critic_status'),
+            'critic_status': result.get('critic_status'),
             'testing': publication.get('source') == TEST_SOURCE,
             'companies': sorted({link['company_id'] for link in event['links']}), 'contracts': sorted(contracts),
             'title': publication.get('text', '').strip()[:160]
@@ -280,17 +267,14 @@ def news_view(root: Path, profile: dict[str, Any], catalog: dict[str, Any],
     linked_companies: set[str] = set()
     with (read_archive(root / 'publications') as db, read_archive(root / 'events') as events):
         cycles = cycle_rows(events, profile['account_id'])
-        cycle_contracts = {cycle['id']: cycle['terms']['contract_id'] for cycle in cycles}
         history_by_revision = event_rows(events, None, include_unlinked=bool(company))
         runtime = runtime_rows(db, None)
         for key, history, result in archive_news(root, runtime, history_by_revision):
             current = history[-1]
             bindings = {link['company_id']: link for link in current['links']}
             linked_companies.update(bindings)
-            related_contracts = set()
             assessments: dict[str, dict[str, Any]] = {}
             agent_proposal = result.get('proposal') or {}
-            used = cycle_contracts.get((result.get('execution') or {}).get('cycle_id')) or agent_proposal.get('contract_id')
             if company in bindings and agent_proposal.get('company_id') == company:
                 assessments.update({check['contract_id']: check | {'at': result['at']}
                                     for check in agent_proposal.get('assessments', [])})
@@ -300,41 +284,11 @@ def news_view(root: Path, profile: dict[str, Any], catalog: dict[str, Any],
                 for owner in bindings.keys() - companies.keys():
                     if owner in saved_catalog:
                         companies[owner] = fields(saved_catalog[owner], 'names', 'tickers')
-            snapshot = artifact(directory / 'snapshot.json')
-            for item in snapshot.get('instruments', []):
-                remember_contract(contracts, item)
-                if item['company_id'] in bindings:
-                    related_contracts.add(item['contract_id'])
-            for review in reviews(directory):
-                context = artifact(review / 'context.json')
-                for item in context.get('candidates', []):
-                    remember_contract(contracts, item)
-                    if item['company_id'] in bindings:
-                        related_contracts.add(item['contract_id'])
-                if company in bindings and bindings[company]['kind'] != 'direct':
-                    for path, call in calls(review):
-                        if call.get('role') != 'analyst':
-                            continue
-                        for check in (call.get('output') or {}).get('assessments', []):
-                            contract = contracts.get(check['contract_id'], {})
-                            if contract.get('company_id') == company:
-                                at = when(path, call)
-                                if check['contract_id'] not in assessments or at >= assessments[check['contract_id']]['at']:
-                                    assessments[check['contract_id']] = check | {'at': at}
-                if result.get('review_attempt') == review.name:
-                    if proposal := artifact(review / 'trace.json').get('approved_proposal'):
-                        used = used or proposal.get('contract_id')
-            if any(not contracts[contract]['ticker'] for contract in related_contracts):
-                futures = artifact(directory / 'futures-catalog.json')
-                for asset in futures.get('assets', []):
-                    for item in asset.get('contracts', []):
-                        uid = item['uid']
-                        if uid in related_contracts and not contracts[uid]['ticker']:
-                            contracts[uid]['ticker'] = item['ticker']
-                for uid, item in catalog_series(artifact(directory / 'catalog.json')).items():
-                    remember_contract(contracts, item | {'contract_id': uid})
-            if used:
-                related_contracts = {used}
+            selection = artifact(directory / 'instrument.json').get('selected')
+            related_contracts = set()
+            if selection:
+                remember_contract(contracts, selection)
+                related_contracts.add(selection['contract_id'])
             row = summary(key, current, result, related_contracts)
             decisions.append(row)
             if company in bindings:
@@ -409,9 +363,7 @@ def trace_view(root: Path, account: str, key: str) -> dict[str, Any] | None:
                           'input': input, 'output': output, '_sort_at': sort_at or at or saved_at or '\uffff'})
 
         step('publication', 'publication', 'saved', at=publication.get('received_at'), output=publication)
-        approvals = set()
         routed = False
-        approved_risk = set()
         directory = root / 'decisions' / key
         agent = artifact(directory / TEAM_DIRECTORY / 'trace.json')
         for call in agent.get('calls', []):
@@ -445,44 +397,9 @@ def trace_view(root: Path, account: str, key: str) -> dict[str, Any] | None:
         if selection := artifact(instrument_path):
             step('instrument', 'instrument', selection['status'], at=selection['at'],
                  saved_at=when(instrument_path, {}) or None, output=selection)
-        for name in ('event', 'position', 'snapshot', 'review'):
-            status_path = directory / f'{name}-status.json'
-            if stage_record := artifact(status_path):
-                if name in ('position', 'snapshot') or stage_record['status'] == 'processing' or (
-                    name == 'event' and stage_record['status'] != 'continue'
-                ):
-                    step(f'0/{name}-status', name, stage_record['status'], at=stage_record.get('at'),
-                         input={'publication': publication} if name == 'snapshot' else None,
-                         output=fields(stage_record, 'reason', 'started_at', 'held_contract_id') | (
-                             artifact(directory / 'snapshot.json') if name == 'snapshot' else {}
-                         ))
-        for review in reviews(directory):
-            saved_calls = calls(review)
-            approval = str(review.resolve())
-            approvals.add(approval)
-            for path, call in saved_calls:
-                role = call.get('role')
-                if role not in ('analyst', 'critic'):
-                    continue
-                kind = 'revision' if role == 'analyst' and (call.get('input') or {}).get('review') else role
-                output = call.get('output') or {}
-                status = ('failed' if call.get('error') else 'processing' if not output else
-                          ('approved' if output.get('approved') else 'rejected') if role == 'critic'
-                          else output.get('action', 'completed'))
-                saved_at = when(path, {})
-                attempt = call.get('started_at') or call.get('at') or saved_at
-                step(f'0/{review.name}/{path.name.split("-interrupted-")[0].split(".")[0]}/{attempt}',
-                     kind, status,
-                     at=call.get('at') or call.get('formed_at') or call.get('started_at'), saved_at=saved_at or None,
-                     input=call.get('input'), output=response(call))
-            for risk_path in review.glob('risk-*.json'):
-                if risk := artifact(risk_path):
-                    if risk['status'] == 'approved':
-                        approved_risk.add(approval)
-                    step(f'0/{review.name}/{risk_path.stem}', 'risk', risk['status'], at=risk.get('at'),
-                         saved_at=when(risk_path, {}) or None,
-                         input=(risk.get('input') or {}) | {'context': artifact(review / 'context.json') or None},
-                         output=risk.get('output'))
+        if position := artifact(directory / 'position-status.json'):
+            step('0/position-status', 'position', position['status'], at=position.get('at'),
+                 output=fields(position, 'reason', 'started_at', 'held_contract_id'))
         if not routed and event['links']:
             step('bindings', 'route', 'saved', at=event.get('recorded_at'), output={'links': event['links']})
         if event.get('kind') != 'saved' and (event.get('event_id') or event.get('call')):
@@ -492,47 +409,28 @@ def trace_view(root: Path, account: str, key: str) -> dict[str, Any] | None:
                  output=fields(event, 'event_id', 'assessment', 'search', 'correction') | response(call) | {
                      'settings': fields(call.get('settings') or {}, 'aggregator', 'model', 'timeout_ms'),
                  })
-        cycle_id = (result.get('execution') or {}).get('cycle_id')
         linked_cycle = None
-        if events is not None and (cycle_id or approvals):
+        if events is not None:
+            approval = persistent_path(directory / TEAM_DIRECTORY)
             for cycle in cycle_rows(events, account):
-                if cycle_id and cycle['id'] != cycle_id:
+                if cycle['approval'] != approval:
                     continue
-                related = cycle['approval'] in approvals
-                if related:
-                    linked_cycle = cycle['id']
-                records = list(journal_events(events, cycle['id']))
-                if related and cycle['approval'] not in approved_risk:
-                    step('entry-reservation', 'risk', 'approved', output=cycle['terms'],
-                         sort_at=records[0]['at'] if records else result.get('at'))
+                linked_cycle = cycle['id']
+                records = list(journal_events(events, linked_cycle))
+                step('entry-reservation', 'risk', 'approved', output=cycle['terms'],
+                     sort_at=records[0]['at'] if records else result.get('at'))
                 for item in records:
                     kind, details = item['kind'], item['details']
-                    if kind == 'reviewed_close':
-                        related = details.get('approval') in approvals
-                        if related:
-                            linked_cycle = cycle['id']
-                        if details.get('approval') in approved_risk:
-                            continue
-                    if related:
-                        step(f'execution/{item["seq"]}',
-                             'risk' if kind in ('reviewed_close', 'reviewed_close_abandoned') else 'execution',
-                             kind, at=item['at'],
-                             input=details if kind == 'intent' else None,
-                             output=details if kind != 'intent' else None)
-                        if kind == 'reviewed_close_abandoned':
-                            related = False
-        stage = result.get('stage')
-        latest_risk = max((item for item in steps if item['kind'] == 'risk'),
-                          key=lambda item: item['_sort_at'], default={})
-        checking_risk = (stage == 'execution' and result['status'] == 'processing'
-                         and latest_risk.get('status') == 'processing')
-        if stage and not checking_risk:
+                    step(f'execution/{item["seq"]}', 'execution', kind, at=item['at'],
+                         input=details if kind == 'intent' else None,
+                         output=details if kind != 'intent' else None)
+        if stage := result.get('stage'):
             step('outcome', stage, result['status'], at=result.get('at'),
-                 output=fields(result, 'reason', 'execution', 'reconcile_pending', 'audit_error',
-                               'proposal', 'critic_status', 'queue_wait_ms', 'deadline_at', 'latency_ms'))
+                 output=fields(result, 'reason', 'proposal', 'critic_status', 'queue_wait_ms',
+                               'deadline_at', 'latency_ms'))
         steps[1:] = sorted(steps[1:], key=lambda item: item['_sort_at'])
         for item in steps:
             del item['_sort_at']
         return cast(dict[str, Any], visible(summary(key, event, result, set()) | {
-            'publication': publication, 'steps': steps, 'cycle_id': linked_cycle or cycle_id,
+            'publication': publication, 'steps': steps, 'cycle_id': linked_cycle,
         }))

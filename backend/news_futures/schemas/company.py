@@ -5,7 +5,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import AwareDatetime, Field, model_validator
 
-from news_futures.schemas.contracts import Contract, Position, ProposalTerms, ReviewContext
+from news_futures.schemas.contracts import Contract, Position, ProposalTerms
 from news_futures.dataflows.publications import publication_digest
 
 
@@ -110,17 +110,6 @@ class EntryReason(Contract):
     sources: list[EntrySource] = Field(default_factory=list)
 
 
-class CompanyContext(ReviewContext):
-    event: dict[str, Any]
-    affected_company_ids: list[str]
-    candidates: list[Instrument]
-    account: Account
-    position: OpenPosition | None
-    entry_reason: EntryReason | None
-    related_news: list[dict[str, Any]]
-    omitted_related_news_count: int
-
-
 class Evidence(Contract):
     revision: Nonempty
     quote: Nonempty
@@ -149,7 +138,7 @@ class CompanyProposal(ProposalTerms):
 class SignalCandidate(Contract):
     revision: str = Field(pattern=r'^[0-9a-f]{64}$')
     event_decision_id: int = Field(gt=0)
-    strategy: Literal['fixed', 'tool_agent']
+    strategy: Literal['tool_agent']
     proposal_id: Nonempty
     proposal: CompanyProposal
     observation_id: ObservationId

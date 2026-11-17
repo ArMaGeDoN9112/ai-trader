@@ -7,7 +7,7 @@ from news_futures.dataflows.catalog import catalog_rows, load_catalog
 from news_futures.brokers.contracts import (
     BrokerReader, MarketReading, NoSupportedFutures, SandboxBroker, UnsupportedFuturesUnits,
 )
-from news_futures.storage.contracts import EventStore, PublicationStore
+from news_futures.storage.contracts import EventStore
 from news_futures.trading.executor import SandboxExecutor
 from news_futures.common.errors import RuntimeErrorInfo
 from news_futures.schemas.company import Account, Instrument, Market, MarketObservation, OpenPosition, Snapshot
@@ -21,14 +21,13 @@ class BrokerAccount:
         self.account_id = account_id
         self.reader = reader
 
-    def reconcile(self, events: EventStore, broker: Callable[[str, str | None], SandboxBroker],
-                  publications: PublicationStore | None) -> dict[str, str] | None:
+    def reconcile(self, events: EventStore, broker: Callable[[str, str | None], SandboxBroker]) -> dict[str, str] | None:
         active = events.trades.active(self.account_id)
         if len(active) == 1:
             entry = EntryReservation.model_validate_json(active[0]['terms'])
             contract_id = entry.contract_id
             return SandboxExecutor(events, broker(contract_id, None)).reconcile(
-                contract_id=contract_id, cycle_id=entry.id, publications=publications,
+                contract_id=contract_id, cycle_id=entry.id,
             )
         return None
 

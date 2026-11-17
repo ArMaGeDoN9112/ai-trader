@@ -96,7 +96,7 @@ class AgentLimits(Contract):
     news_bytes: int = Field(default=5000, gt=0)
 
 
-def run_tool_agent(
+def run_analysis(
     directory: Path, revision: str, event: EventEvidence, account_id: str, contracts: dict[str, str],
     events: EventStore, read_market: ReadMarket,
     check_current: Callable[[], str | None], check_stop: Callable[[], None],

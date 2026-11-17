@@ -14,15 +14,12 @@ from news_futures.storage.trades import active_cycles
 from news_futures.brokers.tbank import TBankReader, sandbox_client
 from news_futures.dataflows.telegram import validate_channels
 from news_futures.config import CHAT_ROLES, RuntimeSettings, cycle_inputs, groq_models, role_models
-from news_futures.trading.executor import AUTONOMOUS_PROTECTION_UNAVAILABLE
 from news_futures.common.errors import CredentialsError
 from news_futures.dataflows.publications import utc_now
 
 
 def profile_view(settings: RuntimeSettings) -> dict[str, Any]:
-    return settings.model_dump(include={'mode', 'account_id', 'analysis_strategy'}) | {
-        'entry_block': AUTONOMOUS_PROTECTION_UNAVAILABLE if settings.mode == 'sandbox' else None,
-    }
+    return settings.model_dump(include={'mode', 'account_id'})
 
 
 class Preferences:
@@ -32,7 +29,6 @@ class Preferences:
         models = role_models(cycle_inputs(settings))
         self.decisions_model = models.pop('decisions')
         self.default: dict[str, Any] = {'mode': settings.mode, 'channels': channels,
-                                       'analysis_strategy': settings.analysis_strategy,
                                        'models': models, 'aggregator': settings.chat_aggregator,
                                        'groq_models': groq_models(settings)}
         self.active = self.initial_active(self.saved())
@@ -60,7 +56,7 @@ class Preferences:
                 'models_at': self.models_at, 'profile_at': self.profile_at}
 
     def runtime(self, values: dict[str, Any]) -> RuntimeSettings:
-        return self.base.model_copy(update={key: values[key] for key in ('mode', 'analysis_strategy')})
+        return self.base.model_copy(update={'mode': values['mode']})
 
     def prepare(self) -> tuple[dict[str, Any], list[str], bytes]:
         values = self.saved()
@@ -107,9 +103,6 @@ class Preferences:
         mode = body.get('mode')
         if mode not in ('sandbox', 'observation'):
             raise ValueError('invalid_mode')
-        strategy = body.get('analysis_strategy', saved['analysis_strategy'])
-        if strategy not in ('fixed', 'tool_agent'):
-            raise ValueError('invalid_analysis_strategy')
         try:
             channels = validate_channels(body.get('channels'))
         except ValueError as error:
@@ -123,7 +116,7 @@ class Preferences:
             if (not isinstance(choices, dict) or choices.keys() != set(CHAT_ROLES)
                     or not all(isinstance(model, str) and len(model) <= 200 for model in choices.values())):
                 raise ValueError('invalid_models')
-        values = {'mode': mode, 'analysis_strategy': strategy, 'channels': channels, 'models': models,
+        values = {'mode': mode, 'channels': channels, 'models': models,
                   'aggregator': aggregator, 'groq_models': groq_models, 'account_id': self.base.account_id}
         candidate = self.runtime(values)
         try:
@@ -147,5 +140,5 @@ class Preferences:
         else:
             self.state.save_settings(values, expected=stored)
         if mode_changed:
-            self.active = self.active | {'mode': mode, 'analysis_strategy': strategy}
+            self.active = self.active | {'mode': mode}
             self.profile_at = utc_now().isoformat()

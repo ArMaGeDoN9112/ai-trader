@@ -8,13 +8,17 @@ from typing import Any
 import unittest
 
 from news_futures.schemas.contracts import RoleSettings
-from news_futures.agents.decisions import analyze_event
+from news_futures.agents.analysis import TEAM_DIRECTORY
+from news_futures.agents.decisions import news_record
+from news_futures.agents.schemas import EventEvidence, ProposalContext
+from news_futures.common.artifact_paths import market_path
+from news_futures.schemas.company import CompanyProposal, Market, MarketObservation
 from news_futures.storage.events import EventArchive
 from news_futures.agents.events import match_event
 from news_futures.common.artifacts import write_json
 from news_futures.storage.publications import Archive
-from news_futures.dataflows.publications import Publication, utc_now
-from tests.support.models import ScriptedEndpoint, review
+from news_futures.dataflows.publications import Publication, publication_digest, utc_now
+from tests.support.models import ScriptedEndpoint
 from tests.support.news import company_link
 
 class RiskFixture(unittest.TestCase):
@@ -56,16 +60,26 @@ class RiskFixture(unittest.TestCase):
             archive.db.close()
         publication = self.publication.record()
         directory = self.root / f'analysis-{len(list(self.root.iterdir()))}'
-        snapshot_path = directory.with_suffix('.json')
-        write_json(snapshot_path, {
-            'account': {'id': self.account_id, 'observed_at': self.now.isoformat(),
-                        'currency': 'RUB', 'equity': 100000, 'available_margin': 90000},
-            'position': None, 'instruments': [
-                {'company_id': 'sber', 'company_name': 'Sber', 'share_id': 'sber-share',
-                 'contract_id': self.contract_id, 'allowed_for_entry': True,
-                 'market': {'observed_at': self.now.isoformat(), 'last_price': 300}},
-            ],
-        })
+        observation = MarketObservation(
+            contract_id=self.contract_id, market=Market(observed_at=self.now, last_price=300),
+            received_at=self.now, price_unit='points', limit_buy_available=True, limit_sell_available=True,
+        )
+        path = market_path(directory, observation.id)
+        path.parent.mkdir(parents=True)
+        write_json(path, observation.model_dump(mode='json'))
+        write_json(directory / 'catalog.json', {'operations': {'catalog': {'availability': 'available', 'data': [
+            {'company_id': 'sber', 'company_name': 'Sber', 'share_id': 'sber-share', 'ticker': 'SBER'},
+        ]}}})
+        write_json(directory / 'futures-catalog.json', {'assets': [
+            {'name': 'Sber', 'underlying_position_uid': 'sber-share', 'contracts': [
+                {'uid': self.contract_id, 'api_trade_available': True,
+                 'last_trade': (self.now + timedelta(days=1)).isoformat()},
+            ]},
+        ]})
+        write_json(directory / 'runtime.json', {'mode': 'sandbox', 'account_id': self.account_id})
+        write_json(directory / 'instrument.json', {'at': self.now.isoformat(), 'status': 'completed', 'error': None, 'selected': {
+            'company_id': 'sber', 'contract_id': self.contract_id,
+        }})
         with EventArchive(self.events_db) as events:
             matcher = ScriptedEndpoint([{'match': 'different', 'event_id': None, 'change': None,
                                          'reason': 'Independent report.', 'evidence': None}])
@@ -79,8 +93,33 @@ class RiskFixture(unittest.TestCase):
                 'assessments': [{'contract_id': self.contract_id, 'impact': 'verified', 'reason': 'Forecast.',
                                  'evidence': [{'revision': event['revision'], 'quote': publication['text']}]}],
             } | terms
-            endpoint = ScriptedEndpoint([proposal, review()])
-            trace = analyze_event(events, event['decision_id'], snapshot_path, self.config, directory,
-                                  model_factory=endpoint.model, mode='sandbox')
-            self.assertEqual(trace['status'], 'approved_for_checks')
+        event_evidence = EventEvidence.model_validate(news_record(event))
+        context = ProposalContext.model_validate({
+            'publication': event_evidence.publication, 'event': event_evidence.summary(), 'affected_company_ids': ['sber'],
+            'candidates': [{'company_id': 'sber', 'company_name': 'Sber', 'share_id': 'sber-share',
+                            'contract_id': self.contract_id, 'allowed_for_entry': True, 'market': observation.market,
+                            'market_observation_id': observation.id}],
+            'account': {'observed_at': self.now, 'currency': 'RUB', 'equity': 100000, 'available_margin': 90000},
+            'position': None, 'entry_reason': None, 'related_news': [],
+        }).model_dump(mode='json')
+        payload = CompanyProposal.model_validate(proposal).model_dump(mode='json')
+        revision = event_evidence.revision
+        identity = publication_digest({'revision': revision, 'account_id': self.account_id,
+                                       'context': context, 'proposal': payload})
+        identified = payload | {'id': identity}
+        formed_at = utc_now().isoformat()
+        call = {'started_at': formed_at, 'at': formed_at, 'status': 'completed'}
+        directory = directory / TEAM_DIRECTORY
+        directory.mkdir()
+        write_json(directory / 'trace.json', {
+            'revision': revision, 'strategy': 'tool_agent', 'version': 'test', 'account_id': self.account_id,
+            'outcome': {'status': 'candidate', 'reason': payload['reason'], 'proposal': identified,
+                        'critic_status': 'approved', 'observation_id': observation.id},
+            'calls': [
+                call | {'id': '1', 'kind': 'analyst', 'output': identified,
+                        'input': {'context': context, 'proposal': None, 'review': None}},
+                call | {'id': '2', 'kind': 'critic', 'input': {'context': context, 'proposal': identified},
+                        'output': {'proposal_id': identity, 'approved': True, 'objections': [], 'reason': 'Checked.'}},
+            ],
+        })
         return directory

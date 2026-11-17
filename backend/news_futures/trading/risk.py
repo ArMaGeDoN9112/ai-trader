@@ -64,13 +64,10 @@ def reserve_entry(
     events: EventStore, publications: PublicationStore, directory: Path, *, account_id: str,
     allowed_contracts: Set[str], read_snapshot: Callable[[str, str], object],
     on_reserve: Callable[[EntryReservation, CompanyProposal, dict[str, Any]], None] | None = None,
-    risk_input: dict[str, Any] | None = None,
 ) -> Admission:
     """Re-read risk data and reserve an entry. The callback records intent in the same transaction."""
     try:
         proposal, proposal_id, formed_at, context = read_approval(directory)
-        if risk_input is not None:
-            risk_input['proposal'] = proposal.model_dump(mode='json')
         if proposal.action != 'enter':
             raise Rejected('entry_proposal_required')
         contract_id = proposal.contract_id
@@ -82,8 +79,6 @@ def reserve_entry(
             snapshot = RiskSnapshot.model_validate(read_snapshot(account_id, contract_id))
         except Exception as error:
             raise Rejected('risk_data_unavailable_or_invalid') from error
-        if risk_input is not None:
-            risk_input['snapshot'] = snapshot.model_dump(mode='json')
         if snapshot.account_id != account_id:
             raise Rejected('account_mismatch')
         with publications.transaction(), events.transaction(immediate=True):

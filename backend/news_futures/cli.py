@@ -8,7 +8,7 @@ from uuid import uuid4
 from news_futures.simulation import run
 from news_futures.common.errors import CredentialsError
 from news_futures.common.paths import (
-    DECISIONS_SETTINGS, EVENT_SETTINGS, FUTURES_CATEGORIES, REVIEW_SETTINGS, SANDBOX_SETTINGS, TELEGRAM_SOURCES,
+    DECISIONS_SETTINGS, EVENT_SETTINGS, FUTURES_CATEGORIES, SANDBOX_SETTINGS, TELEGRAM_SOURCES,
 )
 
 
@@ -30,10 +30,6 @@ def main() -> int:
     replay_command.add_argument('decisions', type=Path)
     replay_command.add_argument('--quotes', type=Path, required=True)
     replay_command.add_argument('--max-outcome-lag-seconds', type=int, required=True)
-    analyze_command = commands.add_parser('analyze', help='Аналитик и критик через OpenRouter, без брокера')
-    analyze_command.add_argument('directory', nargs='?', type=Path)
-    analyze_command.add_argument('--config', type=Path, default=REVIEW_SETTINGS)
-    analyze_command.add_argument('--context', type=Path)
     route_command = commands.add_parser('route', help='Привязки публикации к компаниям через OpenRouter Decisions')
     route_command.add_argument('directory', nargs='?', type=Path)
     route_command.add_argument('--publication', type=Path, required=True)
@@ -58,11 +54,6 @@ def main() -> int:
     correct_command.add_argument('--kind', choices=('separate', 'repeat', 'update'), required=True)
     correct_command.add_argument('--event')
     correct_command.add_argument('--reason', required=True)
-    decision_command = commands.add_parser('analyze-event', help='Проанализировать запрос из архива событий')
-    decision_command.add_argument('decision_id', type=int)
-    decision_command.add_argument('--snapshot', type=Path, required=True)
-    decision_command.add_argument('--directory', type=Path)
-    decision_command.add_argument('--config', type=Path, default=REVIEW_SETTINGS)
     reason_command = commands.add_parser('entry-reason', help='Сохранить исходную причину входа в позицию')
     reason_command.add_argument('record', type=Path)
     trades_command = commands.add_parser('sandbox-trades', help='Показать журнал сделок в песочнице')
@@ -91,7 +82,7 @@ def main() -> int:
     trade_command.add_argument('--ca-file', type=Path)
     trade_command.add_argument('--allow-independent-stops', action='store_true')
     trade_command.add_argument('--transport', choices=('rest', 'mcp'), default='rest')
-    for command in (match_command, events_command, correct_command, decision_command, reason_command,
+    for command in (match_command, events_command, correct_command, reason_command,
                     trades_command, trade_command):
         command.add_argument('--database', type=Path, default=Path('.local/events'))
     args = parser.parse_args()
@@ -203,37 +194,6 @@ def main() -> int:
                 return 0 if trace['status'] == 'completed' else 1
             except Exception as error:
                 print(f'OpenRouter Decisions: {type(error).__name__}. См. docs/runtime.md.', file=sys.stderr)
-                return 1
-        if args.command in {'analyze', 'analyze-event'}:
-            try:
-                from news_futures.llm_clients.chat import chat_model
-                if args.command == 'analyze-event':
-                    from news_futures.agents.decisions import analyze_event
-                    from news_futures.storage.events import EventArchive
-                    if not archive_exists(args.database, 'event_revisions'):
-                        raise ValueError('Архив событий не найден')
-                    directory = args.directory or Path('.local/news-futures-07') / str(uuid4())
-                    with EventArchive(args.database) as events:
-                        trace = analyze_event(events, args.decision_id, args.snapshot, args.config, directory,
-                                              model_factory=chat_model)
-                else:
-                    from news_futures.agents.review import run_cycle
-                    directory = args.directory or Path('.local/news-futures-03') / str(uuid4())
-                    trace = run_cycle(args.config, directory, context_path=args.context, model_factory=chat_model)
-                if trace['error'] == 'CredentialsError':
-                    print('Заполните openrouter.api_key в .local/credentials.toml.', file=sys.stderr)
-                print(json.dumps({
-                    'mode': trace['mode'], 'status': trace['status'],
-                    'directory': str(directory.resolve()),
-                    'trace_file': str((directory / 'trace.json').resolve()),
-                }, ensure_ascii=False, indent=2))
-                return 1 if trace['status'] == 'rejected' else 0
-            except Exception as error:
-                if args.command == 'analyze-event':
-                    detail = str(error) if type(error) is ValueError else type(error).__name__
-                    print(f'Анализ события: {detail}. См. docs/runtime.md#путь-публикации-и-полномочия.', file=sys.stderr)
-                    return 1
-                print(f'OpenRouter: {type(error).__name__}. См. локальную инструкцию README.', file=sys.stderr)
                 return 1
         if args.command == 'entry-reason':
             from psycopg import Error

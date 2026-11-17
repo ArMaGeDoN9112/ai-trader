@@ -32,8 +32,7 @@ def replay(decisions: Path, quotes: Iterable[MarketObservation], *, max_outcome_
         candidates.append(candidate)
     candidates.sort(key=lambda signal: (signal.decided_at, signal.revision, signal.proposal_id))
 
-    moves: dict[tuple[str, int], list[float]] = defaultdict(list)
-    totals: dict[str, int] = defaultdict(int)
+    moves: dict[int, list[float]] = defaultdict(list)
     rows = []
     for signal in candidates:
         uid = signal.proposal.contract_id
@@ -41,7 +40,6 @@ def replay(decisions: Path, quotes: Iterable[MarketObservation], *, max_outcome_
         baseline = read_observation(decisions / signal.revision, signal.observation_id)
         if baseline.contract_id != uid or not signal.received_at <= baseline.received_at <= signal.decided_at:
             raise ValueError(f'invalid_decision_observation: {signal.observation_id}')
-        totals[signal.strategy] += 1
         series = by_contract.get(uid, [])
         times = received_times.get(uid, [])
         outcomes = []
@@ -57,7 +55,7 @@ def replay(decisions: Path, quotes: Iterable[MarketObservation], *, max_outcome_
             else:
                 direction = 1 if signal.proposal.side == 'long' else -1
                 markout = direction * (quote.market.last_price / baseline.market.last_price - 1) * 10_000
-                moves[signal.strategy, minutes].append(markout)
+                moves[minutes].append(markout)
                 outcome.update(status='observed', observation_id=quote.id, markout_bps=markout,
                                observation=quote.model_dump(mode='json'))
             outcomes.append(outcome)
@@ -65,11 +63,11 @@ def replay(decisions: Path, quotes: Iterable[MarketObservation], *, max_outcome_
                      'decision_observation': baseline.model_dump(mode='json'), 'outcomes': outcomes})
 
     summary = []
-    for strategy, total in sorted(totals.items()):
+    if candidates:
+        total = len(candidates)
         for minutes in HORIZONS_MINUTES:
-            values = moves[strategy, minutes]
-            summary.append({'strategy': strategy, 'horizon_minutes': minutes, 'candidates': total,
-                            'observed': len(values), 'missing': total - len(values),
-                            'mean_markout_bps': mean(values) if values else None})
+            values = moves[minutes]
+            summary.append({'horizon_minutes': minutes, 'candidates': total, 'observed': len(values),
+                            'missing': total - len(values), 'mean_markout_bps': mean(values) if values else None})
     return {'metric': 'last_price_markout_bps', 'max_outcome_lag_seconds': max_outcome_lag.total_seconds(),
             'summary': summary, 'signals': rows}
