@@ -6,8 +6,8 @@ from typing import Any
 import httpx
 from pydantic import SecretStr
 
-from news_futures.adapters.models.openrouter import OpenRouterChat
-from news_futures.domain.contracts import RoleSettings
+from news_futures.llm_clients.openrouter import OpenRouterChat
+from news_futures.schemas.contracts import RoleSettings
 
 class ScriptedEndpoint:
     def __init__(self, answers: list[Any], *, finish_reason: str = 'stop',

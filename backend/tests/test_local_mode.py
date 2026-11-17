@@ -3,8 +3,8 @@ from pathlib import Path
 from unittest import TestCase
 from unittest.mock import patch
 
-from news_futures.adapters.http.trades import linked_revision
-from news_futures.adapters.postgres.database import schema_name
+from news_futures.api.trades import linked_revision
+from news_futures.storage.database import schema_name
 from news_futures.common.paths import local_path, persistent_path
 
 

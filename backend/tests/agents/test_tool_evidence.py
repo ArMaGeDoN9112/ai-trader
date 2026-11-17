@@ -1,10 +1,10 @@
 from datetime import datetime, timedelta, timezone
 from unittest import TestCase
 
-from news_futures.application.analysis.calendar import CALENDAR, EventCalendar
-from news_futures.application.analysis.team_dto import EventEvidence, PublicationEvidence
-from news_futures.application.analysis.tool_evidence import compare_candles, event_versions
-from news_futures.domain.company import MinuteCandle
+from news_futures.agents.calendar import CALENDAR, EventCalendar
+from news_futures.agents.schemas import EventEvidence, PublicationEvidence
+from news_futures.agents.tool_evidence import compare_candles, event_versions
+from news_futures.schemas.company import MinuteCandle
 
 
 class ToolEvidenceTest(TestCase):

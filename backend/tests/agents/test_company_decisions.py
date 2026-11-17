@@ -6,14 +6,14 @@ from typing import Any
 import unittest
 from unittest.mock import patch
 
-from news_futures.adapters.cli import main
-from news_futures.domain.contracts import RoleSettings
-from news_futures.adapters.postgres.database import connect, schema_name
+from news_futures.cli import main
+from news_futures.schemas.contracts import RoleSettings
+from news_futures.storage.database import connect, schema_name
 from psycopg import sql
-from news_futures.adapters.postgres.events import EventArchive
-from news_futures.application.analysis.events import correct_event, event_report, match_event
+from news_futures.storage.events import EventArchive
+from news_futures.agents.events import correct_event, event_report, match_event
 from news_futures.common.artifacts import write_json
-from news_futures.domain.publications import utc_now
+from news_futures.dataflows.publications import utc_now
 from tests.support.news import company_link
 from tests.support.models import ScriptedEndpoint, review
 
@@ -64,7 +64,7 @@ class CompanyDecisionTest(unittest.TestCase):
         with patch('sys.argv', ['news_futures', 'analyze-event', str(event['decision_id']),
                                '--database', str(self.database), '--snapshot', str(snapshot),
                                '--config', str(self.config), '--directory', str(directory)]), patch(
-                                   'news_futures.adapters.models.chat.chat_model', endpoint.model), patch('builtins.print'):
+                                   'news_futures.llm_clients.chat.chat_model', endpoint.model), patch('builtins.print'):
             code = main()
         trace_file = directory / 'trace.json'
         return code, json.loads(trace_file.read_bytes()) if trace_file.is_file() else {}

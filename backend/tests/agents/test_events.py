@@ -9,11 +9,11 @@ import unittest
 import httpx
 from langchain_core.language_models import BaseChatModel
 
-from news_futures.domain.contracts import RoleSettings
-from news_futures.adapters.postgres.events import EventArchive
-from news_futures.application.analysis.events import correct_event, event_report, match_event
-from news_futures.adapters.models.decisions import choices
-from news_futures.application.analysis.routing import route_publication
+from news_futures.schemas.contracts import RoleSettings
+from news_futures.storage.events import EventArchive
+from news_futures.agents.events import correct_event, event_report, match_event
+from news_futures.llm_clients.decisions import choices
+from news_futures.agents.routing import route_publication
 from tests.support.routing import answer
 from tests.support.models import ScriptedEndpoint
 from tests.support.news import company_link
@@ -226,7 +226,7 @@ class EventsTest(unittest.TestCase):
         catalog.write_text(json.dumps({'operations': {'catalog': {'availability': 'available', 'data': [
             {'company_id': 'sber', 'company_name': 'Сбербанк', 'ticker': 'SBER'},
         ]}}}), encoding='utf-8')
-        config = Path('news_futures/application/analysis/decisions-model.json')
+        config = Path('news_futures/defaults/decisions-model.json')
 
         def respond(request: httpx.Request) -> httpx.Response:
             self.assertEqual(json.loads(request.content)['model'], 'parallel/decisions-fast:free')

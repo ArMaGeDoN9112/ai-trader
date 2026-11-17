@@ -7,13 +7,13 @@ from tempfile import TemporaryDirectory
 from typing import Any
 import unittest
 
-from news_futures.domain.contracts import RoleSettings
-from news_futures.application.analysis.decisions import analyze_event
-from news_futures.adapters.postgres.events import EventArchive
-from news_futures.application.analysis.events import match_event
+from news_futures.schemas.contracts import RoleSettings
+from news_futures.agents.decisions import analyze_event
+from news_futures.storage.events import EventArchive
+from news_futures.agents.events import match_event
 from news_futures.common.artifacts import write_json
-from news_futures.adapters.postgres.publications import Archive
-from news_futures.domain.publications import Publication, utc_now
+from news_futures.storage.publications import Archive
+from news_futures.dataflows.publications import Publication, utc_now
 from tests.support.models import ScriptedEndpoint, review
 from tests.support.news import company_link
 

@@ -1,0 +1,192 @@
+"""Group available T-Invest futures by underlying asset and category."""
+
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
+from html import escape
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import Any
+
+import httpx
+from pydantic import BaseModel, ConfigDict, model_validator
+
+from news_futures.brokers.tbank import SANDBOX_REST, amount, identifier, rows
+from news_futures.common.artifacts import move_artifact, write_json
+from news_futures.common.paths import FUTURES_CATEGORIES
+from news_futures.dataflows.catalog import listed_futures
+from news_futures.dataflows.publications import utc_now
+
+
+class CategorySettings(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+
+    categories: dict[str, str]
+    sector_categories: dict[str, str]
+    share_overrides: dict[str, str]
+    asset_aliases: dict[str, dict[str, str]]
+    commodity_groups: dict[str, str]
+    index_categories: dict[str, list[str]]
+
+    @model_validator(mode='after')
+    def known_categories(self) -> 'CategorySettings':
+        used = {'index', 'currency', 'unclassified', *self.sector_categories.values(),
+                *self.share_overrides.values(), *self.commodity_groups.values()}
+        used.update(category for values in self.index_categories.values() for category in values)
+        if not used.issubset(self.categories) or any(not title.strip() for title in self.categories.values()):
+            raise ValueError('invalid_futures_categories')
+        return self
+
+
+def share_categories(settings: CategorySettings, symbols: set[str], sectors: set[str]) -> set[str]:
+    overrides = {settings.share_overrides[symbol] for symbol in symbols if symbol in settings.share_overrides}
+    return overrides or {settings.sector_categories[sector] for sector in sectors if sector in settings.sector_categories}
+
+
+def group_futures(futures: list[dict[str, Any]], shares: list[dict[str, Any]],
+                  settings: CategorySettings) -> list[dict[str, Any]]:
+    if not futures or not shares:
+        raise ValueError('empty_broker_catalog')
+    shares_by_uid: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    categories_by_ticker: dict[str, set[str]] = defaultdict(set)
+    for share in shares:
+        ticker = identifier(share['ticker']).strip().upper()
+        shares_by_uid[identifier(share['positionUid'])].append(share)
+        categories_by_ticker[ticker].update(share_categories(settings, {ticker}, {share.get('sector', '')}))
+
+    groups: dict[tuple[str, str], dict[str, Any]] = {}
+    seen: set[str] = set()
+    for future in futures:
+        uid = identifier(future['uid'])
+        available = future['apiTradeAvailableFlag']
+        if uid in seen or type(available) is not bool:
+            raise ValueError('invalid_future_identity_or_availability')
+        seen.add(uid)
+        if not available:
+            continue
+        asset_type = identifier(future['assetType'])
+        code = identifier(future['basicAsset']).strip()
+        base = settings.asset_aliases.get(asset_type, {}).get(code, code)
+        position_uid = future.get('basicAssetPositionUid') or ''
+        if not isinstance(position_uid, str):
+            raise ValueError('invalid_underlying_position_uid')
+        # Broker currency codes remain stable across contracts with different underlying position UIDs.
+        asset_id = position_uid if asset_type == 'TYPE_SECURITY' and position_uid else base
+        group = groups.setdefault((asset_type, asset_id), {
+            'id': f'{asset_type}:{asset_id}', 'broker_asset_type': asset_type,
+            'name': base, 'broker_underlying_codes': set(), 'contracts': [],
+            'underlying_position_uid': position_uid if asset_type == 'TYPE_SECURITY' else None,
+        })
+        group['broker_underlying_codes'].add(code)
+        group['contracts'].append({
+            'uid': uid, 'ticker': identifier(future['ticker']), 'class_code': identifier(future['classCode']),
+            'name': identifier(future['name']), 'expiration': identifier(future['expirationDate']),
+            'last_trade': identifier(future['lastTradeDate']), 'api_trade_available': available,
+        })
+
+    # Classify the actual underlying, including single-stock fixings listed by the broker as indices.
+    for group in groups.values():
+        asset_type, name = group['broker_asset_type'], group['name']
+        codes = sorted(group['broker_underlying_codes'])
+        group['broker_underlying_codes'] = codes
+        categories: set[str] = set()
+        if asset_type == 'TYPE_SECURITY':
+            underlying = shares_by_uid.get(group['underlying_position_uid'], [])
+            tickers = {identifier(share['ticker']).strip().upper() for share in underlying}
+            categories = share_categories(settings, tickers | {code.upper() for code in codes},
+                                          {share.get('sector', '') for share in underlying})
+            group['name'] = ', '.join(sorted(tickers)) if tickers else codes[0]
+        elif asset_type == 'TYPE_INDEX':
+            ticker = name.removeprefix('Фиксинг ')
+            if ticker != name and ' ' not in ticker:
+                categories = share_categories(settings, {ticker}, set()) or categories_by_ticker.get(ticker, set())
+            else:
+                categories = set(settings.index_categories.get(name, ['index']))
+        elif asset_type == 'TYPE_COMMODITY' and name in settings.commodity_groups:
+            categories = {settings.commodity_groups[name]}
+        elif asset_type == 'TYPE_CURRENCY':
+            categories = {'currency'}
+        group['categories'] = sorted(categories or {'unclassified'})
+        group['contracts'].sort(key=lambda item: (item['last_trade'], item['ticker'], item['uid']))
+    return sorted(groups.values(), key=lambda group: (group['name'].casefold(), group['id']))
+
+
+def fetch_catalog(client: httpx.Client, config: Path = FUTURES_CATEGORIES) -> dict[str, Any]:
+    settings = CategorySettings.model_validate_json(config.read_bytes())
+    listings = []
+    for method in ('Futures', 'Shares'):
+        response = client.post(f'{SANDBOX_REST}InstrumentsService/{method}',
+                               json={'instrumentStatus': 'INSTRUMENT_STATUS_ALL'})
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise ValueError('invalid_broker_catalog')
+        listings.append(rows(payload, 'instruments'))
+    return {'fetched_at': utc_now().isoformat(), 'source': 't-invest-sandbox',
+            'categories': settings.categories, 'assets': group_futures(listings[0], listings[1], settings)}
+
+
+def active_futures(client: httpx.Client, catalog: dict[str, Any]) -> list[dict[str, Any]]:
+    contracts = listed_futures(catalog)
+
+    def read(method: str, field: str, ids: list[str]) -> list[dict[str, Any]]:
+        response = client.post(f'{SANDBOX_REST}MarketDataService/{method}', json={'instrumentId': ids})
+        response.raise_for_status()
+        return rows(response.json(), field)
+
+    def batch(ids: list[str]) -> list[dict[str, Any]]:
+        requested = set(ids)
+        active = {
+            uid for status in read('GetTradingStatuses', 'tradingStatuses', ids)
+            if (uid := status['instrumentUid']) in requested and status.get('apiTradeAvailableFlag') is True
+            and any(status.get(flag) is True for flag in
+                    ('limitOrderAvailableFlag', 'marketOrderAvailableFlag', 'bestpriceOrderAvailableFlag'))
+        }
+        if not active:
+            return []
+        try:
+            quotes = read('GetLastPrices', 'lastPrices', sorted(active))
+        except (httpx.HTTPError, KeyError, ValueError, TypeError):
+            quotes = []
+        prices = {}
+        for row in quotes:
+            try:
+                prices[row['instrumentUid']] = {'price': str(amount(row['price'])), 'quote_at': row['time']}
+            except (KeyError, ValueError, TypeError):
+                continue
+        return [contracts[uid] | prices.get(uid, {}) for uid in sorted(active)]
+
+    ids = list(contracts)
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        batches = pool.map(batch, (ids[start:start + 100] for start in range(0, len(ids), 100)))
+        return sorted((item for group in batches for item in group), key=lambda item: (item['ticker'], item['uid']))
+
+
+def save_catalog(directory: Path, catalog: dict[str, Any]) -> dict[str, int]:
+    assets = catalog['assets']
+    total = sum(len(group['contracts']) for group in assets)
+    lines = ['# Каталог фьючерсов Т‑Инвестиций', '', f"Снимок от {catalog['fetched_at']} (UTC). "
+             f'Через API доступны {total} контрактов на {len(assets)} базовых активов.',
+             '', 'UID и даты доступных контрактов есть в [catalog.json](catalog.json). '
+             'Актив может входить в несколько категорий.', '']
+    for category, title in catalog['categories'].items():
+        members = [group for group in assets if category in group['categories']]
+        if not members:
+            continue
+        category_contracts = sum(len(group['contracts']) for group in members)
+        lines += [f'## {title}', '', f'Базовых активов — {len(members)}, контрактов — {category_contracts}.', '',
+                  '| Базовый актив | Доступные тикеры | Всего контрактов |',
+                  '| --- | --- | ---: |']
+        for group in members:
+            name = escape(group['name']).replace('|', '&#124;')
+            contracts = group['contracts']
+            tickers = ', '.join(f"`{contract['ticker']}`" for contract in contracts)
+            lines.append(f'| {name} | {tickers} | {len(contracts)} |')
+        lines.append('')
+    directory.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(dir=directory) as temporary:
+        staging = Path(temporary)
+        write_json(staging / 'catalog.json', catalog)
+        (staging / 'groups.md').write_text('\n'.join(lines), encoding='utf-8')
+        move_artifact(staging / 'groups.md', directory / 'groups.md', replace=True)
+        move_artifact(staging / 'catalog.json', directory / 'catalog.json', replace=True)
+    return {'assets': len(assets), 'contracts': total, 'api_trade_available': total}

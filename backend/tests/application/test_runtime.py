@@ -24,33 +24,33 @@ from tests.support.models import ScriptedEndpoint, review
 from tests.support.broker import ControlBroker
 from tests.support.telegram import ControlledTransport
 
-from news_futures.adapters.cli import main
-from news_futures.adapters.models.groq import GroqChat
-from news_futures.domain.contracts import Review
-from news_futures.adapters.postgres.database import archive_exists
-from news_futures.adapters.postgres.locks import exclusive_operation
-from news_futures.adapters.postgres.events import EventArchive
-from news_futures.adapters.postgres.checkpoints import checkpoint_serializer
+from news_futures.cli import main
+from news_futures.llm_clients.groq import GroqChat
+from news_futures.schemas.contracts import Review
+from news_futures.storage.database import archive_exists
+from news_futures.storage.locks import exclusive_operation
+from news_futures.storage.events import EventArchive
+from news_futures.storage.checkpoints import checkpoint_serializer
 from news_futures.common.paths import DECISIONS_SETTINGS, GROQ_SETTINGS, REVIEW_SETTINGS, TELEGRAM_SOURCES
-from news_futures.domain.execution import Fill
-from news_futures.application.ports.broker import UnsupportedFuturesUnits
-from news_futures.adapters.models.chat import chat_model
-from news_futures.adapters.models.decisions import choices, request_choices
-from news_futures.application.ports.models import AnalysisModels
+from news_futures.trading.execution import Fill
+from news_futures.brokers.contracts import UnsupportedFuturesUnits
+from news_futures.llm_clients.chat import chat_model
+from news_futures.llm_clients.decisions import choices, request_choices
+from news_futures.llm_clients.contracts import AnalysisModels
 from news_futures.common.artifacts import replace_json, write_json
-from news_futures.adapters.http.news import news_view, trace_view
-from news_futures.adapters.http.settings import Preferences
-from news_futures.adapters.postgres.publications import Archive
-from news_futures.domain.publications import Publication, utc_now
-from news_futures.application.runtime import Runtime
-from news_futures.bootstrap.runtime import run_runtime
-from news_futures.application.config import load_settings
-from news_futures.adapters.postgres.operator_state import OperatorState
-from news_futures.adapters.postgres.runtime import PostgresRuntimeStorage
-from news_futures.application.workflow import Shutdown
-from news_futures.adapters.tbank.futures_catalog import save_catalog
-from news_futures.adapters.tbank.rest import SANDBOX_REST, TBankReader, limit_broker_read, restrict_to_reads
-from news_futures.adapters.telegram import Difference, Source
+from news_futures.api.news import news_view, trace_view
+from news_futures.api.settings import Preferences
+from news_futures.storage.publications import Archive
+from news_futures.dataflows.publications import Publication, utc_now
+from news_futures.runtime import Runtime
+from news_futures.startup import run_runtime
+from news_futures.config import load_settings
+from news_futures.storage.operator_state import OperatorState
+from news_futures.storage.runtime import PostgresRuntimeStorage
+from news_futures.workflow import Shutdown
+from news_futures.brokers.futures_catalog import save_catalog
+from news_futures.brokers.tbank import SANDBOX_REST, TBankReader, limit_broker_read, restrict_to_reads
+from news_futures.dataflows.telegram import Difference, Source
 
 
 class Interrupted(BaseException):
@@ -123,12 +123,12 @@ class RuntimeAcceptance(RiskFixture):
         self.rbc.messages = [replace(self.rbc.original, source=self.rbc.source.id)]
         client = AsyncMock(return_value=SimpleNamespace(pts=1, qts=0, seq=1, date=utc_now()))
         client.get_me.return_value = SimpleNamespace(id=1)
-        self.enterContext(patch('news_futures.adapters.telegram.open_client', return_value=client))
-        self.enterContext(patch('news_futures.adapters.telegram.TelethonTransport', return_value=self))
-        self.enterContext(patch('news_futures.bootstrap.runtime.load_token', return_value='test-key'))
-        self.enterContext(patch('news_futures.adapters.models.decisions.load_token', return_value='test-key'))
-        self.enterContext(patch('news_futures.adapters.models.chat.load_token', return_value='test-key'))
-        self.enterContext(patch('news_futures.bootstrap.runtime.sandbox_client', side_effect=lambda *args, **kw: httpx.Client()))
+        self.enterContext(patch('news_futures.dataflows.telegram.open_client', return_value=client))
+        self.enterContext(patch('news_futures.dataflows.telegram.TelethonTransport', return_value=self))
+        self.enterContext(patch('news_futures.startup.load_token', return_value='test-key'))
+        self.enterContext(patch('news_futures.llm_clients.decisions.load_token', return_value='test-key'))
+        self.enterContext(patch('news_futures.llm_clients.chat.load_token', return_value='test-key'))
+        self.enterContext(patch('news_futures.startup.sandbox_client', side_effect=lambda *args, **kw: httpx.Client()))
         self.futures_snapshot: dict[str, Any] = {
             'fetched_at': self.started_at.isoformat(), 'categories': {'financial': 'Финансы'},
             'assets': [{'name': company, 'categories': ['financial'], 'underlying_position_uid': f'{company}-share',
@@ -136,17 +136,17 @@ class RuntimeAcceptance(RiskFixture):
                                        'last_trade': (self.started_at + timedelta(days=1)).isoformat()}]}
                        for company, uid in (('sber', self.contract_id), ('vtb', 'vtb-future'))],
         }
-        self.fetch_futures = self.enterContext(patch('news_futures.bootstrap.runtime.fetch_catalog',
+        self.fetch_futures = self.enterContext(patch('news_futures.startup.fetch_catalog',
                                                    return_value=self.futures_snapshot))
         save_catalog(self.root / 'futures-catalog', self.futures_snapshot)
-        self.enterContext(patch('news_futures.bootstrap.runtime.TBankReader', return_value=self.broker))
-        self.write_broker = self.enterContext(patch('news_futures.bootstrap.runtime.TBankSandbox', return_value=self.broker))
+        self.enterContext(patch('news_futures.startup.TBankReader', return_value=self.broker))
+        self.write_broker = self.enterContext(patch('news_futures.startup.TBankSandbox', return_value=self.broker))
         self.jev_requests: list[dict[str, Any]] = []
         self.category_requests: list[dict[str, Any]] = []
         self.instrument_requests: list[dict[str, Any]] = []
         self.instrument_choice = 'contract_0'
         jev_client = self.enterContext(httpx.Client(transport=httpx.MockTransport(self.jev_reply)))
-        self.enterContext(patch('news_futures.adapters.models.decisions.request_choices',
+        self.enterContext(patch('news_futures.llm_clients.decisions.request_choices',
                                 side_effect=lambda _client, *args, **kw: request_choices(jev_client, *args, **kw)))
         self.catalog = self.root / 'catalog.json'
         write_json(self.catalog, {'operations': {'catalog': {'availability': 'available', 'data': [
@@ -231,11 +231,11 @@ class RuntimeAcceptance(RiskFixture):
         endpoint = ScriptedEndpoint(list(answers))
 
         def model(**kwargs: Any) -> Any:
-            from news_futures.domain.contracts import RoleSettings
+            from news_futures.schemas.contracts import RoleSettings
             return endpoint.model(RoleSettings(model=kwargs['model']))
 
-        with (patch('news_futures.adapters.models.chat.OpenRouterChat', side_effect=model),
-              patch('news_futures.bootstrap.runtime.utc_now',
+        with (patch('news_futures.llm_clients.chat.OpenRouterChat', side_effect=model),
+              patch('news_futures.startup.utc_now',
                     side_effect=chain((started_at or self.started_at,), iter(utc_now, None))),
               patch('sys.argv', ['news_futures', 'serve', str(self.profile), '--once']),
               patch('builtins.print') as output):
@@ -264,9 +264,9 @@ class RuntimeAcceptance(RiskFixture):
         return {'status': 'delegate', 'company_id': 'sber', 'reason': 'Проверь прогноз.'}
 
     def test_manual_news_runs_in_sandbox_and_is_ineligible_for_execution(self) -> None:
-        from news_futures.application.artifact_paths import review_path
-        from news_futures.adapters.http.news import enqueue_test_news, testing_view
-        from news_futures.application.trading.risk import reserve_entry
+        from news_futures.common.artifact_paths import review_path
+        from news_futures.api.news import enqueue_test_news, testing_view
+        from news_futures.trading.risk import reserve_entry
 
         self.sandbox()
         revision = enqueue_test_news(self.root, {'text': 'SBER опубликовал повышенный прогноз.'})
@@ -306,10 +306,10 @@ class RuntimeAcceptance(RiskFixture):
         return self.tool_call('AnalystAnswer', {'proposal': proposal, 'missing_data': []})
 
     def test_tool_agent_delegates_and_publishes_a_reviewed_candidate_without_execution(self) -> None:
-        from news_futures.application.analysis.approval import read_approval
-        from news_futures.application.analysis.tool_agent import TEAM_DIRECTORY
+        from news_futures.trading.approval import read_approval
+        from news_futures.agents.tool_agent import TEAM_DIRECTORY
         from news_futures.common.errors import Rejected
-        from news_futures.adapters.http.news import trace_view
+        from news_futures.api.news import trace_view
 
         self.tool_agent(mode='sandbox')
         incoming = self.news(self.market, 'SBER опубликовал повышенный прогноз.')
@@ -405,7 +405,7 @@ class RuntimeAcceptance(RiskFixture):
     def test_expired_queue_item_stops_before_routing(self) -> None:
         incoming = self.news(self.market, 'SBER опубликовал прогноз.')
         late = incoming.received_at + timedelta(seconds=61)
-        with patch('news_futures.application.runtime.utc_now', return_value=late):
+        with patch('news_futures.runtime.utc_now', return_value=late):
             self.serve()
         result = self.report(incoming)['result']
         self.assertEqual((result['stage'], result['status'], result['reason']), ('freshness', 'skipped', 'signal_deadline'))
@@ -451,7 +451,7 @@ class RuntimeAcceptance(RiskFixture):
     def test_deadline_between_analyst_and_critic_discards_the_signal(self) -> None:
         self.sandbox()
         incoming = self.news(self.market, 'SBER опубликовал прогноз.')
-        with patch('news_futures.application.workflow.utc_now', side_effect=utc_now) as clock:
+        with patch('news_futures.workflow.utc_now', side_effect=utc_now) as clock:
             def slow_analyst(_: dict[str, Any]) -> dict[str, Any]:
                 clock.side_effect = None
                 clock.return_value = incoming.received_at + timedelta(seconds=61)
@@ -503,7 +503,7 @@ class RuntimeAcceptance(RiskFixture):
         incoming = self.news(self.market, 'SBER опубликовал прогноз.')
         read_risk = self.broker.read_risk
         reads = 0
-        with patch('news_futures.application.runtime.utc_now', side_effect=utc_now) as clock:
+        with patch('news_futures.runtime.utc_now', side_effect=utc_now) as clock:
             def read(account_id: str, contract_id: str) -> object:
                 nonlocal reads
                 reads += 1
@@ -701,7 +701,7 @@ class RuntimeAcceptance(RiskFixture):
             return 0
 
         write_json(self.profile.with_name('refresh.json'), self.profile_data | {'futures_refresh_seconds': 1})
-        with (patch('news_futures.bootstrap.runtime.run_telegram', side_effect=wait_for_refresh),
+        with (patch('news_futures.startup.run_telegram', side_effect=wait_for_refresh),
               patch('builtins.print')):
             self.assertEqual(asyncio.run(run_runtime(self.profile.with_name('refresh.json'), False)), 0)
         self.assertGreaterEqual(self.fetch_futures.call_count, 2)
@@ -776,7 +776,7 @@ class RuntimeAcceptance(RiskFixture):
 
         archive = Archive(self.publications_db)
         with (closing(archive.db), EventArchive(self.events_db) as events,
-              patch('news_futures.application.runtime.analyze_news', side_effect=analyze)):
+              patch('news_futures.runtime.analyze_news', side_effect=analyze)):
             archive.initialize_runtime()
             archive.save_batch(first.source, 1, [first, second, third])
             first_result = {'revision': first.revision_key(), 'mode': 'observation', 'inputs_saved': False}
@@ -801,7 +801,7 @@ class RuntimeAcceptance(RiskFixture):
         preferences = Preferences(settings, ['markettwits'], controls)
         saved = preferences.saved()
         form = saved | {'base': saved, 'aggregator': 'groq'}
-        with patch('news_futures.adapters.http.settings.load_token', return_value='groq-test-key') as token:
+        with patch('news_futures.api.settings.load_token', return_value='groq-test-key') as token:
             preferences.save(form, stopped=False)
             token.assert_called_once_with('groq', 'api_key')
         stored = controls.saved()
@@ -836,8 +836,8 @@ class RuntimeAcceptance(RiskFixture):
             archive.initialize_runtime()
             archive.save_batch(first.source, self.market.pts, [first, second])
         with (httpx.Client(transport=httpx.MockTransport(respond)) as client,
-              patch('news_futures.adapters.models.chat.GroqChat', side_effect=lambda **kw: GroqChat(http_client=client, **kw)),
-              patch('news_futures.adapters.models.chat.load_token', return_value='groq-test-key') as token,
+              patch('news_futures.llm_clients.chat.GroqChat', side_effect=lambda **kw: GroqChat(http_client=client, **kw)),
+              patch('news_futures.llm_clients.chat.load_token', return_value='groq-test-key') as token,
               patch('builtins.print')):
             runtime.process()
         self.assertEqual(token.call_count, 4)
@@ -882,7 +882,7 @@ class RuntimeAcceptance(RiskFixture):
         with exclusive_operation(self.root / 'runtime-lock') as lock:
             self.assertTrue(lock)
             result = subprocess.run(
-                [sys.executable, '-m', 'news_futures.adapters.http.worker', 'test-run'],
+                [sys.executable, '-m', 'news_futures.api.worker', 'test-run'],
                 cwd=self.root, env=os.environ | {'PYTHONPATH': str(Path(__file__).resolve().parents[2])},
                 input=payload + '\n', capture_output=True, text=True, timeout=30, check=False,
             )
@@ -933,7 +933,7 @@ class RuntimeAcceptance(RiskFixture):
         self.sandbox()
         old_time = utc_now() - timedelta(minutes=20)
         entry = self.news(self.market, 'SBER raised its forecast.')
-        with patch('news_futures.adapters.telegram.utc_now', return_value=old_time - timedelta(minutes=1)):
+        with patch('news_futures.dataflows.telegram.utc_now', return_value=old_time - timedelta(minutes=1)):
             self.serve(self.proposal('enter', entry), review())
         incoming = replace(self.news(self.rbc, 'SBER gave updated guidance.'), published_at=old_time)
         self.rbc.messages = [incoming]
@@ -949,7 +949,7 @@ class RuntimeAcceptance(RiskFixture):
         now = utc_now()
         old_time = now - timedelta(minutes=20)
         self.market.messages[0] = replace(self.market.messages[0], text='SBER initial history.')
-        with patch('news_futures.adapters.telegram.utc_now', return_value=old_time - timedelta(minutes=1)):
+        with patch('news_futures.dataflows.telegram.utc_now', return_value=old_time - timedelta(minutes=1)):
             self.serve()
         self.assertEqual(self.jev_requests, [])
         incoming = replace(self.news(self.market, 'SBER missed publication.'), published_at=old_time)
@@ -984,7 +984,7 @@ class RuntimeAcceptance(RiskFixture):
             runtime.stop.set()
             return dict(review()(body))
 
-        with patch('news_futures.bootstrap.runtime.Runtime', return_value=runtime):
+        with patch('news_futures.startup.Runtime', return_value=runtime):
             self.serve(self.proposal('enter', incoming), stop)
         self.assertEqual(self.report(incoming)['result']['reason'], 'shutdown_before_execution')
         self.serve(started_at=utc_now())
@@ -1106,7 +1106,7 @@ class RuntimeAcceptance(RiskFixture):
                 raise PermissionError('audit file unavailable')
             replace_json(path, value)
 
-        with patch('news_futures.application.runtime.replace_json', side_effect=save):
+        with patch('news_futures.runtime.replace_json', side_effect=save):
             self.serve(self.proposal('enter', incoming), review())
         result = self.report(incoming)['result']
         self.assertEqual(result['status'], 'protected')

@@ -9,12 +9,12 @@ from pathlib import Path
 from threading import Barrier
 from unittest.mock import patch
 
-from news_futures.domain.contracts import RoleSettings
-from news_futures.adapters.postgres.events import EventArchive
-from news_futures.application.analysis.events import match_event
-from news_futures.adapters.postgres.publications import Archive
-from news_futures.application.trading.risk import Admission, cancel_unsubmitted, reserve_entry
-from news_futures.domain.terms import ContractSnapshot, RiskSnapshot
+from news_futures.schemas.contracts import RoleSettings
+from news_futures.storage.events import EventArchive
+from news_futures.agents.events import match_event
+from news_futures.storage.publications import Archive
+from news_futures.trading.risk import Admission, cancel_unsubmitted, reserve_entry
+from news_futures.trading.terms import ContractSnapshot, RiskSnapshot
 from tests.support.models import ScriptedEndpoint
 from tests.support.news import company_link
 from tests.support.risk import RiskFixture
@@ -234,7 +234,7 @@ class RiskAdmissionTest(RiskFixture):
                     self.snapshot['contract'].update(observed_at=checked, quote_at=checked)
                     return self.snapshot
 
-                with patch('news_futures.application.trading.risk.utc_now', return_value=formed) as clock:
+                with patch('news_futures.trading.risk.utc_now', return_value=formed) as clock:
                     result = self.reserve(directory, reader=read_snapshot)
                 self.assertEqual(result.reason, reason)
 

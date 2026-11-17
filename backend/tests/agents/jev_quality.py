@@ -4,8 +4,8 @@ from collections import Counter
 from pathlib import Path
 import sys
 
-from news_futures.adapters.models.decisions import choices
-from news_futures.application.analysis.routing import route_publication
+from news_futures.llm_clients.decisions import choices
+from news_futures.agents.routing import route_publication
 from news_futures.common.artifacts import write_json
 from news_futures.common.paths import DECISIONS_SETTINGS
 

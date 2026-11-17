@@ -9,9 +9,9 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
-from news_futures.application.simulation import process_publication
-from news_futures.adapters.postgres.publications import Archive
-from news_futures.domain.publications import Publication, utc_now
+from news_futures.simulation import process_publication
+from news_futures.storage.publications import Archive
+from news_futures.dataflows.publications import Publication, utc_now
 
 
 class ArchiveTest(unittest.TestCase):
@@ -98,7 +98,7 @@ class ArchiveTest(unittest.TestCase):
 
     def test_pending_publication_expires_before_processing(self) -> None:
         self.archive.save_batch(self.publication.source, 1, [self.publication])
-        with patch('news_futures.adapters.postgres.publications.utc_now', return_value=utc_now() + timedelta(minutes=16)):
+        with patch('news_futures.storage.publications.utc_now', return_value=utc_now() + timedelta(minutes=16)):
             self.archive.process_pending(process_publication)
         self.assertEqual(self.archive.report()['revisions'][0]['status'], 'context_only')
 

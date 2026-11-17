@@ -6,10 +6,10 @@ from tempfile import TemporaryDirectory
 from unittest import TestCase
 from unittest.mock import patch
 
-from news_futures.adapters.cli import main
-from news_futures.application.analysis.replay import replay
+from news_futures.cli import main
+from news_futures.replay import replay
 from news_futures.common.artifacts import write_json
-from news_futures.domain.company import CompanyProposal, Market, MarketObservation, SignalCandidate
+from news_futures.schemas.company import CompanyProposal, Market, MarketObservation, SignalCandidate
 
 
 class ReplayTest(TestCase):

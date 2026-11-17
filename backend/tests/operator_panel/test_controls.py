@@ -11,25 +11,25 @@ from uuid import uuid4
 
 import httpx
 
-from news_futures.adapters.postgres.events import EventArchive
-from news_futures.application.config import RuntimeSettings, cycle_inputs
-from news_futures.adapters.postgres.operator_state import OperatorState
-from news_futures.adapters.models.chat import chat_model
-from news_futures.adapters.models.decisions import choices
-from news_futures.adapters.postgres.runtime import PostgresRuntimeStorage
-from news_futures.adapters.tbank.rest import limit_broker_read
-from news_futures.application.ports.models import AnalysisModels
-from news_futures.application.runtime import Runtime
+from news_futures.storage.events import EventArchive
+from news_futures.config import RuntimeSettings, cycle_inputs
+from news_futures.storage.operator_state import OperatorState
+from news_futures.llm_clients.chat import chat_model
+from news_futures.llm_clients.decisions import choices
+from news_futures.storage.runtime import PostgresRuntimeStorage
+from news_futures.brokers.tbank import limit_broker_read
+from news_futures.llm_clients.contracts import AnalysisModels
+from news_futures.runtime import Runtime
 from news_futures.common.artifacts import write_json
 from news_futures.common.errors import CredentialsError
-from news_futures.adapters.postgres.publications import Archive
-from news_futures.adapters.http.news import trace_view
-from news_futures.adapters.http.settings import Preferences, profile_view
-from news_futures.adapters.http.supervisor import Worker
-from news_futures.adapters.http.trades import trades_view
-from news_futures.domain.execution import Fill
-from news_futures.application.trading.executor import SandboxExecutor
-from news_futures.domain.terms import CloseIntent, EntryReservation
+from news_futures.storage.publications import Archive
+from news_futures.api.news import trace_view
+from news_futures.api.settings import Preferences, profile_view
+from news_futures.api.supervisor import Worker
+from news_futures.api.trades import trades_view
+from news_futures.trading.execution import Fill
+from news_futures.trading.executor import SandboxExecutor
+from news_futures.trading.terms import CloseIntent, EntryReservation
 from tests.support.broker import ControlBroker
 from tests.support.risk import RiskFixture
 
@@ -71,8 +71,8 @@ class PreferencesTest(unittest.TestCase):
         update = self.form(mode='sandbox', analysis_strategy='tool_agent')
         with self.assertRaisesRegex(ValueError, 'mode_requires_stop'):
             self.preferences.save(update, stopped=False)
-        with patch('news_futures.adapters.http.settings.sandbox_client', side_effect=lambda *args, **kw: httpx.Client()), patch(
-            'news_futures.adapters.http.settings.TBankReader.account_activity',
+        with patch('news_futures.api.settings.sandbox_client', side_effect=lambda *args, **kw: httpx.Client()), patch(
+            'news_futures.api.settings.TBankReader.account_activity',
         ) as activity:
             activity.side_effect = TimeoutError
             with self.assertRaisesRegex(ValueError, 'account_unconfirmed'):
@@ -103,12 +103,12 @@ class PreferencesTest(unittest.TestCase):
             self.preferences.save(self.form(aggregator='groq', groq_models=original['groq_models'] | {
                 'critic': 'test/model:free',
             }), stopped=False)
-        with patch('news_futures.adapters.http.settings.load_token', side_effect=CredentialsError):
+        with patch('news_futures.api.settings.load_token', side_effect=CredentialsError):
             with self.assertRaisesRegex(ValueError, 'invalid_groq_credentials'):
                 self.preferences.save(self.form(aggregator='groq'), stopped=False)
         self.assertEqual(self.preferences.saved(), original)
 
-        with patch('news_futures.adapters.http.settings.load_token', return_value='test-key'):
+        with patch('news_futures.api.settings.load_token', return_value='test-key'):
             self.preferences.save(self.form(aggregator='groq', groq_models=original['groq_models'] | {
                 'critic': 'openai/gpt-oss-20b',
             }), stopped=False)

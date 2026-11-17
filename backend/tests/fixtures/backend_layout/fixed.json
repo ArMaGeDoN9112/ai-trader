@@ -1,0 +1,1760 @@
+{
+  "source_commit": "3902b81aec6fd6d72b95ebfda3fd558341f67a62",
+  "strategy": "fixed",
+  "now": "2026-11-17T18:55:40.869278+00:00",
+  "revision": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+  "publication": {
+    "source": "telegram:123",
+    "external_id": "11",
+    "url": "https://t.me/source/11",
+    "text": "SBER опубликовал повышенный прогноз.",
+    "published_at": "2026-11-17T18:55:40.934088+00:00",
+    "received_at": "2026-11-17T18:55:40.934088+00:00",
+    "edited_at": null,
+    "unread_media": false,
+    "change": "new",
+    "id": "telegram:123:11"
+  },
+  "tables": {
+    "checkpoints": [
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-cce4-65ae-bfff-57c4bf4368e5",
+        "parent_checkpoint_id": null,
+        "type": null,
+        "checkpoint": {
+          "v": 4,
+          "id": "1f1e2b87-cce4-65ae-bfff-57c4bf4368e5",
+          "ts": "2026-11-17T18:55:42.094891+00:00",
+          "versions_seen": {
+            "__input__": {}
+          },
+          "channel_values": {},
+          "channel_versions": {
+            "__start__": "00000000000000000000000000000001.0.9956963923441454"
+          },
+          "updated_channels": [
+            "__start__"
+          ]
+        },
+        "metadata": {
+          "step": -1,
+          "source": "input",
+          "parents": {}
+        }
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-cce8-62f0-8000-b0534a0b38ca",
+        "parent_checkpoint_id": "1f1e2b87-cce4-65ae-bfff-57c4bf4368e5",
+        "type": null,
+        "checkpoint": {
+          "v": 4,
+          "id": "1f1e2b87-cce8-62f0-8000-b0534a0b38ca",
+          "ts": "2026-11-17T18:55:42.096459+00:00",
+          "versions_seen": {
+            "__input__": {},
+            "__start__": {
+              "__start__": "00000000000000000000000000000001.0.9956963923441454"
+            }
+          },
+          "channel_values": {
+            "status": "continue",
+            "branch:to:route": null
+          },
+          "channel_versions": {
+            "status": "00000000000000000000000000000002.000.932680817805",
+            "__start__": "00000000000000000000000000000002.000.932680817805",
+            "branch:to:route": "00000000000000000000000000000002.000.932680817805"
+          },
+          "updated_channels": [
+            "branch:to:route",
+            "status"
+          ]
+        },
+        "metadata": {
+          "step": 0,
+          "source": "loop",
+          "parents": {}
+        }
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d080-6dc6-8001-8801e7244b31",
+        "parent_checkpoint_id": "1f1e2b87-cce8-62f0-8000-b0534a0b38ca",
+        "type": null,
+        "checkpoint": {
+          "v": 4,
+          "id": "1f1e2b87-d080-6dc6-8001-8801e7244b31",
+          "ts": "2026-11-17T18:55:42.473568+00:00",
+          "versions_seen": {
+            "route": {
+              "branch:to:route": "00000000000000000000000000000002.000.932680817805"
+            },
+            "__input__": {},
+            "__start__": {
+              "__start__": "00000000000000000000000000000001.0.9956963923441454"
+            }
+          },
+          "channel_values": {
+            "stage": "route",
+            "status": "continue",
+            "branch:to:event": null
+          },
+          "channel_versions": {
+            "stage": "00000000000000000000000000000003.0.7989300555484381",
+            "status": "00000000000000000000000000000003.0.7989300555484381",
+            "__start__": "00000000000000000000000000000002.000.932680817805",
+            "branch:to:event": "00000000000000000000000000000003.0.7989300555484381",
+            "branch:to:route": "00000000000000000000000000000003.0.7989300555484381"
+          },
+          "updated_channels": [
+            "branch:to:event",
+            "stage",
+            "status"
+          ]
+        },
+        "metadata": {
+          "step": 1,
+          "source": "loop",
+          "parents": {}
+        }
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d0ec-6c6f-8002-c4f77cd9981e",
+        "parent_checkpoint_id": "1f1e2b87-d080-6dc6-8001-8801e7244b31",
+        "type": null,
+        "checkpoint": {
+          "v": 4,
+          "id": "1f1e2b87-d0ec-6c6f-8002-c4f77cd9981e",
+          "ts": "2026-11-17T18:55:42.517771+00:00",
+          "versions_seen": {
+            "event": {
+              "branch:to:event": "00000000000000000000000000000003.0.7989300555484381"
+            },
+            "route": {
+              "branch:to:route": "00000000000000000000000000000002.000.932680817805"
+            },
+            "__input__": {},
+            "__start__": {
+              "__start__": "00000000000000000000000000000001.0.9956963923441454"
+            }
+          },
+          "channel_values": {
+            "stage": "route",
+            "status": "continue",
+            "decision_id": 1,
+            "branch:to:position": null
+          },
+          "channel_versions": {
+            "stage": "00000000000000000000000000000004.0.379326882829647",
+            "status": "00000000000000000000000000000003.0.7989300555484381",
+            "affected": "00000000000000000000000000000004.0.379326882829647",
+            "__start__": "00000000000000000000000000000002.000.932680817805",
+            "decision_id": "00000000000000000000000000000004.0.379326882829647",
+            "branch:to:event": "00000000000000000000000000000004.0.379326882829647",
+            "branch:to:route": "00000000000000000000000000000003.0.7989300555484381",
+            "branch:to:position": "00000000000000000000000000000004.0.379326882829647"
+          },
+          "updated_channels": [
+            "affected",
+            "branch:to:position",
+            "decision_id",
+            "stage"
+          ]
+        },
+        "metadata": {
+          "step": 2,
+          "source": "loop",
+          "parents": {}
+        }
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d126-6e54-8003-1bfad535703a",
+        "parent_checkpoint_id": "1f1e2b87-d0ec-6c6f-8002-c4f77cd9981e",
+        "type": null,
+        "checkpoint": {
+          "v": 4,
+          "id": "1f1e2b87-d126-6e54-8003-1bfad535703a",
+          "ts": "2026-11-17T18:55:42.541576+00:00",
+          "versions_seen": {
+            "event": {
+              "branch:to:event": "00000000000000000000000000000003.0.7989300555484381"
+            },
+            "route": {
+              "branch:to:route": "00000000000000000000000000000002.000.932680817805"
+            },
+            "position": {
+              "branch:to:position": "00000000000000000000000000000004.0.379326882829647"
+            },
+            "__input__": {},
+            "__start__": {
+              "__start__": "00000000000000000000000000000001.0.9956963923441454"
+            }
+          },
+          "channel_values": {
+            "stage": "position",
+            "status": "continue",
+            "decision_id": 1,
+            "branch:to:instrument": null
+          },
+          "channel_versions": {
+            "stage": "00000000000000000000000000000005.0.6304057910599649",
+            "status": "00000000000000000000000000000003.0.7989300555484381",
+            "affected": "00000000000000000000000000000004.0.379326882829647",
+            "__start__": "00000000000000000000000000000002.000.932680817805",
+            "decision_id": "00000000000000000000000000000004.0.379326882829647",
+            "branch:to:event": "00000000000000000000000000000004.0.379326882829647",
+            "branch:to:route": "00000000000000000000000000000003.0.7989300555484381",
+            "branch:to:position": "00000000000000000000000000000005.0.6304057910599649",
+            "branch:to:instrument": "00000000000000000000000000000005.0.6304057910599649"
+          },
+          "updated_channels": [
+            "branch:to:instrument",
+            "stage"
+          ]
+        },
+        "metadata": {
+          "step": 3,
+          "source": "loop",
+          "parents": {}
+        }
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d481-6c7e-8004-e230b139619b",
+        "parent_checkpoint_id": "1f1e2b87-d126-6e54-8003-1bfad535703a",
+        "type": null,
+        "checkpoint": {
+          "v": 4,
+          "id": "1f1e2b87-d481-6c7e-8004-e230b139619b",
+          "ts": "2026-11-17T18:55:42.893375+00:00",
+          "versions_seen": {
+            "event": {
+              "branch:to:event": "00000000000000000000000000000003.0.7989300555484381"
+            },
+            "route": {
+              "branch:to:route": "00000000000000000000000000000002.000.932680817805"
+            },
+            "position": {
+              "branch:to:position": "00000000000000000000000000000004.0.379326882829647"
+            },
+            "__input__": {},
+            "__start__": {
+              "__start__": "00000000000000000000000000000001.0.9956963923441454"
+            },
+            "instrument": {
+              "branch:to:instrument": "00000000000000000000000000000005.0.6304057910599649"
+            }
+          },
+          "channel_values": {
+            "stage": "instrument",
+            "status": "continue",
+            "decision_id": 1,
+            "branch:to:snapshot": null,
+            "selected_contract_id": "control-future"
+          },
+          "channel_versions": {
+            "stage": "00000000000000000000000000000006.0.8776945757884403",
+            "status": "00000000000000000000000000000003.0.7989300555484381",
+            "affected": "00000000000000000000000000000004.0.379326882829647",
+            "__start__": "00000000000000000000000000000002.000.932680817805",
+            "decision_id": "00000000000000000000000000000004.0.379326882829647",
+            "branch:to:event": "00000000000000000000000000000004.0.379326882829647",
+            "branch:to:route": "00000000000000000000000000000003.0.7989300555484381",
+            "branch:to:position": "00000000000000000000000000000005.0.6304057910599649",
+            "branch:to:snapshot": "00000000000000000000000000000006.0.8776945757884403",
+            "branch:to:instrument": "00000000000000000000000000000006.0.8776945757884403",
+            "selected_contract_id": "00000000000000000000000000000006.0.8776945757884403"
+          },
+          "updated_channels": [
+            "branch:to:snapshot",
+            "selected_contract_id",
+            "stage"
+          ]
+        },
+        "metadata": {
+          "step": 4,
+          "source": "loop",
+          "parents": {}
+        }
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d4e9-6d41-8005-2ca1ea3ca267",
+        "parent_checkpoint_id": "1f1e2b87-d481-6c7e-8004-e230b139619b",
+        "type": null,
+        "checkpoint": {
+          "v": 4,
+          "id": "1f1e2b87-d4e9-6d41-8005-2ca1ea3ca267",
+          "ts": "2026-11-17T18:55:42.935993+00:00",
+          "versions_seen": {
+            "event": {
+              "branch:to:event": "00000000000000000000000000000003.0.7989300555484381"
+            },
+            "route": {
+              "branch:to:route": "00000000000000000000000000000002.000.932680817805"
+            },
+            "position": {
+              "branch:to:position": "00000000000000000000000000000004.0.379326882829647"
+            },
+            "snapshot": {
+              "branch:to:snapshot": "00000000000000000000000000000006.0.8776945757884403"
+            },
+            "__input__": {},
+            "__start__": {
+              "__start__": "00000000000000000000000000000001.0.9956963923441454"
+            },
+            "instrument": {
+              "branch:to:instrument": "00000000000000000000000000000005.0.6304057910599649"
+            }
+          },
+          "channel_values": {
+            "stage": "snapshot",
+            "status": "continue",
+            "decision_id": 1,
+            "branch:to:review": null,
+            "selected_contract_id": "control-future"
+          },
+          "channel_versions": {
+            "stage": "00000000000000000000000000000007.0.22905075547450315",
+            "status": "00000000000000000000000000000003.0.7989300555484381",
+            "affected": "00000000000000000000000000000004.0.379326882829647",
+            "__start__": "00000000000000000000000000000002.000.932680817805",
+            "decision_id": "00000000000000000000000000000004.0.379326882829647",
+            "branch:to:event": "00000000000000000000000000000004.0.379326882829647",
+            "branch:to:route": "00000000000000000000000000000003.0.7989300555484381",
+            "branch:to:review": "00000000000000000000000000000007.0.22905075547450315",
+            "branch:to:position": "00000000000000000000000000000005.0.6304057910599649",
+            "branch:to:snapshot": "00000000000000000000000000000007.0.22905075547450315",
+            "branch:to:instrument": "00000000000000000000000000000006.0.8776945757884403",
+            "selected_contract_id": "00000000000000000000000000000006.0.8776945757884403"
+          },
+          "updated_channels": [
+            "branch:to:review",
+            "stage"
+          ]
+        },
+        "metadata": {
+          "step": 5,
+          "source": "loop",
+          "parents": {}
+        }
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "route:ccfc3bb1-0ad9-b037-7cfd-744f636f3f87",
+        "checkpoint_id": "1f1e2b87-d01f-6a7a-bfff-079e3a6e3876",
+        "parent_checkpoint_id": null,
+        "type": null,
+        "checkpoint": {
+          "v": 4,
+          "id": "1f1e2b87-d01f-6a7a-bfff-079e3a6e3876",
+          "ts": "2026-11-17T18:55:42.433752+00:00",
+          "versions_seen": {
+            "__input__": {}
+          },
+          "channel_values": {},
+          "channel_versions": {
+            "__start__": "00000000000000000000000000000001.0.08936500189314156"
+          },
+          "updated_channels": [
+            "__start__"
+          ]
+        },
+        "metadata": {
+          "step": -1,
+          "source": "input",
+          "parents": {
+            "": "1f1e2b87-cce8-62f0-8000-b0534a0b38ca"
+          }
+        }
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "route:ccfc3bb1-0ad9-b037-7cfd-744f636f3f87",
+        "checkpoint_id": "1f1e2b87-d022-6254-8000-66030407d954",
+        "parent_checkpoint_id": "1f1e2b87-d01f-6a7a-bfff-079e3a6e3876",
+        "type": null,
+        "checkpoint": {
+          "v": 4,
+          "id": "1f1e2b87-d022-6254-8000-66030407d954",
+          "ts": "2026-11-17T18:55:42.434773+00:00",
+          "versions_seen": {
+            "__input__": {},
+            "__start__": {
+              "__start__": "00000000000000000000000000000001.0.08936500189314156"
+            }
+          },
+          "channel_values": {
+            "error": null,
+            "links": null,
+            "candidates": null,
+            "requested_model": "parallel/decisions-fast:free",
+            "publication_text": "SBER опубликовал повышенный прогноз.",
+            "branch:to:category": null
+          },
+          "channel_versions": {
+            "error": "00000000000000000000000000000002.0.01526281477620417",
+            "links": "00000000000000000000000000000002.0.01526281477620417",
+            "source": "00000000000000000000000000000002.0.01526281477620417",
+            "batches": "00000000000000000000000000000002.0.01526281477620417",
+            "__start__": "00000000000000000000000000000002.0.01526281477620417",
+            "companies": "00000000000000000000000000000002.0.01526281477620417",
+            "candidates": "00000000000000000000000000000002.0.01526281477620417",
+            "requested_model": "00000000000000000000000000000002.0.01526281477620417",
+            "publication_text": "00000000000000000000000000000002.0.01526281477620417",
+            "branch:to:category": "00000000000000000000000000000002.0.01526281477620417"
+          },
+          "updated_channels": [
+            "batches",
+            "branch:to:category",
+            "candidates",
+            "companies",
+            "error",
+            "links",
+            "publication_text",
+            "requested_model",
+            "source"
+          ]
+        },
+        "metadata": {
+          "step": 0,
+          "source": "loop",
+          "parents": {
+            "": "1f1e2b87-cce8-62f0-8000-b0534a0b38ca"
+          }
+        }
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "route:ccfc3bb1-0ad9-b037-7cfd-744f636f3f87",
+        "checkpoint_id": "1f1e2b87-d051-6201-8001-3b730e82a394",
+        "parent_checkpoint_id": "1f1e2b87-d022-6254-8000-66030407d954",
+        "type": null,
+        "checkpoint": {
+          "v": 4,
+          "id": "1f1e2b87-d051-6201-8001-3b730e82a394",
+          "ts": "2026-11-17T18:55:42.454016+00:00",
+          "versions_seen": {
+            "category": {
+              "branch:to:category": "00000000000000000000000000000002.0.01526281477620417"
+            },
+            "__input__": {},
+            "__start__": {
+              "__start__": "00000000000000000000000000000001.0.08936500189314156"
+            }
+          },
+          "channel_values": {
+            "error": null,
+            "links": null,
+            "requested_model": "parallel/decisions-fast:free",
+            "publication_text": "SBER опубликовал повышенный прогноз.",
+            "branch:to:companies": null
+          },
+          "channel_versions": {
+            "error": "00000000000000000000000000000003.0.9505027147420161",
+            "links": "00000000000000000000000000000002.0.01526281477620417",
+            "source": "00000000000000000000000000000002.0.01526281477620417",
+            "batches": "00000000000000000000000000000002.0.01526281477620417",
+            "__start__": "00000000000000000000000000000002.0.01526281477620417",
+            "companies": "00000000000000000000000000000002.0.01526281477620417",
+            "candidates": "00000000000000000000000000000003.0.9505027147420161",
+            "requested_model": "00000000000000000000000000000002.0.01526281477620417",
+            "publication_text": "00000000000000000000000000000002.0.01526281477620417",
+            "branch:to:category": "00000000000000000000000000000003.0.9505027147420161",
+            "branch:to:companies": "00000000000000000000000000000003.0.9505027147420161"
+          },
+          "updated_channels": [
+            "branch:to:companies",
+            "candidates",
+            "error"
+          ]
+        },
+        "metadata": {
+          "step": 1,
+          "source": "loop",
+          "parents": {
+            "": "1f1e2b87-cce8-62f0-8000-b0534a0b38ca"
+          }
+        }
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "route:ccfc3bb1-0ad9-b037-7cfd-744f636f3f87",
+        "checkpoint_id": "1f1e2b87-d069-6c14-8002-38afc4d29d31",
+        "parent_checkpoint_id": "1f1e2b87-d051-6201-8001-3b730e82a394",
+        "type": null,
+        "checkpoint": {
+          "v": 4,
+          "id": "1f1e2b87-d069-6c14-8002-38afc4d29d31",
+          "ts": "2026-11-17T18:55:42.464104+00:00",
+          "versions_seen": {
+            "category": {
+              "branch:to:category": "00000000000000000000000000000002.0.01526281477620417"
+            },
+            "__input__": {},
+            "__start__": {
+              "__start__": "00000000000000000000000000000001.0.08936500189314156"
+            },
+            "companies": {
+              "branch:to:companies": "00000000000000000000000000000003.0.9505027147420161"
+            }
+          },
+          "channel_values": {
+            "error": null,
+            "requested_model": "parallel/decisions-fast:free",
+            "publication_text": "SBER опубликовал повышенный прогноз."
+          },
+          "channel_versions": {
+            "error": "00000000000000000000000000000004.0.6578803174845625",
+            "links": "00000000000000000000000000000004.0.6578803174845625",
+            "source": "00000000000000000000000000000002.0.01526281477620417",
+            "batches": "00000000000000000000000000000004.0.6578803174845625",
+            "__start__": "00000000000000000000000000000002.0.01526281477620417",
+            "companies": "00000000000000000000000000000002.0.01526281477620417",
+            "candidates": "00000000000000000000000000000003.0.9505027147420161",
+            "requested_model": "00000000000000000000000000000002.0.01526281477620417",
+            "publication_text": "00000000000000000000000000000002.0.01526281477620417",
+            "branch:to:category": "00000000000000000000000000000003.0.9505027147420161",
+            "branch:to:companies": "00000000000000000000000000000004.0.6578803174845625"
+          },
+          "updated_channels": [
+            "batches",
+            "error",
+            "links"
+          ]
+        },
+        "metadata": {
+          "step": 2,
+          "source": "loop",
+          "parents": {
+            "": "1f1e2b87-cce8-62f0-8000-b0534a0b38ca"
+          }
+        }
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d5a2-652a-bfff-a3b9602d2015",
+        "parent_checkpoint_id": null,
+        "type": null,
+        "checkpoint": {
+          "v": 4,
+          "id": "1f1e2b87-d5a2-652a-bfff-a3b9602d2015",
+          "ts": "2026-11-17T18:55:43.011562+00:00",
+          "versions_seen": {
+            "__input__": {}
+          },
+          "channel_values": {},
+          "channel_versions": {
+            "__start__": "00000000000000000000000000000001.0.4245282121509125"
+          },
+          "updated_channels": [
+            "__start__"
+          ]
+        },
+        "metadata": {
+          "step": -1,
+          "source": "input",
+          "parents": {}
+        }
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d5a6-61f9-8000-5b3096af52c4",
+        "parent_checkpoint_id": "1f1e2b87-d5a2-652a-bfff-a3b9602d2015",
+        "type": null,
+        "checkpoint": {
+          "v": 4,
+          "id": "1f1e2b87-d5a6-61f9-8000-5b3096af52c4",
+          "ts": "2026-11-17T18:55:43.013119+00:00",
+          "versions_seen": {
+            "__input__": {},
+            "__start__": {
+              "__start__": "00000000000000000000000000000001.0.4245282121509125"
+            }
+          },
+          "channel_values": {
+            "error": null,
+            "review": null,
+            "proposal": null,
+            "revisions": 0,
+            "proposal_id": null,
+            "previous_review": null,
+            "branch:to:analyst": null
+          },
+          "channel_versions": {
+            "calls": "00000000000000000000000000000002.0.03899172237205162",
+            "error": "00000000000000000000000000000002.0.03899172237205162",
+            "review": "00000000000000000000000000000002.0.03899172237205162",
+            "context": "00000000000000000000000000000002.0.03899172237205162",
+            "proposal": "00000000000000000000000000000002.0.03899172237205162",
+            "__start__": "00000000000000000000000000000002.0.03899172237205162",
+            "revisions": "00000000000000000000000000000002.0.03899172237205162",
+            "proposal_id": "00000000000000000000000000000002.0.03899172237205162",
+            "previous_review": "00000000000000000000000000000002.0.03899172237205162",
+            "branch:to:analyst": "00000000000000000000000000000002.0.03899172237205162"
+          },
+          "updated_channels": [
+            "branch:to:analyst",
+            "calls",
+            "context",
+            "error",
+            "previous_review",
+            "proposal",
+            "proposal_id",
+            "review",
+            "revisions"
+          ]
+        },
+        "metadata": {
+          "step": 0,
+          "source": "loop",
+          "parents": {}
+        }
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d71f-6d8c-8001-1656aa007d76",
+        "parent_checkpoint_id": "1f1e2b87-d5a6-61f9-8000-5b3096af52c4",
+        "type": null,
+        "checkpoint": {
+          "v": 4,
+          "id": "1f1e2b87-d71f-6d8c-8001-1656aa007d76",
+          "ts": "2026-11-17T18:55:43.167834+00:00",
+          "versions_seen": {
+            "analyst": {
+              "branch:to:analyst": "00000000000000000000000000000002.0.03899172237205162"
+            },
+            "__input__": {},
+            "__start__": {
+              "__start__": "00000000000000000000000000000001.0.4245282121509125"
+            }
+          },
+          "channel_values": {
+            "error": null,
+            "review": null,
+            "revisions": 0,
+            "proposal_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce:1",
+            "previous_review": null,
+            "branch:to:critic": null
+          },
+          "channel_versions": {
+            "calls": "00000000000000000000000000000003.0.8425009484907691",
+            "error": "00000000000000000000000000000002.0.03899172237205162",
+            "review": "00000000000000000000000000000003.0.8425009484907691",
+            "context": "00000000000000000000000000000002.0.03899172237205162",
+            "proposal": "00000000000000000000000000000003.0.8425009484907691",
+            "__start__": "00000000000000000000000000000002.0.03899172237205162",
+            "revisions": "00000000000000000000000000000003.0.8425009484907691",
+            "proposal_id": "00000000000000000000000000000003.0.8425009484907691",
+            "previous_review": "00000000000000000000000000000003.0.8425009484907691",
+            "branch:to:critic": "00000000000000000000000000000003.0.8425009484907691",
+            "branch:to:analyst": "00000000000000000000000000000003.0.8425009484907691"
+          },
+          "updated_channels": [
+            "branch:to:critic",
+            "calls",
+            "previous_review",
+            "proposal",
+            "proposal_id",
+            "review",
+            "revisions"
+          ]
+        },
+        "metadata": {
+          "step": 1,
+          "source": "loop",
+          "parents": {}
+        }
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d80d-6849-8002-4b1655ac20ef",
+        "parent_checkpoint_id": "1f1e2b87-d71f-6d8c-8001-1656aa007d76",
+        "type": null,
+        "checkpoint": {
+          "v": 4,
+          "id": "1f1e2b87-d80d-6849-8002-4b1655ac20ef",
+          "ts": "2026-11-17T18:55:43.265184+00:00",
+          "versions_seen": {
+            "critic": {
+              "branch:to:critic": "00000000000000000000000000000003.0.8425009484907691"
+            },
+            "analyst": {
+              "branch:to:analyst": "00000000000000000000000000000002.0.03899172237205162"
+            },
+            "__input__": {},
+            "__start__": {
+              "__start__": "00000000000000000000000000000001.0.4245282121509125"
+            }
+          },
+          "channel_values": {
+            "error": null,
+            "revisions": 0,
+            "proposal_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce:1",
+            "previous_review": null,
+            "branch:to:analyst": null
+          },
+          "channel_versions": {
+            "calls": "00000000000000000000000000000004.0.3562800512316112",
+            "error": "00000000000000000000000000000002.0.03899172237205162",
+            "review": "00000000000000000000000000000004.0.3562800512316112",
+            "context": "00000000000000000000000000000002.0.03899172237205162",
+            "proposal": "00000000000000000000000000000003.0.8425009484907691",
+            "__start__": "00000000000000000000000000000002.0.03899172237205162",
+            "revisions": "00000000000000000000000000000003.0.8425009484907691",
+            "proposal_id": "00000000000000000000000000000003.0.8425009484907691",
+            "previous_review": "00000000000000000000000000000003.0.8425009484907691",
+            "branch:to:critic": "00000000000000000000000000000004.0.3562800512316112",
+            "branch:to:analyst": "00000000000000000000000000000004.0.3562800512316112"
+          },
+          "updated_channels": [
+            "branch:to:analyst",
+            "calls",
+            "review"
+          ]
+        },
+        "metadata": {
+          "step": 2,
+          "source": "loop",
+          "parents": {}
+        }
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d83a-6bf6-8003-696820da6433",
+        "parent_checkpoint_id": "1f1e2b87-d80d-6849-8002-4b1655ac20ef",
+        "type": null,
+        "checkpoint": {
+          "v": 4,
+          "id": "1f1e2b87-d83a-6bf6-8003-696820da6433",
+          "ts": "2026-11-17T18:55:43.283711+00:00",
+          "versions_seen": {
+            "critic": {
+              "branch:to:critic": "00000000000000000000000000000003.0.8425009484907691"
+            },
+            "analyst": {
+              "branch:to:analyst": "00000000000000000000000000000004.0.3562800512316112"
+            },
+            "__input__": {},
+            "__start__": {
+              "__start__": "00000000000000000000000000000001.0.4245282121509125"
+            }
+          },
+          "channel_values": {
+            "error": null,
+            "review": null,
+            "revisions": 1,
+            "proposal_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce:3",
+            "branch:to:critic": null
+          },
+          "channel_versions": {
+            "calls": "00000000000000000000000000000005.0.3972197230729334",
+            "error": "00000000000000000000000000000002.0.03899172237205162",
+            "review": "00000000000000000000000000000005.0.3972197230729334",
+            "context": "00000000000000000000000000000002.0.03899172237205162",
+            "proposal": "00000000000000000000000000000005.0.3972197230729334",
+            "__start__": "00000000000000000000000000000002.0.03899172237205162",
+            "revisions": "00000000000000000000000000000005.0.3972197230729334",
+            "proposal_id": "00000000000000000000000000000005.0.3972197230729334",
+            "previous_review": "00000000000000000000000000000005.0.3972197230729334",
+            "branch:to:critic": "00000000000000000000000000000005.0.3972197230729334",
+            "branch:to:analyst": "00000000000000000000000000000005.0.3972197230729334"
+          },
+          "updated_channels": [
+            "branch:to:critic",
+            "calls",
+            "previous_review",
+            "proposal",
+            "proposal_id",
+            "review",
+            "revisions"
+          ]
+        },
+        "metadata": {
+          "step": 3,
+          "source": "loop",
+          "parents": {}
+        }
+      }
+    ],
+    "checkpoint_blobs": [
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "",
+        "channel": "__start__",
+        "version": "00000000000000000000000000000001.0.9956963923441454",
+        "type": "msgpack",
+        "blob": {
+          "base64": "gaZzdGF0dXOoY29udGludWU="
+        }
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "",
+        "channel": "affected",
+        "version": "00000000000000000000000000000004.0.379326882829647",
+        "type": "msgpack",
+        "blob": {
+          "base64": "kaRzYmVy"
+        }
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "route:ccfc3bb1-0ad9-b037-7cfd-744f636f3f87",
+        "channel": "__start__",
+        "version": "00000000000000000000000000000001.0.08936500189314156",
+        "type": "msgpack",
+        "blob": {
+          "base64": "iLBwdWJsaWNhdGlvbl90ZXh02UBTQkVSINC+0L/Rg9Cx0LvQuNC60L7QstCw0Lsg0L/QvtCy0YvRiNC10L3QvdGL0Lkg0L/RgNC+0LPQvdC+0LcupnNvdXJjZYWucHVibGljYXRpb25faWSvdGVsZWdyYW06MTIzOjExr3B1YmxpY2F0aW9uX3VybLZodHRwczovL3QubWUvc291cmNlLzExsnB1YmxpY2F0aW9uX3NoYTI1NtlAYjZhNjczYTY4YzhmNzY0Nzk4NWI5MGM1NzZkYjRmMzY0ZmYxOTllNzE3Y2ZkNTI3ZWJiYzQzZDNjNzhiMjNlMbtwdWJsaWNhdGlvbl9yZXZpc2lvbl9zaGEyNTbZQDJkNTg2YTcwMDU4MjdiNGVmNDFmZjE5ZTQxZjA4YTU1NGM0Y2QxODcxNzcyZDQ3ZTU4Y2IyODg4MzA4Y2MzYjauY2F0YWxvZ19zaGEyNTbZQDdkN2IzYTE0YjYxMmQzNGI3ZjJhYTFhZGJiN2UzZGMzYjk1YmNkZTg4YTNhYTczMzU0ZjZlODExMmQ2MjMyMWSpY29tcGFuaWVzgqRzYmVygqVuYW1lc5GkU0JFUqd0aWNrZXJzkaRTQkVSo3Z0YoKlbmFtZXORo1ZUQqd0aWNrZXJzkaNWVEKvcmVxdWVzdGVkX21vZGVsvHBhcmFsbGVsL2RlY2lzaW9ucy1mYXN0OmZyZWWlbGlua3PAp2JhdGNoZXOQpWVycm9ywKpjYW5kaWRhdGVzwA=="
+        }
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "route:ccfc3bb1-0ad9-b037-7cfd-744f636f3f87",
+        "channel": "batches",
+        "version": "00000000000000000000000000000004.0.6578803174845625",
+        "type": "msgpack",
+        "blob": {
+          "base64": "kYirY29tcGFueV9pZHOSpHNiZXKjdnRiqnJlcXVlc3RfaWSqamV2LXJlc3VsdKxhY3R1YWxfbW9kZWy8cGFyYWxsZWwvZGVjaXNpb25zLWZhc3Q6ZnJlZahwcm92aWRlcsCldXNhZ2XApWVycm9ywKJhdNkgMjAyNi0xMS0xN1QxODo1NTo0Mi40NjMwNTgrMDA6MDCqZWxhcHNlZF9tcwE="
+        }
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "route:ccfc3bb1-0ad9-b037-7cfd-744f636f3f87",
+        "channel": "batches",
+        "version": "00000000000000000000000000000002.0.01526281477620417",
+        "type": "msgpack",
+        "blob": {
+          "base64": "kA=="
+        }
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "route:ccfc3bb1-0ad9-b037-7cfd-744f636f3f87",
+        "channel": "candidates",
+        "version": "00000000000000000000000000000003.0.9505027147420161",
+        "type": "msgpack",
+        "blob": {
+          "base64": "kqRzYmVyo3Z0Yg=="
+        }
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "route:ccfc3bb1-0ad9-b037-7cfd-744f636f3f87",
+        "channel": "companies",
+        "version": "00000000000000000000000000000002.0.01526281477620417",
+        "type": "msgpack",
+        "blob": {
+          "base64": "gqRzYmVygqVuYW1lc5GkU0JFUqd0aWNrZXJzkaRTQkVSo3Z0YoKlbmFtZXORo1ZUQqd0aWNrZXJzkaNWVEI="
+        }
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "route:ccfc3bb1-0ad9-b037-7cfd-744f636f3f87",
+        "channel": "links",
+        "version": "00000000000000000000000000000004.0.6578803174845625",
+        "type": "msgpack",
+        "blob": {
+          "base64": "kYuucHVibGljYXRpb25faWSvdGVsZWdyYW06MTIzOjExr3B1YmxpY2F0aW9uX3VybLZodHRwczovL3QubWUvc291cmNlLzExsnB1YmxpY2F0aW9uX3NoYTI1NtlAYjZhNjczYTY4YzhmNzY0Nzk4NWI5MGM1NzZkYjRmMzY0ZmYxOTllNzE3Y2ZkNTI3ZWJiYzQzZDNjNzhiMjNlMbtwdWJsaWNhdGlvbl9yZXZpc2lvbl9zaGEyNTbZQDJkNTg2YTcwMDU4MjdiNGVmNDFmZjE5ZTQxZjA4YTU1NGM0Y2QxODcxNzcyZDQ3ZTU4Y2IyODg4MzA4Y2MzYjauY2F0YWxvZ19zaGEyNTbZQDdkN2IzYTE0YjYxMmQzNGI3ZjJhYTFhZGJiN2UzZGMzYjk1YmNkZTg4YTNhYTczMzU0ZjZlODExMmQ2MjMyMWSqY29tcGFueV9pZKRzYmVypGtpbmSmZGlyZWN0pWJhc2lzpmRpcmVjdKVzY29yZcs/8AAAAAAAAKpjb25maWRlbmNlyz/wAAAAAAAAt3JlcXVpcmVzX2FuYWx5c3RfcmV2aWV3wg=="
+        }
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "route:ccfc3bb1-0ad9-b037-7cfd-744f636f3f87",
+        "channel": "source",
+        "version": "00000000000000000000000000000002.0.01526281477620417",
+        "type": "msgpack",
+        "blob": {
+          "base64": "ha5wdWJsaWNhdGlvbl9pZK90ZWxlZ3JhbToxMjM6MTGvcHVibGljYXRpb25fdXJstmh0dHBzOi8vdC5tZS9zb3VyY2UvMTGycHVibGljYXRpb25fc2hhMjU22UBiNmE2NzNhNjhjOGY3NjQ3OTg1YjkwYzU3NmRiNGYzNjRmZjE5OWU3MTdjZmQ1MjdlYmJjNDNkM2M3OGIyM2Uxu3B1YmxpY2F0aW9uX3JldmlzaW9uX3NoYTI1NtlAMmQ1ODZhNzAwNTgyN2I0ZWY0MWZmMTllNDFmMDhhNTU0YzRjZDE4NzE3NzJkNDdlNThjYjI4ODgzMDhjYzNiNq5jYXRhbG9nX3NoYTI1NtlAN2Q3YjNhMTRiNjEyZDM0YjdmMmFhMWFkYmI3ZTNkYzNiOTViY2RlODhhM2FhNzMzNTRmNmU4MTEyZDYyMzIxZA=="
+        }
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "channel": "__start__",
+        "version": "00000000000000000000000000000001.0.4245282121509125",
+        "type": "msgpack",
+        "blob": {
+          "base64": "iKdjb250ZXh0yAcuBZS7bmV3c19mdXR1cmVzLmRvbWFpbi5jb21wYW55rkNvbXBhbnlDb250ZXh0iatwdWJsaWNhdGlvboiiaWSvdGVsZWdyYW06MTIzOjExpnNvdXJjZax0ZWxlZ3JhbToxMjOjdXJstmh0dHBzOi8vdC5tZS9zb3VyY2UvMTGkdGV4dNlAU0JFUiDQvtC/0YPQsdC70LjQutC+0LLQsNC7INC/0L7QstGL0YjQtdC90L3Ri9C5INC/0YDQvtCz0L3QvtC3LqxwdWJsaXNoZWRfYXTZIDIwMjYtMTEtMTdUMTg6NTU6NDAuOTM0MDg4KzAwOjAwqWVkaXRlZF9hdMCsdW5yZWFkX21lZGlhwqZjaGFuZ2WjbmV3pWV2ZW50iKtkZWNpc2lvbl9pZAGocmV2aXNpb27ZQDUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2GoZXZlbnRfaWTZIDFkNzZkNDFjYzYzYTQ5YTBhYmJiOGRkODJlZmQyMWYxpGtpbmSlc2F2ZWSoYmFzaXNfYXTZIDIwMjYtMTEtMTdUMTg6NTU6NDAuOTM0MDg4KzAwOjAwqmFzc2Vzc21lbnTApWxpbmtzkYuucHVibGljYXRpb25faWSvdGVsZWdyYW06MTIzOjExr3B1YmxpY2F0aW9uX3VybLZodHRwczovL3QubWUvc291cmNlLzExsnB1YmxpY2F0aW9uX3NoYTI1NtlAYjZhNjczYTY4YzhmNzY0Nzk4NWI5MGM1NzZkYjRmMzY0ZmYxOTllNzE3Y2ZkNTI3ZWJiYzQzZDNjNzhiMjNlMbtwdWJsaWNhdGlvbl9yZXZpc2lvbl9zaGEyNTbZQDJkNTg2YTcwMDU4MjdiNGVmNDFmZjE5ZTQxZjA4YTU1NGM0Y2QxODcxNzcyZDQ3ZTU4Y2IyODg4MzA4Y2MzYjauY2F0YWxvZ19zaGEyNTbZQDdkN2IzYTE0YjYxMmQzNGI3ZjJhYTFhZGJiN2UzZGMzYjk1YmNkZTg4YTNhYTczMzU0ZjZlODExMmQ2MjMyMWSqY29tcGFueV9pZKRzYmVypGtpbmSmZGlyZWN0pWJhc2lzpmRpcmVjdKVzY29yZcs/8AAAAAAAAKpjb25maWRlbmNlyz/wAAAAAAAAt3JlcXVpcmVzX2FuYWx5c3RfcmV2aWV3wqpjb3JyZWN0aW9uwLRhZmZlY3RlZF9jb21wYW55X2lkc5Gkc2JlcqpjYW5kaWRhdGVzkYeqY29tcGFueV9pZKRzYmVyrGNvbXBhbnlfbmFtZaRTQkVSqHNoYXJlX2lkqnNiZXItc2hhcmWrY29udHJhY3RfaWSuY29udHJvbC1mdXR1cmWxYWxsb3dlZF9mb3JfZW50cnnDpm1hcmtldIWrb2JzZXJ2ZWRfYXTHQwOUqGRhdGV0aW1lqGRhdGV0aW1l2SAyMDI2LTExLTE3VDE4OjU1OjQwLjg2OTI3OCswMDowMK1mcm9taXNvZm9ybWF0qmxhc3RfcHJpY2XLQHLAAAAAAACqb3JkZXJfYm9va4Orb2JzZXJ2ZWRfYXTHQwOUqGRhdGV0aW1lqGRhdGV0aW1l2SAyMDI2LTExLTE3VDE4OjU1OjQyLjkyNjQzNSswMDowMK1mcm9taXNvZm9ybWF0o2JpZIKlcHJpY2XLQHK4AAAAAACtcXVhbnRpdHlfbG90cwWjYXNrgqVwcmljZctAcsgAAAAAAK1xdWFudGl0eV9sb3RzA650cmFkaW5nX3N0YXR1c9kmU0VDVVJJVFlfVFJBRElOR19TVEFUVVNfTk9STUFMX1RSQURJTke6dHJhZGluZ19zdGF0dXNfb2JzZXJ2ZWRfYXTHQwOUqGRhdGV0aW1lqGRhdGV0aW1l2SAyMDI2LTExLTE3VDE4OjU1OjQwLjg2OTI3OCswMDowMK1mcm9taXNvZm9ybWF0tW1hcmtldF9vYnNlcnZhdGlvbl9pZNlAN2QzNTU5MWNiZGY5OTQ4OWUxM2IwNjM0NGE4ZDY4YjNkMjA0NGJmYTI2M2M2YTdmMGUxNDQyMjBlMTUwNzQxM6dhY2NvdW50hatvYnNlcnZlZF9hdMdDA5SoZGF0ZXRpbWWoZGF0ZXRpbWXZIDIwMjYtMTEtMTdUMTg6NTU6NDAuODY5Mjc4KzAwOjAwrWZyb21pc29mb3JtYXSoY3VycmVuY3mjUlVCpmVxdWl0ectA+GoAAAAAALBhdmFpbGFibGVfbWFyZ2luy0D1+QAAAAAAomlkr3NhbmRib3gtYWNjb3VudKhwb3NpdGlvbsCsZW50cnlfcmVhc29uwKxyZWxhdGVkX25ld3OQum9taXR0ZWRfcmVsYXRlZF9uZXdzX2NvdW50ALNtb2RlbF92YWxpZGF0ZV9qc29uqHByb3Bvc2FswKtwcm9wb3NhbF9pZMCmcmV2aWV3wKVjYWxsc5CvcHJldmlvdXNfcmV2aWV3wKlyZXZpc2lvbnMApWVycm9ywA=="
+        }
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "channel": "calls",
+        "version": "00000000000000000000000000000004.0.3562800512316112",
+        "type": "msgpack",
+        "blob": {
+          "base64": "kt4AEqRyb2xlp2FuYWx5c3SkbW9kZatvYnNlcnZhdGlvbq9yZXF1ZXN0ZWRfbW9kZWysdGVzdC9hbmFseXN0qmFnZ3JlZ2F0b3Kqb3BlbnJvdXRlcqxhY3R1YWxfbW9kZWysdGVzdC9hbmFseXN0qHByb3ZpZGVyrFRlc3RQcm92aWRlcrBzZXR0aW5nc192ZXJzaW9u2UA2OGRjYzA4NDY1MWZkOTQ2Y2Q2MzAxZWJjYTQ3YmYyZGViZTgwMDU4NWUwNjExZDdmY2RlY2I2NzM3ODc1MWMypWlucHV0g6djb250ZXh0iatwdWJsaWNhdGlvboiiaWSvdGVsZWdyYW06MTIzOjExpnNvdXJjZax0ZWxlZ3JhbToxMjOjdXJstmh0dHBzOi8vdC5tZS9zb3VyY2UvMTGkdGV4dNlAU0JFUiDQvtC/0YPQsdC70LjQutC+0LLQsNC7INC/0L7QstGL0YjQtdC90L3Ri9C5INC/0YDQvtCz0L3QvtC3LqxwdWJsaXNoZWRfYXTZIDIwMjYtMTEtMTdUMTg6NTU6NDAuOTM0MDg4KzAwOjAwqWVkaXRlZF9hdMCsdW5yZWFkX21lZGlhwqZjaGFuZ2WjbmV3pWV2ZW50iKtkZWNpc2lvbl9pZAGocmV2aXNpb27ZQDUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2GoZXZlbnRfaWTZIDFkNzZkNDFjYzYzYTQ5YTBhYmJiOGRkODJlZmQyMWYxpGtpbmSlc2F2ZWSoYmFzaXNfYXTZIDIwMjYtMTEtMTdUMTg6NTU6NDAuOTM0MDg4KzAwOjAwqmFzc2Vzc21lbnTApWxpbmtzkYuucHVibGljYXRpb25faWSvdGVsZWdyYW06MTIzOjExr3B1YmxpY2F0aW9uX3VybLZodHRwczovL3QubWUvc291cmNlLzExsnB1YmxpY2F0aW9uX3NoYTI1NtlAYjZhNjczYTY4YzhmNzY0Nzk4NWI5MGM1NzZkYjRmMzY0ZmYxOTllNzE3Y2ZkNTI3ZWJiYzQzZDNjNzhiMjNlMbtwdWJsaWNhdGlvbl9yZXZpc2lvbl9zaGEyNTbZQDJkNTg2YTcwMDU4MjdiNGVmNDFmZjE5ZTQxZjA4YTU1NGM0Y2QxODcxNzcyZDQ3ZTU4Y2IyODg4MzA4Y2MzYjauY2F0YWxvZ19zaGEyNTbZQDdkN2IzYTE0YjYxMmQzNGI3ZjJhYTFhZGJiN2UzZGMzYjk1YmNkZTg4YTNhYTczMzU0ZjZlODExMmQ2MjMyMWSqY29tcGFueV9pZKRzYmVypGtpbmSmZGlyZWN0pWJhc2lzpmRpcmVjdKVzY29yZcs/8AAAAAAAAKpjb25maWRlbmNlyz/wAAAAAAAAt3JlcXVpcmVzX2FuYWx5c3RfcmV2aWV3wqpjb3JyZWN0aW9uwLRhZmZlY3RlZF9jb21wYW55X2lkc5Gkc2JlcqpjYW5kaWRhdGVzkYeqY29tcGFueV9pZKRzYmVyrGNvbXBhbnlfbmFtZaRTQkVSqHNoYXJlX2lkqnNiZXItc2hhcmWrY29udHJhY3RfaWSuY29udHJvbC1mdXR1cmWxYWxsb3dlZF9mb3JfZW50cnnDpm1hcmtldIWrb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0MC44NjkyNzhaqmxhc3RfcHJpY2XLQHLAAAAAAACqb3JkZXJfYm9va4Orb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0Mi45MjY0MzVao2JpZIKlcHJpY2XLQHK4AAAAAACtcXVhbnRpdHlfbG90cwWjYXNrgqVwcmljZctAcsgAAAAAAK1xdWFudGl0eV9sb3RzA650cmFkaW5nX3N0YXR1c9kmU0VDVVJJVFlfVFJBRElOR19TVEFUVVNfTk9STUFMX1RSQURJTke6dHJhZGluZ19zdGF0dXNfb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0MC44NjkyNzhatW1hcmtldF9vYnNlcnZhdGlvbl9pZNlAN2QzNTU5MWNiZGY5OTQ4OWUxM2IwNjM0NGE4ZDY4YjNkMjA0NGJmYTI2M2M2YTdmMGUxNDQyMjBlMTUwNzQxM6dhY2NvdW50hatvYnNlcnZlZF9hdLsyMDI2LTExLTE3VDE4OjU1OjQwLjg2OTI3OFqoY3VycmVuY3mjUlVCpmVxdWl0ectA+GoAAAAAALBhdmFpbGFibGVfbWFyZ2luy0D1+QAAAAAAomlkr3NhbmRib3gtYWNjb3VudKhwb3NpdGlvbsCsZW50cnlfcmVhc29uwKxyZWxhdGVkX25ld3OQum9taXR0ZWRfcmVsYXRlZF9uZXdzX2NvdW50AKhwcm9wb3NhbMCmcmV2aWV3wKZvdXRwdXSMpmFjdGlvbqVlbnRlcq5wdWJsaWNhdGlvbl9pZK90ZWxlZ3JhbToxMjM6MTGkc2lkZaRsb25nq2VudHJ5X3ByaWNly0BywAAAAAAAqXN0b3BfbG9zc8tAciAAAAAAAKt0YWtlX3Byb2ZpdMtAdAAAAAAAAKZyZWFzb27ZL9CY0YHRhdC+0LTQvdC+0LUg0L7RgdC90L7QstCw0L3QuNC1INCy0YXQvtC00LAuqmNvbXBhbnlfaWSkc2Jlcqtjb250cmFjdF9pZK5jb250cm9sLWZ1dHVyZathc3Nlc3NtZW50c5GEq2NvbnRyYWN0X2lkrmNvbnRyb2wtZnV0dXJlpmltcGFjdKh2ZXJpZmllZKZyZWFzb26pRm9yZWNhc3QuqGV2aWRlbmNlkYKocmV2aXNpb27ZQDUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2GlcXVvdGXZQFNCRVIg0L7Qv9GD0LHQu9C40LrQvtCy0LDQuyDQv9C+0LLRi9GI0LXQvdC90YvQuSDQv9GA0L7Qs9C90L7Qty6vbGV2ZWxfcmF0aW9uYWxlg6VlbnRyeaZRdW90ZS6pc3RvcF9sb3NzqFN1cHBvcnQuq3Rha2VfcHJvZml0p1RhcmdldC6iaWTZijUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2E6cmV2aWV3OjdjNWQ0MGFhNWFlNTY4YzMyN2M2MWQyZjk4MDhmYjBiYWY2MGE0Y2I3NTZkMjRmYjU4YTNjOGFlOWE3ZjFjY2U6MaVlcnJvcsCldXNhZ2WFrGlucHV0X3Rva2VucxStb3V0cHV0X3Rva2Vucx6sdG90YWxfdG9rZW5zMrNpbnB1dF90b2tlbl9kZXRhaWxzgLRvdXRwdXRfdG9rZW5fZGV0YWlsc4CkY29zdMs/UGJN0vGp/KpzdGFydGVkX2F02SAyMDI2LTExLTE3VDE4OjU1OjQzLjAyMzA2NyswMDowMKhtZXRhZGF0YYaiaWSrZ2VuLWNvbnRyb2yubW9kZWxfcHJvdmlkZXKqb3BlbnJvdXRlcq1maW5pc2hfcmVhc29upHN0b3CsY29zdF9kZXRhaWxzwLJzeXN0ZW1fZmluZ2VycHJpbnTAs29wZW5yb3V0ZXJfbWV0YWRhdGHAqnJhd19vdXRwdXTaAyd7ImFjdGlvbiI6ICJlbnRlciIsICJwdWJsaWNhdGlvbl9pZCI6ICJ0ZWxlZ3JhbToxMjM6MTEiLCAiY29tcGFueV9pZCI6ICJzYmVyIiwgImNvbnRyYWN0X2lkIjogImNvbnRyb2wtZnV0dXJlIiwgInNpZGUiOiAibG9uZyIsICJlbnRyeV9wcmljZSI6IDMwMCwgInN0b3BfbG9zcyI6IDI5MCwgInRha2VfcHJvZml0IjogMzIwLCAicmVhc29uIjogIlx1MDQxOFx1MDQ0MVx1MDQ0NVx1MDQzZVx1MDQzNFx1MDQzZFx1MDQzZVx1MDQzNSBcdTA0M2VcdTA0NDFcdTA0M2RcdTA0M2VcdTA0MzJcdTA0MzBcdTA0M2RcdTA0MzhcdTA0MzUgXHUwNDMyXHUwNDQ1XHUwNDNlXHUwNDM0XHUwNDMwLiIsICJsZXZlbF9yYXRpb25hbGUiOiB7ImVudHJ5IjogIlF1b3RlLiIsICJzdG9wX2xvc3MiOiAiU3VwcG9ydC4iLCAidGFrZV9wcm9maXQiOiAiVGFyZ2V0LiJ9LCAiYXNzZXNzbWVudHMiOiBbeyJjb250cmFjdF9pZCI6ICJjb250cm9sLWZ1dHVyZSIsICJpbXBhY3QiOiAidmVyaWZpZWQiLCAicmVhc29uIjogIkZvcmVjYXN0LiIsICJldmlkZW5jZSI6IFt7InJldmlzaW9uIjogIjUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2EiLCAicXVvdGUiOiAiU0JFUiBcdTA0M2VcdTA0M2ZcdTA0NDNcdTA0MzFcdTA0M2JcdTA0MzhcdTA0M2FcdTA0M2VcdTA0MzJcdTA0MzBcdTA0M2IgXHUwNDNmXHUwNDNlXHUwNDMyXHUwNDRiXHUwNDQ4XHUwNDM1XHUwNDNkXHUwNDNkXHUwNDRiXHUwNDM5IFx1MDQzZlx1MDQ0MFx1MDQzZVx1MDQzM1x1MDQzZFx1MDQzZVx1MDQzNy4ifV19XX2pZm9ybWVkX2F02SAyMDI2LTExLTE3VDE4OjU1OjQzLjE2NjMzMSswMDowMKJhdNkgMjAyNi0xMS0xN1QxODo1NTo0My4xNjYzMzErMDA6MDCqbGF0ZW5jeV9tc8tAYc7ZFocrAt4AEaRyb2xlpmNyaXRpY6Rtb2Rlq29ic2VydmF0aW9ur3JlcXVlc3RlZF9tb2RlbKt0ZXN0L2NyaXRpY6phZ2dyZWdhdG9yqm9wZW5yb3V0ZXKsYWN0dWFsX21vZGVsq3Rlc3QvY3JpdGljqHByb3ZpZGVyrFRlc3RQcm92aWRlcrBzZXR0aW5nc192ZXJzaW9u2UA2OGRjYzA4NDY1MWZkOTQ2Y2Q2MzAxZWJjYTQ3YmYyZGViZTgwMDU4NWUwNjExZDdmY2RlY2I2NzM3ODc1MWMypWlucHV0g6djb250ZXh0iatwdWJsaWNhdGlvboiiaWSvdGVsZWdyYW06MTIzOjExpnNvdXJjZax0ZWxlZ3JhbToxMjOjdXJstmh0dHBzOi8vdC5tZS9zb3VyY2UvMTGkdGV4dNlAU0JFUiDQvtC/0YPQsdC70LjQutC+0LLQsNC7INC/0L7QstGL0YjQtdC90L3Ri9C5INC/0YDQvtCz0L3QvtC3LqxwdWJsaXNoZWRfYXTZIDIwMjYtMTEtMTdUMTg6NTU6NDAuOTM0MDg4KzAwOjAwqWVkaXRlZF9hdMCsdW5yZWFkX21lZGlhwqZjaGFuZ2WjbmV3pWV2ZW50iKtkZWNpc2lvbl9pZAGocmV2aXNpb27ZQDUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2GoZXZlbnRfaWTZIDFkNzZkNDFjYzYzYTQ5YTBhYmJiOGRkODJlZmQyMWYxpGtpbmSlc2F2ZWSoYmFzaXNfYXTZIDIwMjYtMTEtMTdUMTg6NTU6NDAuOTM0MDg4KzAwOjAwqmFzc2Vzc21lbnTApWxpbmtzkYuucHVibGljYXRpb25faWSvdGVsZWdyYW06MTIzOjExr3B1YmxpY2F0aW9uX3VybLZodHRwczovL3QubWUvc291cmNlLzExsnB1YmxpY2F0aW9uX3NoYTI1NtlAYjZhNjczYTY4YzhmNzY0Nzk4NWI5MGM1NzZkYjRmMzY0ZmYxOTllNzE3Y2ZkNTI3ZWJiYzQzZDNjNzhiMjNlMbtwdWJsaWNhdGlvbl9yZXZpc2lvbl9zaGEyNTbZQDJkNTg2YTcwMDU4MjdiNGVmNDFmZjE5ZTQxZjA4YTU1NGM0Y2QxODcxNzcyZDQ3ZTU4Y2IyODg4MzA4Y2MzYjauY2F0YWxvZ19zaGEyNTbZQDdkN2IzYTE0YjYxMmQzNGI3ZjJhYTFhZGJiN2UzZGMzYjk1YmNkZTg4YTNhYTczMzU0ZjZlODExMmQ2MjMyMWSqY29tcGFueV9pZKRzYmVypGtpbmSmZGlyZWN0pWJhc2lzpmRpcmVjdKVzY29yZcs/8AAAAAAAAKpjb25maWRlbmNlyz/wAAAAAAAAt3JlcXVpcmVzX2FuYWx5c3RfcmV2aWV3wqpjb3JyZWN0aW9uwLRhZmZlY3RlZF9jb21wYW55X2lkc5Gkc2JlcqpjYW5kaWRhdGVzkYeqY29tcGFueV9pZKRzYmVyrGNvbXBhbnlfbmFtZaRTQkVSqHNoYXJlX2lkqnNiZXItc2hhcmWrY29udHJhY3RfaWSuY29udHJvbC1mdXR1cmWxYWxsb3dlZF9mb3JfZW50cnnDpm1hcmtldIWrb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0MC44NjkyNzhaqmxhc3RfcHJpY2XLQHLAAAAAAACqb3JkZXJfYm9va4Orb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0Mi45MjY0MzVao2JpZIKlcHJpY2XLQHK4AAAAAACtcXVhbnRpdHlfbG90cwWjYXNrgqVwcmljZctAcsgAAAAAAK1xdWFudGl0eV9sb3RzA650cmFkaW5nX3N0YXR1c9kmU0VDVVJJVFlfVFJBRElOR19TVEFUVVNfTk9STUFMX1RSQURJTke6dHJhZGluZ19zdGF0dXNfb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0MC44NjkyNzhatW1hcmtldF9vYnNlcnZhdGlvbl9pZNlAN2QzNTU5MWNiZGY5OTQ4OWUxM2IwNjM0NGE4ZDY4YjNkMjA0NGJmYTI2M2M2YTdmMGUxNDQyMjBlMTUwNzQxM6dhY2NvdW50hatvYnNlcnZlZF9hdLsyMDI2LTExLTE3VDE4OjU1OjQwLjg2OTI3OFqoY3VycmVuY3mjUlVCpmVxdWl0ectA+GoAAAAAALBhdmFpbGFibGVfbWFyZ2luy0D1+QAAAAAAomlkr3NhbmRib3gtYWNjb3VudKhwb3NpdGlvbsCsZW50cnlfcmVhc29uwKxyZWxhdGVkX25ld3OQum9taXR0ZWRfcmVsYXRlZF9uZXdzX2NvdW50AKhwcm9wb3NhbIymYWN0aW9upWVudGVyrnB1YmxpY2F0aW9uX2lkr3RlbGVncmFtOjEyMzoxMaRzaWRlpGxvbmerZW50cnlfcHJpY2XLQHLAAAAAAACpc3RvcF9sb3Nzy0ByIAAAAAAAq3Rha2VfcHJvZml0y0B0AAAAAAAApnJlYXNvbtkv0JjRgdGF0L7QtNC90L7QtSDQvtGB0L3QvtCy0LDQvdC40LUg0LLRhdC+0LTQsC6qY29tcGFueV9pZKRzYmVyq2NvbnRyYWN0X2lkrmNvbnRyb2wtZnV0dXJlq2Fzc2Vzc21lbnRzkYSrY29udHJhY3RfaWSuY29udHJvbC1mdXR1cmWmaW1wYWN0qHZlcmlmaWVkpnJlYXNvbqlGb3JlY2FzdC6oZXZpZGVuY2WRgqhyZXZpc2lvbtlANTAxYzEyNDM0ZDhkMzkxMDczYzkyNGQyZTM0NzdhMGJlNzA1OWRkYWZiM2YwNmE5MjFhMjQ3Y2U5NWVjMzI3YaVxdW90ZdlAU0JFUiDQvtC/0YPQsdC70LjQutC+0LLQsNC7INC/0L7QstGL0YjQtdC90L3Ri9C5INC/0YDQvtCz0L3QvtC3Lq9sZXZlbF9yYXRpb25hbGWDpWVudHJ5plF1b3RlLqlzdG9wX2xvc3OoU3VwcG9ydC6rdGFrZV9wcm9maXSnVGFyZ2V0LqJpZNmKNTAxYzEyNDM0ZDhkMzkxMDczYzkyNGQyZTM0NzdhMGJlNzA1OWRkYWZiM2YwNmE5MjFhMjQ3Y2U5NWVjMzI3YTpyZXZpZXc6N2M1ZDQwYWE1YWU1NjhjMzI3YzYxZDJmOTgwOGZiMGJhZjYwYTRjYjc1NmQyNGZiNThhM2M4YWU5YTdmMWNjZToxr3ByZXZpb3VzX3Jldmlld8Cmb3V0cHV0hKtwcm9wb3NhbF9pZNmKNTAxYzEyNDM0ZDhkMzkxMDczYzkyNGQyZTM0NzdhMGJlNzA1OWRkYWZiM2YwNmE5MjFhMjQ3Y2U5NWVjMzI3YTpyZXZpZXc6N2M1ZDQwYWE1YWU1NjhjMzI3YzYxZDJmOTgwOGZiMGJhZjYwYTRjYjc1NmQyNGZiNThhM2M4YWU5YTdmMWNjZToxqGFwcHJvdmVkwqpvYmplY3Rpb25zkdkiSW5zdWZmaWNpZW50IGluZGVwZW5kZW50IGV2aWRlbmNlLqZyZWFzb27ZNUNoZWNrZWQgYWdhaW5zdCB0aGUgb3JpZ2luYWwgcHVibGljYXRpb24gYW5kIGNvbnRleHQupWVycm9ywKV1c2FnZYWsaW5wdXRfdG9rZW5zFK1vdXRwdXRfdG9rZW5zHqx0b3RhbF90b2tlbnMys2lucHV0X3Rva2VuX2RldGFpbHOAtG91dHB1dF90b2tlbl9kZXRhaWxzgKRjb3N0yz9QYk3S8an8qnN0YXJ0ZWRfYXTZIDIwMjYtMTEtMTdUMTg6NTU6NDMuMTc3Mjg2KzAwOjAwqG1ldGFkYXRhhqJpZKtnZW4tY29udHJvbK5tb2RlbF9wcm92aWRlcqpvcGVucm91dGVyrWZpbmlzaF9yZWFzb26kc3RvcKxjb3N0X2RldGFpbHPAsnN5c3RlbV9maW5nZXJwcmludMCzb3BlbnJvdXRlcl9tZXRhZGF0YcCqcmF3X291dHB1dNoBKXsicHJvcG9zYWxfaWQiOiAiNTAxYzEyNDM0ZDhkMzkxMDczYzkyNGQyZTM0NzdhMGJlNzA1OWRkYWZiM2YwNmE5MjFhMjQ3Y2U5NWVjMzI3YTpyZXZpZXc6N2M1ZDQwYWE1YWU1NjhjMzI3YzYxZDJmOTgwOGZiMGJhZjYwYTRjYjc1NmQyNGZiNThhM2M4YWU5YTdmMWNjZToxIiwgImFwcHJvdmVkIjogZmFsc2UsICJvYmplY3Rpb25zIjogWyJJbnN1ZmZpY2llbnQgaW5kZXBlbmRlbnQgZXZpZGVuY2UuIl0sICJyZWFzb24iOiAiQ2hlY2tlZCBhZ2FpbnN0IHRoZSBvcmlnaW5hbCBwdWJsaWNhdGlvbiBhbmQgY29udGV4dC4ifaJhdNkgMjAyNi0xMS0xN1QxODo1NTo0My4yNjMxODUrMDA6MDCqbGF0ZW5jeV9tc8tAVSvGp++dsg=="
+        }
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "channel": "calls",
+        "version": "00000000000000000000000000000002.0.03899172237205162",
+        "type": "msgpack",
+        "blob": {
+          "base64": "kA=="
+        }
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "channel": "calls",
+        "version": "00000000000000000000000000000003.0.8425009484907691",
+        "type": "msgpack",
+        "blob": {
+          "base64": "kd4AEqRyb2xlp2FuYWx5c3SkbW9kZatvYnNlcnZhdGlvbq9yZXF1ZXN0ZWRfbW9kZWysdGVzdC9hbmFseXN0qmFnZ3JlZ2F0b3Kqb3BlbnJvdXRlcqxhY3R1YWxfbW9kZWysdGVzdC9hbmFseXN0qHByb3ZpZGVyrFRlc3RQcm92aWRlcrBzZXR0aW5nc192ZXJzaW9u2UA2OGRjYzA4NDY1MWZkOTQ2Y2Q2MzAxZWJjYTQ3YmYyZGViZTgwMDU4NWUwNjExZDdmY2RlY2I2NzM3ODc1MWMypWlucHV0g6djb250ZXh0iatwdWJsaWNhdGlvboiiaWSvdGVsZWdyYW06MTIzOjExpnNvdXJjZax0ZWxlZ3JhbToxMjOjdXJstmh0dHBzOi8vdC5tZS9zb3VyY2UvMTGkdGV4dNlAU0JFUiDQvtC/0YPQsdC70LjQutC+0LLQsNC7INC/0L7QstGL0YjQtdC90L3Ri9C5INC/0YDQvtCz0L3QvtC3LqxwdWJsaXNoZWRfYXTZIDIwMjYtMTEtMTdUMTg6NTU6NDAuOTM0MDg4KzAwOjAwqWVkaXRlZF9hdMCsdW5yZWFkX21lZGlhwqZjaGFuZ2WjbmV3pWV2ZW50iKtkZWNpc2lvbl9pZAGocmV2aXNpb27ZQDUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2GoZXZlbnRfaWTZIDFkNzZkNDFjYzYzYTQ5YTBhYmJiOGRkODJlZmQyMWYxpGtpbmSlc2F2ZWSoYmFzaXNfYXTZIDIwMjYtMTEtMTdUMTg6NTU6NDAuOTM0MDg4KzAwOjAwqmFzc2Vzc21lbnTApWxpbmtzkYuucHVibGljYXRpb25faWSvdGVsZWdyYW06MTIzOjExr3B1YmxpY2F0aW9uX3VybLZodHRwczovL3QubWUvc291cmNlLzExsnB1YmxpY2F0aW9uX3NoYTI1NtlAYjZhNjczYTY4YzhmNzY0Nzk4NWI5MGM1NzZkYjRmMzY0ZmYxOTllNzE3Y2ZkNTI3ZWJiYzQzZDNjNzhiMjNlMbtwdWJsaWNhdGlvbl9yZXZpc2lvbl9zaGEyNTbZQDJkNTg2YTcwMDU4MjdiNGVmNDFmZjE5ZTQxZjA4YTU1NGM0Y2QxODcxNzcyZDQ3ZTU4Y2IyODg4MzA4Y2MzYjauY2F0YWxvZ19zaGEyNTbZQDdkN2IzYTE0YjYxMmQzNGI3ZjJhYTFhZGJiN2UzZGMzYjk1YmNkZTg4YTNhYTczMzU0ZjZlODExMmQ2MjMyMWSqY29tcGFueV9pZKRzYmVypGtpbmSmZGlyZWN0pWJhc2lzpmRpcmVjdKVzY29yZcs/8AAAAAAAAKpjb25maWRlbmNlyz/wAAAAAAAAt3JlcXVpcmVzX2FuYWx5c3RfcmV2aWV3wqpjb3JyZWN0aW9uwLRhZmZlY3RlZF9jb21wYW55X2lkc5Gkc2JlcqpjYW5kaWRhdGVzkYeqY29tcGFueV9pZKRzYmVyrGNvbXBhbnlfbmFtZaRTQkVSqHNoYXJlX2lkqnNiZXItc2hhcmWrY29udHJhY3RfaWSuY29udHJvbC1mdXR1cmWxYWxsb3dlZF9mb3JfZW50cnnDpm1hcmtldIWrb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0MC44NjkyNzhaqmxhc3RfcHJpY2XLQHLAAAAAAACqb3JkZXJfYm9va4Orb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0Mi45MjY0MzVao2JpZIKlcHJpY2XLQHK4AAAAAACtcXVhbnRpdHlfbG90cwWjYXNrgqVwcmljZctAcsgAAAAAAK1xdWFudGl0eV9sb3RzA650cmFkaW5nX3N0YXR1c9kmU0VDVVJJVFlfVFJBRElOR19TVEFUVVNfTk9STUFMX1RSQURJTke6dHJhZGluZ19zdGF0dXNfb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0MC44NjkyNzhatW1hcmtldF9vYnNlcnZhdGlvbl9pZNlAN2QzNTU5MWNiZGY5OTQ4OWUxM2IwNjM0NGE4ZDY4YjNkMjA0NGJmYTI2M2M2YTdmMGUxNDQyMjBlMTUwNzQxM6dhY2NvdW50hatvYnNlcnZlZF9hdLsyMDI2LTExLTE3VDE4OjU1OjQwLjg2OTI3OFqoY3VycmVuY3mjUlVCpmVxdWl0ectA+GoAAAAAALBhdmFpbGFibGVfbWFyZ2luy0D1+QAAAAAAomlkr3NhbmRib3gtYWNjb3VudKhwb3NpdGlvbsCsZW50cnlfcmVhc29uwKxyZWxhdGVkX25ld3OQum9taXR0ZWRfcmVsYXRlZF9uZXdzX2NvdW50AKhwcm9wb3NhbMCmcmV2aWV3wKZvdXRwdXSMpmFjdGlvbqVlbnRlcq5wdWJsaWNhdGlvbl9pZK90ZWxlZ3JhbToxMjM6MTGkc2lkZaRsb25nq2VudHJ5X3ByaWNly0BywAAAAAAAqXN0b3BfbG9zc8tAciAAAAAAAKt0YWtlX3Byb2ZpdMtAdAAAAAAAAKZyZWFzb27ZL9CY0YHRhdC+0LTQvdC+0LUg0L7RgdC90L7QstCw0L3QuNC1INCy0YXQvtC00LAuqmNvbXBhbnlfaWSkc2Jlcqtjb250cmFjdF9pZK5jb250cm9sLWZ1dHVyZathc3Nlc3NtZW50c5GEq2NvbnRyYWN0X2lkrmNvbnRyb2wtZnV0dXJlpmltcGFjdKh2ZXJpZmllZKZyZWFzb26pRm9yZWNhc3QuqGV2aWRlbmNlkYKocmV2aXNpb27ZQDUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2GlcXVvdGXZQFNCRVIg0L7Qv9GD0LHQu9C40LrQvtCy0LDQuyDQv9C+0LLRi9GI0LXQvdC90YvQuSDQv9GA0L7Qs9C90L7Qty6vbGV2ZWxfcmF0aW9uYWxlg6VlbnRyeaZRdW90ZS6pc3RvcF9sb3NzqFN1cHBvcnQuq3Rha2VfcHJvZml0p1RhcmdldC6iaWTZijUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2E6cmV2aWV3OjdjNWQ0MGFhNWFlNTY4YzMyN2M2MWQyZjk4MDhmYjBiYWY2MGE0Y2I3NTZkMjRmYjU4YTNjOGFlOWE3ZjFjY2U6MaVlcnJvcsCldXNhZ2WFrGlucHV0X3Rva2VucxStb3V0cHV0X3Rva2Vucx6sdG90YWxfdG9rZW5zMrNpbnB1dF90b2tlbl9kZXRhaWxzgLRvdXRwdXRfdG9rZW5fZGV0YWlsc4CkY29zdMs/UGJN0vGp/KpzdGFydGVkX2F02SAyMDI2LTExLTE3VDE4OjU1OjQzLjAyMzA2NyswMDowMKhtZXRhZGF0YYaiaWSrZ2VuLWNvbnRyb2yubW9kZWxfcHJvdmlkZXKqb3BlbnJvdXRlcq1maW5pc2hfcmVhc29upHN0b3CsY29zdF9kZXRhaWxzwLJzeXN0ZW1fZmluZ2VycHJpbnTAs29wZW5yb3V0ZXJfbWV0YWRhdGHAqnJhd19vdXRwdXTaAyd7ImFjdGlvbiI6ICJlbnRlciIsICJwdWJsaWNhdGlvbl9pZCI6ICJ0ZWxlZ3JhbToxMjM6MTEiLCAiY29tcGFueV9pZCI6ICJzYmVyIiwgImNvbnRyYWN0X2lkIjogImNvbnRyb2wtZnV0dXJlIiwgInNpZGUiOiAibG9uZyIsICJlbnRyeV9wcmljZSI6IDMwMCwgInN0b3BfbG9zcyI6IDI5MCwgInRha2VfcHJvZml0IjogMzIwLCAicmVhc29uIjogIlx1MDQxOFx1MDQ0MVx1MDQ0NVx1MDQzZVx1MDQzNFx1MDQzZFx1MDQzZVx1MDQzNSBcdTA0M2VcdTA0NDFcdTA0M2RcdTA0M2VcdTA0MzJcdTA0MzBcdTA0M2RcdTA0MzhcdTA0MzUgXHUwNDMyXHUwNDQ1XHUwNDNlXHUwNDM0XHUwNDMwLiIsICJsZXZlbF9yYXRpb25hbGUiOiB7ImVudHJ5IjogIlF1b3RlLiIsICJzdG9wX2xvc3MiOiAiU3VwcG9ydC4iLCAidGFrZV9wcm9maXQiOiAiVGFyZ2V0LiJ9LCAiYXNzZXNzbWVudHMiOiBbeyJjb250cmFjdF9pZCI6ICJjb250cm9sLWZ1dHVyZSIsICJpbXBhY3QiOiAidmVyaWZpZWQiLCAicmVhc29uIjogIkZvcmVjYXN0LiIsICJldmlkZW5jZSI6IFt7InJldmlzaW9uIjogIjUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2EiLCAicXVvdGUiOiAiU0JFUiBcdTA0M2VcdTA0M2ZcdTA0NDNcdTA0MzFcdTA0M2JcdTA0MzhcdTA0M2FcdTA0M2VcdTA0MzJcdTA0MzBcdTA0M2IgXHUwNDNmXHUwNDNlXHUwNDMyXHUwNDRiXHUwNDQ4XHUwNDM1XHUwNDNkXHUwNDNkXHUwNDRiXHUwNDM5IFx1MDQzZlx1MDQ0MFx1MDQzZVx1MDQzM1x1MDQzZFx1MDQzZVx1MDQzNy4ifV19XX2pZm9ybWVkX2F02SAyMDI2LTExLTE3VDE4OjU1OjQzLjE2NjMzMSswMDowMKJhdNkgMjAyNi0xMS0xN1QxODo1NTo0My4xNjYzMzErMDA6MDCqbGF0ZW5jeV9tc8tAYc7ZFocrAg=="
+        }
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "channel": "calls",
+        "version": "00000000000000000000000000000005.0.3972197230729334",
+        "type": "msgpack",
+        "blob": {
+          "base64": "k94AEqRyb2xlp2FuYWx5c3SkbW9kZatvYnNlcnZhdGlvbq9yZXF1ZXN0ZWRfbW9kZWysdGVzdC9hbmFseXN0qmFnZ3JlZ2F0b3Kqb3BlbnJvdXRlcqxhY3R1YWxfbW9kZWysdGVzdC9hbmFseXN0qHByb3ZpZGVyrFRlc3RQcm92aWRlcrBzZXR0aW5nc192ZXJzaW9u2UA2OGRjYzA4NDY1MWZkOTQ2Y2Q2MzAxZWJjYTQ3YmYyZGViZTgwMDU4NWUwNjExZDdmY2RlY2I2NzM3ODc1MWMypWlucHV0g6djb250ZXh0iatwdWJsaWNhdGlvboiiaWSvdGVsZWdyYW06MTIzOjExpnNvdXJjZax0ZWxlZ3JhbToxMjOjdXJstmh0dHBzOi8vdC5tZS9zb3VyY2UvMTGkdGV4dNlAU0JFUiDQvtC/0YPQsdC70LjQutC+0LLQsNC7INC/0L7QstGL0YjQtdC90L3Ri9C5INC/0YDQvtCz0L3QvtC3LqxwdWJsaXNoZWRfYXTZIDIwMjYtMTEtMTdUMTg6NTU6NDAuOTM0MDg4KzAwOjAwqWVkaXRlZF9hdMCsdW5yZWFkX21lZGlhwqZjaGFuZ2WjbmV3pWV2ZW50iKtkZWNpc2lvbl9pZAGocmV2aXNpb27ZQDUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2GoZXZlbnRfaWTZIDFkNzZkNDFjYzYzYTQ5YTBhYmJiOGRkODJlZmQyMWYxpGtpbmSlc2F2ZWSoYmFzaXNfYXTZIDIwMjYtMTEtMTdUMTg6NTU6NDAuOTM0MDg4KzAwOjAwqmFzc2Vzc21lbnTApWxpbmtzkYuucHVibGljYXRpb25faWSvdGVsZWdyYW06MTIzOjExr3B1YmxpY2F0aW9uX3VybLZodHRwczovL3QubWUvc291cmNlLzExsnB1YmxpY2F0aW9uX3NoYTI1NtlAYjZhNjczYTY4YzhmNzY0Nzk4NWI5MGM1NzZkYjRmMzY0ZmYxOTllNzE3Y2ZkNTI3ZWJiYzQzZDNjNzhiMjNlMbtwdWJsaWNhdGlvbl9yZXZpc2lvbl9zaGEyNTbZQDJkNTg2YTcwMDU4MjdiNGVmNDFmZjE5ZTQxZjA4YTU1NGM0Y2QxODcxNzcyZDQ3ZTU4Y2IyODg4MzA4Y2MzYjauY2F0YWxvZ19zaGEyNTbZQDdkN2IzYTE0YjYxMmQzNGI3ZjJhYTFhZGJiN2UzZGMzYjk1YmNkZTg4YTNhYTczMzU0ZjZlODExMmQ2MjMyMWSqY29tcGFueV9pZKRzYmVypGtpbmSmZGlyZWN0pWJhc2lzpmRpcmVjdKVzY29yZcs/8AAAAAAAAKpjb25maWRlbmNlyz/wAAAAAAAAt3JlcXVpcmVzX2FuYWx5c3RfcmV2aWV3wqpjb3JyZWN0aW9uwLRhZmZlY3RlZF9jb21wYW55X2lkc5Gkc2JlcqpjYW5kaWRhdGVzkYeqY29tcGFueV9pZKRzYmVyrGNvbXBhbnlfbmFtZaRTQkVSqHNoYXJlX2lkqnNiZXItc2hhcmWrY29udHJhY3RfaWSuY29udHJvbC1mdXR1cmWxYWxsb3dlZF9mb3JfZW50cnnDpm1hcmtldIWrb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0MC44NjkyNzhaqmxhc3RfcHJpY2XLQHLAAAAAAACqb3JkZXJfYm9va4Orb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0Mi45MjY0MzVao2JpZIKlcHJpY2XLQHK4AAAAAACtcXVhbnRpdHlfbG90cwWjYXNrgqVwcmljZctAcsgAAAAAAK1xdWFudGl0eV9sb3RzA650cmFkaW5nX3N0YXR1c9kmU0VDVVJJVFlfVFJBRElOR19TVEFUVVNfTk9STUFMX1RSQURJTke6dHJhZGluZ19zdGF0dXNfb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0MC44NjkyNzhatW1hcmtldF9vYnNlcnZhdGlvbl9pZNlAN2QzNTU5MWNiZGY5OTQ4OWUxM2IwNjM0NGE4ZDY4YjNkMjA0NGJmYTI2M2M2YTdmMGUxNDQyMjBlMTUwNzQxM6dhY2NvdW50hatvYnNlcnZlZF9hdLsyMDI2LTExLTE3VDE4OjU1OjQwLjg2OTI3OFqoY3VycmVuY3mjUlVCpmVxdWl0ectA+GoAAAAAALBhdmFpbGFibGVfbWFyZ2luy0D1+QAAAAAAomlkr3NhbmRib3gtYWNjb3VudKhwb3NpdGlvbsCsZW50cnlfcmVhc29uwKxyZWxhdGVkX25ld3OQum9taXR0ZWRfcmVsYXRlZF9uZXdzX2NvdW50AKhwcm9wb3NhbMCmcmV2aWV3wKZvdXRwdXSMpmFjdGlvbqVlbnRlcq5wdWJsaWNhdGlvbl9pZK90ZWxlZ3JhbToxMjM6MTGkc2lkZaRsb25nq2VudHJ5X3ByaWNly0BywAAAAAAAqXN0b3BfbG9zc8tAciAAAAAAAKt0YWtlX3Byb2ZpdMtAdAAAAAAAAKZyZWFzb27ZL9CY0YHRhdC+0LTQvdC+0LUg0L7RgdC90L7QstCw0L3QuNC1INCy0YXQvtC00LAuqmNvbXBhbnlfaWSkc2Jlcqtjb250cmFjdF9pZK5jb250cm9sLWZ1dHVyZathc3Nlc3NtZW50c5GEq2NvbnRyYWN0X2lkrmNvbnRyb2wtZnV0dXJlpmltcGFjdKh2ZXJpZmllZKZyZWFzb26pRm9yZWNhc3QuqGV2aWRlbmNlkYKocmV2aXNpb27ZQDUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2GlcXVvdGXZQFNCRVIg0L7Qv9GD0LHQu9C40LrQvtCy0LDQuyDQv9C+0LLRi9GI0LXQvdC90YvQuSDQv9GA0L7Qs9C90L7Qty6vbGV2ZWxfcmF0aW9uYWxlg6VlbnRyeaZRdW90ZS6pc3RvcF9sb3NzqFN1cHBvcnQuq3Rha2VfcHJvZml0p1RhcmdldC6iaWTZijUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2E6cmV2aWV3OjdjNWQ0MGFhNWFlNTY4YzMyN2M2MWQyZjk4MDhmYjBiYWY2MGE0Y2I3NTZkMjRmYjU4YTNjOGFlOWE3ZjFjY2U6MaVlcnJvcsCldXNhZ2WFrGlucHV0X3Rva2VucxStb3V0cHV0X3Rva2Vucx6sdG90YWxfdG9rZW5zMrNpbnB1dF90b2tlbl9kZXRhaWxzgLRvdXRwdXRfdG9rZW5fZGV0YWlsc4CkY29zdMs/UGJN0vGp/KpzdGFydGVkX2F02SAyMDI2LTExLTE3VDE4OjU1OjQzLjAyMzA2NyswMDowMKhtZXRhZGF0YYaiaWSrZ2VuLWNvbnRyb2yubW9kZWxfcHJvdmlkZXKqb3BlbnJvdXRlcq1maW5pc2hfcmVhc29upHN0b3CsY29zdF9kZXRhaWxzwLJzeXN0ZW1fZmluZ2VycHJpbnTAs29wZW5yb3V0ZXJfbWV0YWRhdGHAqnJhd19vdXRwdXTaAyd7ImFjdGlvbiI6ICJlbnRlciIsICJwdWJsaWNhdGlvbl9pZCI6ICJ0ZWxlZ3JhbToxMjM6MTEiLCAiY29tcGFueV9pZCI6ICJzYmVyIiwgImNvbnRyYWN0X2lkIjogImNvbnRyb2wtZnV0dXJlIiwgInNpZGUiOiAibG9uZyIsICJlbnRyeV9wcmljZSI6IDMwMCwgInN0b3BfbG9zcyI6IDI5MCwgInRha2VfcHJvZml0IjogMzIwLCAicmVhc29uIjogIlx1MDQxOFx1MDQ0MVx1MDQ0NVx1MDQzZVx1MDQzNFx1MDQzZFx1MDQzZVx1MDQzNSBcdTA0M2VcdTA0NDFcdTA0M2RcdTA0M2VcdTA0MzJcdTA0MzBcdTA0M2RcdTA0MzhcdTA0MzUgXHUwNDMyXHUwNDQ1XHUwNDNlXHUwNDM0XHUwNDMwLiIsICJsZXZlbF9yYXRpb25hbGUiOiB7ImVudHJ5IjogIlF1b3RlLiIsICJzdG9wX2xvc3MiOiAiU3VwcG9ydC4iLCAidGFrZV9wcm9maXQiOiAiVGFyZ2V0LiJ9LCAiYXNzZXNzbWVudHMiOiBbeyJjb250cmFjdF9pZCI6ICJjb250cm9sLWZ1dHVyZSIsICJpbXBhY3QiOiAidmVyaWZpZWQiLCAicmVhc29uIjogIkZvcmVjYXN0LiIsICJldmlkZW5jZSI6IFt7InJldmlzaW9uIjogIjUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2EiLCAicXVvdGUiOiAiU0JFUiBcdTA0M2VcdTA0M2ZcdTA0NDNcdTA0MzFcdTA0M2JcdTA0MzhcdTA0M2FcdTA0M2VcdTA0MzJcdTA0MzBcdTA0M2IgXHUwNDNmXHUwNDNlXHUwNDMyXHUwNDRiXHUwNDQ4XHUwNDM1XHUwNDNkXHUwNDNkXHUwNDRiXHUwNDM5IFx1MDQzZlx1MDQ0MFx1MDQzZVx1MDQzM1x1MDQzZFx1MDQzZVx1MDQzNy4ifV19XX2pZm9ybWVkX2F02SAyMDI2LTExLTE3VDE4OjU1OjQzLjE2NjMzMSswMDowMKJhdNkgMjAyNi0xMS0xN1QxODo1NTo0My4xNjYzMzErMDA6MDCqbGF0ZW5jeV9tc8tAYc7ZFocrAt4AEaRyb2xlpmNyaXRpY6Rtb2Rlq29ic2VydmF0aW9ur3JlcXVlc3RlZF9tb2RlbKt0ZXN0L2NyaXRpY6phZ2dyZWdhdG9yqm9wZW5yb3V0ZXKsYWN0dWFsX21vZGVsq3Rlc3QvY3JpdGljqHByb3ZpZGVyrFRlc3RQcm92aWRlcrBzZXR0aW5nc192ZXJzaW9u2UA2OGRjYzA4NDY1MWZkOTQ2Y2Q2MzAxZWJjYTQ3YmYyZGViZTgwMDU4NWUwNjExZDdmY2RlY2I2NzM3ODc1MWMypWlucHV0g6djb250ZXh0iatwdWJsaWNhdGlvboiiaWSvdGVsZWdyYW06MTIzOjExpnNvdXJjZax0ZWxlZ3JhbToxMjOjdXJstmh0dHBzOi8vdC5tZS9zb3VyY2UvMTGkdGV4dNlAU0JFUiDQvtC/0YPQsdC70LjQutC+0LLQsNC7INC/0L7QstGL0YjQtdC90L3Ri9C5INC/0YDQvtCz0L3QvtC3LqxwdWJsaXNoZWRfYXTZIDIwMjYtMTEtMTdUMTg6NTU6NDAuOTM0MDg4KzAwOjAwqWVkaXRlZF9hdMCsdW5yZWFkX21lZGlhwqZjaGFuZ2WjbmV3pWV2ZW50iKtkZWNpc2lvbl9pZAGocmV2aXNpb27ZQDUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2GoZXZlbnRfaWTZIDFkNzZkNDFjYzYzYTQ5YTBhYmJiOGRkODJlZmQyMWYxpGtpbmSlc2F2ZWSoYmFzaXNfYXTZIDIwMjYtMTEtMTdUMTg6NTU6NDAuOTM0MDg4KzAwOjAwqmFzc2Vzc21lbnTApWxpbmtzkYuucHVibGljYXRpb25faWSvdGVsZWdyYW06MTIzOjExr3B1YmxpY2F0aW9uX3VybLZodHRwczovL3QubWUvc291cmNlLzExsnB1YmxpY2F0aW9uX3NoYTI1NtlAYjZhNjczYTY4YzhmNzY0Nzk4NWI5MGM1NzZkYjRmMzY0ZmYxOTllNzE3Y2ZkNTI3ZWJiYzQzZDNjNzhiMjNlMbtwdWJsaWNhdGlvbl9yZXZpc2lvbl9zaGEyNTbZQDJkNTg2YTcwMDU4MjdiNGVmNDFmZjE5ZTQxZjA4YTU1NGM0Y2QxODcxNzcyZDQ3ZTU4Y2IyODg4MzA4Y2MzYjauY2F0YWxvZ19zaGEyNTbZQDdkN2IzYTE0YjYxMmQzNGI3ZjJhYTFhZGJiN2UzZGMzYjk1YmNkZTg4YTNhYTczMzU0ZjZlODExMmQ2MjMyMWSqY29tcGFueV9pZKRzYmVypGtpbmSmZGlyZWN0pWJhc2lzpmRpcmVjdKVzY29yZcs/8AAAAAAAAKpjb25maWRlbmNlyz/wAAAAAAAAt3JlcXVpcmVzX2FuYWx5c3RfcmV2aWV3wqpjb3JyZWN0aW9uwLRhZmZlY3RlZF9jb21wYW55X2lkc5Gkc2JlcqpjYW5kaWRhdGVzkYeqY29tcGFueV9pZKRzYmVyrGNvbXBhbnlfbmFtZaRTQkVSqHNoYXJlX2lkqnNiZXItc2hhcmWrY29udHJhY3RfaWSuY29udHJvbC1mdXR1cmWxYWxsb3dlZF9mb3JfZW50cnnDpm1hcmtldIWrb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0MC44NjkyNzhaqmxhc3RfcHJpY2XLQHLAAAAAAACqb3JkZXJfYm9va4Orb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0Mi45MjY0MzVao2JpZIKlcHJpY2XLQHK4AAAAAACtcXVhbnRpdHlfbG90cwWjYXNrgqVwcmljZctAcsgAAAAAAK1xdWFudGl0eV9sb3RzA650cmFkaW5nX3N0YXR1c9kmU0VDVVJJVFlfVFJBRElOR19TVEFUVVNfTk9STUFMX1RSQURJTke6dHJhZGluZ19zdGF0dXNfb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0MC44NjkyNzhatW1hcmtldF9vYnNlcnZhdGlvbl9pZNlAN2QzNTU5MWNiZGY5OTQ4OWUxM2IwNjM0NGE4ZDY4YjNkMjA0NGJmYTI2M2M2YTdmMGUxNDQyMjBlMTUwNzQxM6dhY2NvdW50hatvYnNlcnZlZF9hdLsyMDI2LTExLTE3VDE4OjU1OjQwLjg2OTI3OFqoY3VycmVuY3mjUlVCpmVxdWl0ectA+GoAAAAAALBhdmFpbGFibGVfbWFyZ2luy0D1+QAAAAAAomlkr3NhbmRib3gtYWNjb3VudKhwb3NpdGlvbsCsZW50cnlfcmVhc29uwKxyZWxhdGVkX25ld3OQum9taXR0ZWRfcmVsYXRlZF9uZXdzX2NvdW50AKhwcm9wb3NhbIymYWN0aW9upWVudGVyrnB1YmxpY2F0aW9uX2lkr3RlbGVncmFtOjEyMzoxMaRzaWRlpGxvbmerZW50cnlfcHJpY2XLQHLAAAAAAACpc3RvcF9sb3Nzy0ByIAAAAAAAq3Rha2VfcHJvZml0y0B0AAAAAAAApnJlYXNvbtkv0JjRgdGF0L7QtNC90L7QtSDQvtGB0L3QvtCy0LDQvdC40LUg0LLRhdC+0LTQsC6qY29tcGFueV9pZKRzYmVyq2NvbnRyYWN0X2lkrmNvbnRyb2wtZnV0dXJlq2Fzc2Vzc21lbnRzkYSrY29udHJhY3RfaWSuY29udHJvbC1mdXR1cmWmaW1wYWN0qHZlcmlmaWVkpnJlYXNvbqlGb3JlY2FzdC6oZXZpZGVuY2WRgqhyZXZpc2lvbtlANTAxYzEyNDM0ZDhkMzkxMDczYzkyNGQyZTM0NzdhMGJlNzA1OWRkYWZiM2YwNmE5MjFhMjQ3Y2U5NWVjMzI3YaVxdW90ZdlAU0JFUiDQvtC/0YPQsdC70LjQutC+0LLQsNC7INC/0L7QstGL0YjQtdC90L3Ri9C5INC/0YDQvtCz0L3QvtC3Lq9sZXZlbF9yYXRpb25hbGWDpWVudHJ5plF1b3RlLqlzdG9wX2xvc3OoU3VwcG9ydC6rdGFrZV9wcm9maXSnVGFyZ2V0LqJpZNmKNTAxYzEyNDM0ZDhkMzkxMDczYzkyNGQyZTM0NzdhMGJlNzA1OWRkYWZiM2YwNmE5MjFhMjQ3Y2U5NWVjMzI3YTpyZXZpZXc6N2M1ZDQwYWE1YWU1NjhjMzI3YzYxZDJmOTgwOGZiMGJhZjYwYTRjYjc1NmQyNGZiNThhM2M4YWU5YTdmMWNjZToxr3ByZXZpb3VzX3Jldmlld8Cmb3V0cHV0hKtwcm9wb3NhbF9pZNmKNTAxYzEyNDM0ZDhkMzkxMDczYzkyNGQyZTM0NzdhMGJlNzA1OWRkYWZiM2YwNmE5MjFhMjQ3Y2U5NWVjMzI3YTpyZXZpZXc6N2M1ZDQwYWE1YWU1NjhjMzI3YzYxZDJmOTgwOGZiMGJhZjYwYTRjYjc1NmQyNGZiNThhM2M4YWU5YTdmMWNjZToxqGFwcHJvdmVkwqpvYmplY3Rpb25zkdkiSW5zdWZmaWNpZW50IGluZGVwZW5kZW50IGV2aWRlbmNlLqZyZWFzb27ZNUNoZWNrZWQgYWdhaW5zdCB0aGUgb3JpZ2luYWwgcHVibGljYXRpb24gYW5kIGNvbnRleHQupWVycm9ywKV1c2FnZYWsaW5wdXRfdG9rZW5zFK1vdXRwdXRfdG9rZW5zHqx0b3RhbF90b2tlbnMys2lucHV0X3Rva2VuX2RldGFpbHOAtG91dHB1dF90b2tlbl9kZXRhaWxzgKRjb3N0yz9QYk3S8an8qnN0YXJ0ZWRfYXTZIDIwMjYtMTEtMTdUMTg6NTU6NDMuMTc3Mjg2KzAwOjAwqG1ldGFkYXRhhqJpZKtnZW4tY29udHJvbK5tb2RlbF9wcm92aWRlcqpvcGVucm91dGVyrWZpbmlzaF9yZWFzb26kc3RvcKxjb3N0X2RldGFpbHPAsnN5c3RlbV9maW5nZXJwcmludMCzb3BlbnJvdXRlcl9tZXRhZGF0YcCqcmF3X291dHB1dNoBKXsicHJvcG9zYWxfaWQiOiAiNTAxYzEyNDM0ZDhkMzkxMDczYzkyNGQyZTM0NzdhMGJlNzA1OWRkYWZiM2YwNmE5MjFhMjQ3Y2U5NWVjMzI3YTpyZXZpZXc6N2M1ZDQwYWE1YWU1NjhjMzI3YzYxZDJmOTgwOGZiMGJhZjYwYTRjYjc1NmQyNGZiNThhM2M4YWU5YTdmMWNjZToxIiwgImFwcHJvdmVkIjogZmFsc2UsICJvYmplY3Rpb25zIjogWyJJbnN1ZmZpY2llbnQgaW5kZXBlbmRlbnQgZXZpZGVuY2UuIl0sICJyZWFzb24iOiAiQ2hlY2tlZCBhZ2FpbnN0IHRoZSBvcmlnaW5hbCBwdWJsaWNhdGlvbiBhbmQgY29udGV4dC4ifaJhdNkgMjAyNi0xMS0xN1QxODo1NTo0My4yNjMxODUrMDA6MDCqbGF0ZW5jeV9tc8tAVSvGp++dst4AEqRyb2xlp2FuYWx5c3SkbW9kZatvYnNlcnZhdGlvbq9yZXF1ZXN0ZWRfbW9kZWysdGVzdC9hbmFseXN0qmFnZ3JlZ2F0b3Kqb3BlbnJvdXRlcqxhY3R1YWxfbW9kZWysdGVzdC9hbmFseXN0qHByb3ZpZGVyrFRlc3RQcm92aWRlcrBzZXR0aW5nc192ZXJzaW9u2UA2OGRjYzA4NDY1MWZkOTQ2Y2Q2MzAxZWJjYTQ3YmYyZGViZTgwMDU4NWUwNjExZDdmY2RlY2I2NzM3ODc1MWMypWlucHV0g6djb250ZXh0iatwdWJsaWNhdGlvboiiaWSvdGVsZWdyYW06MTIzOjExpnNvdXJjZax0ZWxlZ3JhbToxMjOjdXJstmh0dHBzOi8vdC5tZS9zb3VyY2UvMTGkdGV4dNlAU0JFUiDQvtC/0YPQsdC70LjQutC+0LLQsNC7INC/0L7QstGL0YjQtdC90L3Ri9C5INC/0YDQvtCz0L3QvtC3LqxwdWJsaXNoZWRfYXTZIDIwMjYtMTEtMTdUMTg6NTU6NDAuOTM0MDg4KzAwOjAwqWVkaXRlZF9hdMCsdW5yZWFkX21lZGlhwqZjaGFuZ2WjbmV3pWV2ZW50iKtkZWNpc2lvbl9pZAGocmV2aXNpb27ZQDUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2GoZXZlbnRfaWTZIDFkNzZkNDFjYzYzYTQ5YTBhYmJiOGRkODJlZmQyMWYxpGtpbmSlc2F2ZWSoYmFzaXNfYXTZIDIwMjYtMTEtMTdUMTg6NTU6NDAuOTM0MDg4KzAwOjAwqmFzc2Vzc21lbnTApWxpbmtzkYuucHVibGljYXRpb25faWSvdGVsZWdyYW06MTIzOjExr3B1YmxpY2F0aW9uX3VybLZodHRwczovL3QubWUvc291cmNlLzExsnB1YmxpY2F0aW9uX3NoYTI1NtlAYjZhNjczYTY4YzhmNzY0Nzk4NWI5MGM1NzZkYjRmMzY0ZmYxOTllNzE3Y2ZkNTI3ZWJiYzQzZDNjNzhiMjNlMbtwdWJsaWNhdGlvbl9yZXZpc2lvbl9zaGEyNTbZQDJkNTg2YTcwMDU4MjdiNGVmNDFmZjE5ZTQxZjA4YTU1NGM0Y2QxODcxNzcyZDQ3ZTU4Y2IyODg4MzA4Y2MzYjauY2F0YWxvZ19zaGEyNTbZQDdkN2IzYTE0YjYxMmQzNGI3ZjJhYTFhZGJiN2UzZGMzYjk1YmNkZTg4YTNhYTczMzU0ZjZlODExMmQ2MjMyMWSqY29tcGFueV9pZKRzYmVypGtpbmSmZGlyZWN0pWJhc2lzpmRpcmVjdKVzY29yZcs/8AAAAAAAAKpjb25maWRlbmNlyz/wAAAAAAAAt3JlcXVpcmVzX2FuYWx5c3RfcmV2aWV3wqpjb3JyZWN0aW9uwLRhZmZlY3RlZF9jb21wYW55X2lkc5Gkc2JlcqpjYW5kaWRhdGVzkYeqY29tcGFueV9pZKRzYmVyrGNvbXBhbnlfbmFtZaRTQkVSqHNoYXJlX2lkqnNiZXItc2hhcmWrY29udHJhY3RfaWSuY29udHJvbC1mdXR1cmWxYWxsb3dlZF9mb3JfZW50cnnDpm1hcmtldIWrb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0MC44NjkyNzhaqmxhc3RfcHJpY2XLQHLAAAAAAACqb3JkZXJfYm9va4Orb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0Mi45MjY0MzVao2JpZIKlcHJpY2XLQHK4AAAAAACtcXVhbnRpdHlfbG90cwWjYXNrgqVwcmljZctAcsgAAAAAAK1xdWFudGl0eV9sb3RzA650cmFkaW5nX3N0YXR1c9kmU0VDVVJJVFlfVFJBRElOR19TVEFUVVNfTk9STUFMX1RSQURJTke6dHJhZGluZ19zdGF0dXNfb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0MC44NjkyNzhatW1hcmtldF9vYnNlcnZhdGlvbl9pZNlAN2QzNTU5MWNiZGY5OTQ4OWUxM2IwNjM0NGE4ZDY4YjNkMjA0NGJmYTI2M2M2YTdmMGUxNDQyMjBlMTUwNzQxM6dhY2NvdW50hatvYnNlcnZlZF9hdLsyMDI2LTExLTE3VDE4OjU1OjQwLjg2OTI3OFqoY3VycmVuY3mjUlVCpmVxdWl0ectA+GoAAAAAALBhdmFpbGFibGVfbWFyZ2luy0D1+QAAAAAAomlkr3NhbmRib3gtYWNjb3VudKhwb3NpdGlvbsCsZW50cnlfcmVhc29uwKxyZWxhdGVkX25ld3OQum9taXR0ZWRfcmVsYXRlZF9uZXdzX2NvdW50AKhwcm9wb3NhbIymYWN0aW9upWVudGVyrnB1YmxpY2F0aW9uX2lkr3RlbGVncmFtOjEyMzoxMaRzaWRlpGxvbmerZW50cnlfcHJpY2XLQHLAAAAAAACpc3RvcF9sb3Nzy0ByIAAAAAAAq3Rha2VfcHJvZml0y0B0AAAAAAAApnJlYXNvbtkv0JjRgdGF0L7QtNC90L7QtSDQvtGB0L3QvtCy0LDQvdC40LUg0LLRhdC+0LTQsC6qY29tcGFueV9pZKRzYmVyq2NvbnRyYWN0X2lkrmNvbnRyb2wtZnV0dXJlq2Fzc2Vzc21lbnRzkYSrY29udHJhY3RfaWSuY29udHJvbC1mdXR1cmWmaW1wYWN0qHZlcmlmaWVkpnJlYXNvbqlGb3JlY2FzdC6oZXZpZGVuY2WRgqhyZXZpc2lvbtlANTAxYzEyNDM0ZDhkMzkxMDczYzkyNGQyZTM0NzdhMGJlNzA1OWRkYWZiM2YwNmE5MjFhMjQ3Y2U5NWVjMzI3YaVxdW90ZdlAU0JFUiDQvtC/0YPQsdC70LjQutC+0LLQsNC7INC/0L7QstGL0YjQtdC90L3Ri9C5INC/0YDQvtCz0L3QvtC3Lq9sZXZlbF9yYXRpb25hbGWDpWVudHJ5plF1b3RlLqlzdG9wX2xvc3OoU3VwcG9ydC6rdGFrZV9wcm9maXSnVGFyZ2V0LqJpZNmKNTAxYzEyNDM0ZDhkMzkxMDczYzkyNGQyZTM0NzdhMGJlNzA1OWRkYWZiM2YwNmE5MjFhMjQ3Y2U5NWVjMzI3YTpyZXZpZXc6N2M1ZDQwYWE1YWU1NjhjMzI3YzYxZDJmOTgwOGZiMGJhZjYwYTRjYjc1NmQyNGZiNThhM2M4YWU5YTdmMWNjZToxpnJldmlld4SrcHJvcG9zYWxfaWTZijUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2E6cmV2aWV3OjdjNWQ0MGFhNWFlNTY4YzMyN2M2MWQyZjk4MDhmYjBiYWY2MGE0Y2I3NTZkMjRmYjU4YTNjOGFlOWE3ZjFjY2U6MahhcHByb3ZlZMKqb2JqZWN0aW9uc5HZIkluc3VmZmljaWVudCBpbmRlcGVuZGVudCBldmlkZW5jZS6mcmVhc29u2TVDaGVja2VkIGFnYWluc3QgdGhlIG9yaWdpbmFsIHB1YmxpY2F0aW9uIGFuZCBjb250ZXh0LqZvdXRwdXSMpmFjdGlvbqVlbnRlcq5wdWJsaWNhdGlvbl9pZK90ZWxlZ3JhbToxMjM6MTGkc2lkZaRsb25nq2VudHJ5X3ByaWNly0By0AAAAAAAqXN0b3BfbG9zc8tAciAAAAAAAKt0YWtlX3Byb2ZpdMtAdAAAAAAAAKZyZWFzb27ZL9CY0YHRhdC+0LTQvdC+0LUg0L7RgdC90L7QstCw0L3QuNC1INCy0YXQvtC00LAuqmNvbXBhbnlfaWSkc2Jlcqtjb250cmFjdF9pZK5jb250cm9sLWZ1dHVyZathc3Nlc3NtZW50c5GEq2NvbnRyYWN0X2lkrmNvbnRyb2wtZnV0dXJlpmltcGFjdKh2ZXJpZmllZKZyZWFzb26pRm9yZWNhc3QuqGV2aWRlbmNlkYKocmV2aXNpb27ZQDUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2GlcXVvdGXZQFNCRVIg0L7Qv9GD0LHQu9C40LrQvtCy0LDQuyDQv9C+0LLRi9GI0LXQvdC90YvQuSDQv9GA0L7Qs9C90L7Qty6vbGV2ZWxfcmF0aW9uYWxlg6VlbnRyeaZRdW90ZS6pc3RvcF9sb3NzqFN1cHBvcnQuq3Rha2VfcHJvZml0p1RhcmdldC6iaWTZijUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2E6cmV2aWV3OjdjNWQ0MGFhNWFlNTY4YzMyN2M2MWQyZjk4MDhmYjBiYWY2MGE0Y2I3NTZkMjRmYjU4YTNjOGFlOWE3ZjFjY2U6M6VlcnJvcsCldXNhZ2WFrGlucHV0X3Rva2VucxStb3V0cHV0X3Rva2Vucx6sdG90YWxfdG9rZW5zMrNpbnB1dF90b2tlbl9kZXRhaWxzgLRvdXRwdXRfdG9rZW5fZGV0YWlsc4CkY29zdMs/UGJN0vGp/KpzdGFydGVkX2F02SAyMDI2LTExLTE3VDE4OjU1OjQzLjI3MzIxMiswMDowMKhtZXRhZGF0YYaiaWSrZ2VuLWNvbnRyb2yubW9kZWxfcHJvdmlkZXKqb3BlbnJvdXRlcq1maW5pc2hfcmVhc29upHN0b3CsY29zdF9kZXRhaWxzwLJzeXN0ZW1fZmluZ2VycHJpbnTAs29wZW5yb3V0ZXJfbWV0YWRhdGHAqnJhd19vdXRwdXTaAyd7ImFjdGlvbiI6ICJlbnRlciIsICJwdWJsaWNhdGlvbl9pZCI6ICJ0ZWxlZ3JhbToxMjM6MTEiLCAiY29tcGFueV9pZCI6ICJzYmVyIiwgImNvbnRyYWN0X2lkIjogImNvbnRyb2wtZnV0dXJlIiwgInNpZGUiOiAibG9uZyIsICJlbnRyeV9wcmljZSI6IDMwMSwgInN0b3BfbG9zcyI6IDI5MCwgInRha2VfcHJvZml0IjogMzIwLCAicmVhc29uIjogIlx1MDQxOFx1MDQ0MVx1MDQ0NVx1MDQzZVx1MDQzNFx1MDQzZFx1MDQzZVx1MDQzNSBcdTA0M2VcdTA0NDFcdTA0M2RcdTA0M2VcdTA0MzJcdTA0MzBcdTA0M2RcdTA0MzhcdTA0MzUgXHUwNDMyXHUwNDQ1XHUwNDNlXHUwNDM0XHUwNDMwLiIsICJsZXZlbF9yYXRpb25hbGUiOiB7ImVudHJ5IjogIlF1b3RlLiIsICJzdG9wX2xvc3MiOiAiU3VwcG9ydC4iLCAidGFrZV9wcm9maXQiOiAiVGFyZ2V0LiJ9LCAiYXNzZXNzbWVudHMiOiBbeyJjb250cmFjdF9pZCI6ICJjb250cm9sLWZ1dHVyZSIsICJpbXBhY3QiOiAidmVyaWZpZWQiLCAicmVhc29uIjogIkZvcmVjYXN0LiIsICJldmlkZW5jZSI6IFt7InJldmlzaW9uIjogIjUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2EiLCAicXVvdGUiOiAiU0JFUiBcdTA0M2VcdTA0M2ZcdTA0NDNcdTA0MzFcdTA0M2JcdTA0MzhcdTA0M2FcdTA0M2VcdTA0MzJcdTA0MzBcdTA0M2IgXHUwNDNmXHUwNDNlXHUwNDMyXHUwNDRiXHUwNDQ4XHUwNDM1XHUwNDNkXHUwNDNkXHUwNDRiXHUwNDM5IFx1MDQzZlx1MDQ0MFx1MDQzZVx1MDQzM1x1MDQzZFx1MDQzZVx1MDQzNy4ifV19XX2pZm9ybWVkX2F02SAyMDI2LTExLTE3VDE4OjU1OjQzLjI4MjA2MyswMDowMKJhdNkgMjAyNi0xMS0xN1QxODo1NTo0My4yODIwNjMrMDA6MDCqbGF0ZW5jeV9tc8tAH6TdLxqfvg=="
+        }
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "channel": "context",
+        "version": "00000000000000000000000000000002.0.03899172237205162",
+        "type": "msgpack",
+        "blob": {
+          "base64": "yAcuBZS7bmV3c19mdXR1cmVzLmRvbWFpbi5jb21wYW55rkNvbXBhbnlDb250ZXh0iatwdWJsaWNhdGlvboiiaWSvdGVsZWdyYW06MTIzOjExpnNvdXJjZax0ZWxlZ3JhbToxMjOjdXJstmh0dHBzOi8vdC5tZS9zb3VyY2UvMTGkdGV4dNlAU0JFUiDQvtC/0YPQsdC70LjQutC+0LLQsNC7INC/0L7QstGL0YjQtdC90L3Ri9C5INC/0YDQvtCz0L3QvtC3LqxwdWJsaXNoZWRfYXTZIDIwMjYtMTEtMTdUMTg6NTU6NDAuOTM0MDg4KzAwOjAwqWVkaXRlZF9hdMCsdW5yZWFkX21lZGlhwqZjaGFuZ2WjbmV3pWV2ZW50iKtkZWNpc2lvbl9pZAGocmV2aXNpb27ZQDUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2GoZXZlbnRfaWTZIDFkNzZkNDFjYzYzYTQ5YTBhYmJiOGRkODJlZmQyMWYxpGtpbmSlc2F2ZWSoYmFzaXNfYXTZIDIwMjYtMTEtMTdUMTg6NTU6NDAuOTM0MDg4KzAwOjAwqmFzc2Vzc21lbnTApWxpbmtzkYuucHVibGljYXRpb25faWSvdGVsZWdyYW06MTIzOjExr3B1YmxpY2F0aW9uX3VybLZodHRwczovL3QubWUvc291cmNlLzExsnB1YmxpY2F0aW9uX3NoYTI1NtlAYjZhNjczYTY4YzhmNzY0Nzk4NWI5MGM1NzZkYjRmMzY0ZmYxOTllNzE3Y2ZkNTI3ZWJiYzQzZDNjNzhiMjNlMbtwdWJsaWNhdGlvbl9yZXZpc2lvbl9zaGEyNTbZQDJkNTg2YTcwMDU4MjdiNGVmNDFmZjE5ZTQxZjA4YTU1NGM0Y2QxODcxNzcyZDQ3ZTU4Y2IyODg4MzA4Y2MzYjauY2F0YWxvZ19zaGEyNTbZQDdkN2IzYTE0YjYxMmQzNGI3ZjJhYTFhZGJiN2UzZGMzYjk1YmNkZTg4YTNhYTczMzU0ZjZlODExMmQ2MjMyMWSqY29tcGFueV9pZKRzYmVypGtpbmSmZGlyZWN0pWJhc2lzpmRpcmVjdKVzY29yZcs/8AAAAAAAAKpjb25maWRlbmNlyz/wAAAAAAAAt3JlcXVpcmVzX2FuYWx5c3RfcmV2aWV3wqpjb3JyZWN0aW9uwLRhZmZlY3RlZF9jb21wYW55X2lkc5Gkc2JlcqpjYW5kaWRhdGVzkYeqY29tcGFueV9pZKRzYmVyrGNvbXBhbnlfbmFtZaRTQkVSqHNoYXJlX2lkqnNiZXItc2hhcmWrY29udHJhY3RfaWSuY29udHJvbC1mdXR1cmWxYWxsb3dlZF9mb3JfZW50cnnDpm1hcmtldIWrb2JzZXJ2ZWRfYXTHQwOUqGRhdGV0aW1lqGRhdGV0aW1l2SAyMDI2LTExLTE3VDE4OjU1OjQwLjg2OTI3OCswMDowMK1mcm9taXNvZm9ybWF0qmxhc3RfcHJpY2XLQHLAAAAAAACqb3JkZXJfYm9va4Orb2JzZXJ2ZWRfYXTHQwOUqGRhdGV0aW1lqGRhdGV0aW1l2SAyMDI2LTExLTE3VDE4OjU1OjQyLjkyNjQzNSswMDowMK1mcm9taXNvZm9ybWF0o2JpZIKlcHJpY2XLQHK4AAAAAACtcXVhbnRpdHlfbG90cwWjYXNrgqVwcmljZctAcsgAAAAAAK1xdWFudGl0eV9sb3RzA650cmFkaW5nX3N0YXR1c9kmU0VDVVJJVFlfVFJBRElOR19TVEFUVVNfTk9STUFMX1RSQURJTke6dHJhZGluZ19zdGF0dXNfb2JzZXJ2ZWRfYXTHQwOUqGRhdGV0aW1lqGRhdGV0aW1l2SAyMDI2LTExLTE3VDE4OjU1OjQwLjg2OTI3OCswMDowMK1mcm9taXNvZm9ybWF0tW1hcmtldF9vYnNlcnZhdGlvbl9pZNlAN2QzNTU5MWNiZGY5OTQ4OWUxM2IwNjM0NGE4ZDY4YjNkMjA0NGJmYTI2M2M2YTdmMGUxNDQyMjBlMTUwNzQxM6dhY2NvdW50hatvYnNlcnZlZF9hdMdDA5SoZGF0ZXRpbWWoZGF0ZXRpbWXZIDIwMjYtMTEtMTdUMTg6NTU6NDAuODY5Mjc4KzAwOjAwrWZyb21pc29mb3JtYXSoY3VycmVuY3mjUlVCpmVxdWl0ectA+GoAAAAAALBhdmFpbGFibGVfbWFyZ2luy0D1+QAAAAAAomlkr3NhbmRib3gtYWNjb3VudKhwb3NpdGlvbsCsZW50cnlfcmVhc29uwKxyZWxhdGVkX25ld3OQum9taXR0ZWRfcmVsYXRlZF9uZXdzX2NvdW50ALNtb2RlbF92YWxpZGF0ZV9qc29u"
+        }
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "channel": "previous_review",
+        "version": "00000000000000000000000000000005.0.3972197230729334",
+        "type": "msgpack",
+        "blob": {
+          "base64": "yAFLBZS9bmV3c19mdXR1cmVzLmRvbWFpbi5jb250cmFjdHOmUmV2aWV3hKtwcm9wb3NhbF9pZNmKNTAxYzEyNDM0ZDhkMzkxMDczYzkyNGQyZTM0NzdhMGJlNzA1OWRkYWZiM2YwNmE5MjFhMjQ3Y2U5NWVjMzI3YTpyZXZpZXc6N2M1ZDQwYWE1YWU1NjhjMzI3YzYxZDJmOTgwOGZiMGJhZjYwYTRjYjc1NmQyNGZiNThhM2M4YWU5YTdmMWNjZToxqGFwcHJvdmVkwqpvYmplY3Rpb25zkdkiSW5zdWZmaWNpZW50IGluZGVwZW5kZW50IGV2aWRlbmNlLqZyZWFzb27ZNUNoZWNrZWQgYWdhaW5zdCB0aGUgb3JpZ2luYWwgcHVibGljYXRpb24gYW5kIGNvbnRleHQus21vZGVsX3ZhbGlkYXRlX2pzb24="
+        }
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "channel": "proposal",
+        "version": "00000000000000000000000000000005.0.3972197230729334",
+        "type": "msgpack",
+        "blob": {
+          "base64": "yAJFBZS7bmV3c19mdXR1cmVzLmRvbWFpbi5jb21wYW55r0NvbXBhbnlQcm9wb3NhbIumYWN0aW9upWVudGVyrnB1YmxpY2F0aW9uX2lkr3RlbGVncmFtOjEyMzoxMaRzaWRlpGxvbmerZW50cnlfcHJpY2XLQHLQAAAAAACpc3RvcF9sb3Nzy0ByIAAAAAAAq3Rha2VfcHJvZml0y0B0AAAAAAAApnJlYXNvbtkv0JjRgdGF0L7QtNC90L7QtSDQvtGB0L3QvtCy0LDQvdC40LUg0LLRhdC+0LTQsC6qY29tcGFueV9pZKRzYmVyq2NvbnRyYWN0X2lkrmNvbnRyb2wtZnV0dXJlq2Fzc2Vzc21lbnRzkYSrY29udHJhY3RfaWSuY29udHJvbC1mdXR1cmWmaW1wYWN0qHZlcmlmaWVkpnJlYXNvbqlGb3JlY2FzdC6oZXZpZGVuY2WRgqhyZXZpc2lvbtlANTAxYzEyNDM0ZDhkMzkxMDczYzkyNGQyZTM0NzdhMGJlNzA1OWRkYWZiM2YwNmE5MjFhMjQ3Y2U5NWVjMzI3YaVxdW90ZdlAU0JFUiDQvtC/0YPQsdC70LjQutC+0LLQsNC7INC/0L7QstGL0YjQtdC90L3Ri9C5INC/0YDQvtCz0L3QvtC3Lq9sZXZlbF9yYXRpb25hbGWDpWVudHJ5plF1b3RlLqlzdG9wX2xvc3OoU3VwcG9ydC6rdGFrZV9wcm9maXSnVGFyZ2V0LrNtb2RlbF92YWxpZGF0ZV9qc29u"
+        }
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "channel": "proposal",
+        "version": "00000000000000000000000000000003.0.8425009484907691",
+        "type": "msgpack",
+        "blob": {
+          "base64": "yAJFBZS7bmV3c19mdXR1cmVzLmRvbWFpbi5jb21wYW55r0NvbXBhbnlQcm9wb3NhbIumYWN0aW9upWVudGVyrnB1YmxpY2F0aW9uX2lkr3RlbGVncmFtOjEyMzoxMaRzaWRlpGxvbmerZW50cnlfcHJpY2XLQHLAAAAAAACpc3RvcF9sb3Nzy0ByIAAAAAAAq3Rha2VfcHJvZml0y0B0AAAAAAAApnJlYXNvbtkv0JjRgdGF0L7QtNC90L7QtSDQvtGB0L3QvtCy0LDQvdC40LUg0LLRhdC+0LTQsC6qY29tcGFueV9pZKRzYmVyq2NvbnRyYWN0X2lkrmNvbnRyb2wtZnV0dXJlq2Fzc2Vzc21lbnRzkYSrY29udHJhY3RfaWSuY29udHJvbC1mdXR1cmWmaW1wYWN0qHZlcmlmaWVkpnJlYXNvbqlGb3JlY2FzdC6oZXZpZGVuY2WRgqhyZXZpc2lvbtlANTAxYzEyNDM0ZDhkMzkxMDczYzkyNGQyZTM0NzdhMGJlNzA1OWRkYWZiM2YwNmE5MjFhMjQ3Y2U5NWVjMzI3YaVxdW90ZdlAU0JFUiDQvtC/0YPQsdC70LjQutC+0LLQsNC7INC/0L7QstGL0YjQtdC90L3Ri9C5INC/0YDQvtCz0L3QvtC3Lq9sZXZlbF9yYXRpb25hbGWDpWVudHJ5plF1b3RlLqlzdG9wX2xvc3OoU3VwcG9ydC6rdGFrZV9wcm9maXSnVGFyZ2V0LrNtb2RlbF92YWxpZGF0ZV9qc29u"
+        }
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "channel": "review",
+        "version": "00000000000000000000000000000004.0.3562800512316112",
+        "type": "msgpack",
+        "blob": {
+          "base64": "yAFLBZS9bmV3c19mdXR1cmVzLmRvbWFpbi5jb250cmFjdHOmUmV2aWV3hKtwcm9wb3NhbF9pZNmKNTAxYzEyNDM0ZDhkMzkxMDczYzkyNGQyZTM0NzdhMGJlNzA1OWRkYWZiM2YwNmE5MjFhMjQ3Y2U5NWVjMzI3YTpyZXZpZXc6N2M1ZDQwYWE1YWU1NjhjMzI3YzYxZDJmOTgwOGZiMGJhZjYwYTRjYjc1NmQyNGZiNThhM2M4YWU5YTdmMWNjZToxqGFwcHJvdmVkwqpvYmplY3Rpb25zkdkiSW5zdWZmaWNpZW50IGluZGVwZW5kZW50IGV2aWRlbmNlLqZyZWFzb27ZNUNoZWNrZWQgYWdhaW5zdCB0aGUgb3JpZ2luYWwgcHVibGljYXRpb24gYW5kIGNvbnRleHQus21vZGVsX3ZhbGlkYXRlX2pzb24="
+        }
+      }
+    ],
+    "checkpoint_writes": [
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-cce4-65ae-bfff-57c4bf4368e5",
+        "task_id": "502a1bc3-5d68-d54f-b066-fbf6c446ee40",
+        "idx": 1,
+        "channel": "branch:to:route",
+        "type": "null",
+        "blob": {
+          "base64": ""
+        },
+        "task_path": "~__pregel_pull, __start__"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-cce4-65ae-bfff-57c4bf4368e5",
+        "task_id": "502a1bc3-5d68-d54f-b066-fbf6c446ee40",
+        "idx": 0,
+        "channel": "status",
+        "type": "msgpack",
+        "blob": {
+          "base64": "qGNvbnRpbnVl"
+        },
+        "task_path": "~__pregel_pull, __start__"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-cce8-62f0-8000-b0534a0b38ca",
+        "task_id": "ccfc3bb1-0ad9-b037-7cfd-744f636f3f87",
+        "idx": 2,
+        "channel": "branch:to:event",
+        "type": "null",
+        "blob": {
+          "base64": ""
+        },
+        "task_path": "~__pregel_pull, route"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-cce8-62f0-8000-b0534a0b38ca",
+        "task_id": "ccfc3bb1-0ad9-b037-7cfd-744f636f3f87",
+        "idx": 0,
+        "channel": "status",
+        "type": "msgpack",
+        "blob": {
+          "base64": "qGNvbnRpbnVl"
+        },
+        "task_path": "~__pregel_pull, route"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-cce8-62f0-8000-b0534a0b38ca",
+        "task_id": "ccfc3bb1-0ad9-b037-7cfd-744f636f3f87",
+        "idx": 1,
+        "channel": "stage",
+        "type": "msgpack",
+        "blob": {
+          "base64": "pXJvdXRl"
+        },
+        "task_path": "~__pregel_pull, route"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d080-6dc6-8001-8801e7244b31",
+        "task_id": "90ea16f9-9c0a-3993-0bc8-27885d2d583e",
+        "idx": 1,
+        "channel": "affected",
+        "type": "msgpack",
+        "blob": {
+          "base64": "kaRzYmVy"
+        },
+        "task_path": "~__pregel_pull, event"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d080-6dc6-8001-8801e7244b31",
+        "task_id": "90ea16f9-9c0a-3993-0bc8-27885d2d583e",
+        "idx": 2,
+        "channel": "stage",
+        "type": "msgpack",
+        "blob": {
+          "base64": "pXJvdXRl"
+        },
+        "task_path": "~__pregel_pull, event"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d080-6dc6-8001-8801e7244b31",
+        "task_id": "90ea16f9-9c0a-3993-0bc8-27885d2d583e",
+        "idx": 3,
+        "channel": "branch:to:position",
+        "type": "null",
+        "blob": {
+          "base64": ""
+        },
+        "task_path": "~__pregel_pull, event"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d080-6dc6-8001-8801e7244b31",
+        "task_id": "90ea16f9-9c0a-3993-0bc8-27885d2d583e",
+        "idx": 0,
+        "channel": "decision_id",
+        "type": "msgpack",
+        "blob": {
+          "base64": "AQ=="
+        },
+        "task_path": "~__pregel_pull, event"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d0ec-6c6f-8002-c4f77cd9981e",
+        "task_id": "e84233b3-550b-e117-406b-12ee5c86aeb1",
+        "idx": 1,
+        "channel": "branch:to:instrument",
+        "type": "null",
+        "blob": {
+          "base64": ""
+        },
+        "task_path": "~__pregel_pull, position"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d0ec-6c6f-8002-c4f77cd9981e",
+        "task_id": "e84233b3-550b-e117-406b-12ee5c86aeb1",
+        "idx": 0,
+        "channel": "stage",
+        "type": "msgpack",
+        "blob": {
+          "base64": "qHBvc2l0aW9u"
+        },
+        "task_path": "~__pregel_pull, position"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d126-6e54-8003-1bfad535703a",
+        "task_id": "ff66be6d-77bd-97c7-38e2-2548afdd5562",
+        "idx": 2,
+        "channel": "branch:to:snapshot",
+        "type": "null",
+        "blob": {
+          "base64": ""
+        },
+        "task_path": "~__pregel_pull, instrument"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d126-6e54-8003-1bfad535703a",
+        "task_id": "ff66be6d-77bd-97c7-38e2-2548afdd5562",
+        "idx": 1,
+        "channel": "stage",
+        "type": "msgpack",
+        "blob": {
+          "base64": "qmluc3RydW1lbnQ="
+        },
+        "task_path": "~__pregel_pull, instrument"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d126-6e54-8003-1bfad535703a",
+        "task_id": "ff66be6d-77bd-97c7-38e2-2548afdd5562",
+        "idx": 0,
+        "channel": "selected_contract_id",
+        "type": "msgpack",
+        "blob": {
+          "base64": "rmNvbnRyb2wtZnV0dXJl"
+        },
+        "task_path": "~__pregel_pull, instrument"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d481-6c7e-8004-e230b139619b",
+        "task_id": "81c19ef5-0943-ae0e-2dda-233935eb78e1",
+        "idx": 1,
+        "channel": "branch:to:review",
+        "type": "null",
+        "blob": {
+          "base64": ""
+        },
+        "task_path": "~__pregel_pull, snapshot"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d481-6c7e-8004-e230b139619b",
+        "task_id": "81c19ef5-0943-ae0e-2dda-233935eb78e1",
+        "idx": 0,
+        "channel": "stage",
+        "type": "msgpack",
+        "blob": {
+          "base64": "qHNuYXBzaG90"
+        },
+        "task_path": "~__pregel_pull, snapshot"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "route:ccfc3bb1-0ad9-b037-7cfd-744f636f3f87",
+        "checkpoint_id": "1f1e2b87-d01f-6a7a-bfff-079e3a6e3876",
+        "task_id": "3b64ca5c-181b-d86d-91b4-ad4ebb6c7c6e",
+        "idx": 5,
+        "channel": "batches",
+        "type": "msgpack",
+        "blob": {
+          "base64": "kA=="
+        },
+        "task_path": "~__pregel_pull, __start__"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "route:ccfc3bb1-0ad9-b037-7cfd-744f636f3f87",
+        "checkpoint_id": "1f1e2b87-d01f-6a7a-bfff-079e3a6e3876",
+        "task_id": "3b64ca5c-181b-d86d-91b4-ad4ebb6c7c6e",
+        "idx": 0,
+        "channel": "publication_text",
+        "type": "msgpack",
+        "blob": {
+          "base64": "2UBTQkVSINC+0L/Rg9Cx0LvQuNC60L7QstCw0Lsg0L/QvtCy0YvRiNC10L3QvdGL0Lkg0L/RgNC+0LPQvdC+0Lcu"
+        },
+        "task_path": "~__pregel_pull, __start__"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "route:ccfc3bb1-0ad9-b037-7cfd-744f636f3f87",
+        "checkpoint_id": "1f1e2b87-d01f-6a7a-bfff-079e3a6e3876",
+        "task_id": "3b64ca5c-181b-d86d-91b4-ad4ebb6c7c6e",
+        "idx": 1,
+        "channel": "source",
+        "type": "msgpack",
+        "blob": {
+          "base64": "ha5wdWJsaWNhdGlvbl9pZK90ZWxlZ3JhbToxMjM6MTGvcHVibGljYXRpb25fdXJstmh0dHBzOi8vdC5tZS9zb3VyY2UvMTGycHVibGljYXRpb25fc2hhMjU22UBiNmE2NzNhNjhjOGY3NjQ3OTg1YjkwYzU3NmRiNGYzNjRmZjE5OWU3MTdjZmQ1MjdlYmJjNDNkM2M3OGIyM2Uxu3B1YmxpY2F0aW9uX3JldmlzaW9uX3NoYTI1NtlAMmQ1ODZhNzAwNTgyN2I0ZWY0MWZmMTllNDFmMDhhNTU0YzRjZDE4NzE3NzJkNDdlNThjYjI4ODgzMDhjYzNiNq5jYXRhbG9nX3NoYTI1NtlAN2Q3YjNhMTRiNjEyZDM0YjdmMmFhMWFkYmI3ZTNkYzNiOTViY2RlODhhM2FhNzMzNTRmNmU4MTEyZDYyMzIxZA=="
+        },
+        "task_path": "~__pregel_pull, __start__"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "route:ccfc3bb1-0ad9-b037-7cfd-744f636f3f87",
+        "checkpoint_id": "1f1e2b87-d01f-6a7a-bfff-079e3a6e3876",
+        "task_id": "3b64ca5c-181b-d86d-91b4-ad4ebb6c7c6e",
+        "idx": 2,
+        "channel": "companies",
+        "type": "msgpack",
+        "blob": {
+          "base64": "gqRzYmVygqVuYW1lc5GkU0JFUqd0aWNrZXJzkaRTQkVSo3Z0YoKlbmFtZXORo1ZUQqd0aWNrZXJzkaNWVEI="
+        },
+        "task_path": "~__pregel_pull, __start__"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "route:ccfc3bb1-0ad9-b037-7cfd-744f636f3f87",
+        "checkpoint_id": "1f1e2b87-d01f-6a7a-bfff-079e3a6e3876",
+        "task_id": "3b64ca5c-181b-d86d-91b4-ad4ebb6c7c6e",
+        "idx": 3,
+        "channel": "requested_model",
+        "type": "msgpack",
+        "blob": {
+          "base64": "vHBhcmFsbGVsL2RlY2lzaW9ucy1mYXN0OmZyZWU="
+        },
+        "task_path": "~__pregel_pull, __start__"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "route:ccfc3bb1-0ad9-b037-7cfd-744f636f3f87",
+        "checkpoint_id": "1f1e2b87-d01f-6a7a-bfff-079e3a6e3876",
+        "task_id": "3b64ca5c-181b-d86d-91b4-ad4ebb6c7c6e",
+        "idx": 4,
+        "channel": "links",
+        "type": "null",
+        "blob": {
+          "base64": ""
+        },
+        "task_path": "~__pregel_pull, __start__"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "route:ccfc3bb1-0ad9-b037-7cfd-744f636f3f87",
+        "checkpoint_id": "1f1e2b87-d01f-6a7a-bfff-079e3a6e3876",
+        "task_id": "3b64ca5c-181b-d86d-91b4-ad4ebb6c7c6e",
+        "idx": 6,
+        "channel": "error",
+        "type": "null",
+        "blob": {
+          "base64": ""
+        },
+        "task_path": "~__pregel_pull, __start__"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "route:ccfc3bb1-0ad9-b037-7cfd-744f636f3f87",
+        "checkpoint_id": "1f1e2b87-d01f-6a7a-bfff-079e3a6e3876",
+        "task_id": "3b64ca5c-181b-d86d-91b4-ad4ebb6c7c6e",
+        "idx": 7,
+        "channel": "candidates",
+        "type": "null",
+        "blob": {
+          "base64": ""
+        },
+        "task_path": "~__pregel_pull, __start__"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "route:ccfc3bb1-0ad9-b037-7cfd-744f636f3f87",
+        "checkpoint_id": "1f1e2b87-d01f-6a7a-bfff-079e3a6e3876",
+        "task_id": "3b64ca5c-181b-d86d-91b4-ad4ebb6c7c6e",
+        "idx": 8,
+        "channel": "branch:to:category",
+        "type": "null",
+        "blob": {
+          "base64": ""
+        },
+        "task_path": "~__pregel_pull, __start__"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "route:ccfc3bb1-0ad9-b037-7cfd-744f636f3f87",
+        "checkpoint_id": "1f1e2b87-d022-6254-8000-66030407d954",
+        "task_id": "851fbdcf-773e-80e4-7203-65dc82ed9f26",
+        "idx": 1,
+        "channel": "candidates",
+        "type": "msgpack",
+        "blob": {
+          "base64": "kqRzYmVyo3Z0Yg=="
+        },
+        "task_path": "~__pregel_pull, category"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "route:ccfc3bb1-0ad9-b037-7cfd-744f636f3f87",
+        "checkpoint_id": "1f1e2b87-d022-6254-8000-66030407d954",
+        "task_id": "851fbdcf-773e-80e4-7203-65dc82ed9f26",
+        "idx": 0,
+        "channel": "error",
+        "type": "null",
+        "blob": {
+          "base64": ""
+        },
+        "task_path": "~__pregel_pull, category"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "route:ccfc3bb1-0ad9-b037-7cfd-744f636f3f87",
+        "checkpoint_id": "1f1e2b87-d022-6254-8000-66030407d954",
+        "task_id": "851fbdcf-773e-80e4-7203-65dc82ed9f26",
+        "idx": 2,
+        "channel": "branch:to:companies",
+        "type": "null",
+        "blob": {
+          "base64": ""
+        },
+        "task_path": "~__pregel_pull, category"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "route:ccfc3bb1-0ad9-b037-7cfd-744f636f3f87",
+        "checkpoint_id": "1f1e2b87-d051-6201-8001-3b730e82a394",
+        "task_id": "c97c273d-93fb-49d0-9e9d-794a51555c42",
+        "idx": 2,
+        "channel": "error",
+        "type": "null",
+        "blob": {
+          "base64": ""
+        },
+        "task_path": "~__pregel_pull, companies"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "route:ccfc3bb1-0ad9-b037-7cfd-744f636f3f87",
+        "checkpoint_id": "1f1e2b87-d051-6201-8001-3b730e82a394",
+        "task_id": "c97c273d-93fb-49d0-9e9d-794a51555c42",
+        "idx": 0,
+        "channel": "links",
+        "type": "msgpack",
+        "blob": {
+          "base64": "kYuucHVibGljYXRpb25faWSvdGVsZWdyYW06MTIzOjExr3B1YmxpY2F0aW9uX3VybLZodHRwczovL3QubWUvc291cmNlLzExsnB1YmxpY2F0aW9uX3NoYTI1NtlAYjZhNjczYTY4YzhmNzY0Nzk4NWI5MGM1NzZkYjRmMzY0ZmYxOTllNzE3Y2ZkNTI3ZWJiYzQzZDNjNzhiMjNlMbtwdWJsaWNhdGlvbl9yZXZpc2lvbl9zaGEyNTbZQDJkNTg2YTcwMDU4MjdiNGVmNDFmZjE5ZTQxZjA4YTU1NGM0Y2QxODcxNzcyZDQ3ZTU4Y2IyODg4MzA4Y2MzYjauY2F0YWxvZ19zaGEyNTbZQDdkN2IzYTE0YjYxMmQzNGI3ZjJhYTFhZGJiN2UzZGMzYjk1YmNkZTg4YTNhYTczMzU0ZjZlODExMmQ2MjMyMWSqY29tcGFueV9pZKRzYmVypGtpbmSmZGlyZWN0pWJhc2lzpmRpcmVjdKVzY29yZcs/8AAAAAAAAKpjb25maWRlbmNlyz/wAAAAAAAAt3JlcXVpcmVzX2FuYWx5c3RfcmV2aWV3wg=="
+        },
+        "task_path": "~__pregel_pull, companies"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a",
+        "checkpoint_ns": "route:ccfc3bb1-0ad9-b037-7cfd-744f636f3f87",
+        "checkpoint_id": "1f1e2b87-d051-6201-8001-3b730e82a394",
+        "task_id": "c97c273d-93fb-49d0-9e9d-794a51555c42",
+        "idx": 1,
+        "channel": "batches",
+        "type": "msgpack",
+        "blob": {
+          "base64": "kYirY29tcGFueV9pZHOSpHNiZXKjdnRiqnJlcXVlc3RfaWSqamV2LXJlc3VsdKxhY3R1YWxfbW9kZWy8cGFyYWxsZWwvZGVjaXNpb25zLWZhc3Q6ZnJlZahwcm92aWRlcsCldXNhZ2XApWVycm9ywKJhdNkgMjAyNi0xMS0xN1QxODo1NTo0Mi40NjMwNTgrMDA6MDCqZWxhcHNlZF9tcwE="
+        },
+        "task_path": "~__pregel_pull, companies"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d5a2-652a-bfff-a3b9602d2015",
+        "task_id": "c0d08172-da86-b6e3-4526-6ec38e05eeec",
+        "idx": 5,
+        "channel": "previous_review",
+        "type": "null",
+        "blob": {
+          "base64": ""
+        },
+        "task_path": "~__pregel_pull, __start__"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d5a2-652a-bfff-a3b9602d2015",
+        "task_id": "c0d08172-da86-b6e3-4526-6ec38e05eeec",
+        "idx": 6,
+        "channel": "revisions",
+        "type": "msgpack",
+        "blob": {
+          "base64": "AA=="
+        },
+        "task_path": "~__pregel_pull, __start__"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d5a2-652a-bfff-a3b9602d2015",
+        "task_id": "c0d08172-da86-b6e3-4526-6ec38e05eeec",
+        "idx": 7,
+        "channel": "error",
+        "type": "null",
+        "blob": {
+          "base64": ""
+        },
+        "task_path": "~__pregel_pull, __start__"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d5a2-652a-bfff-a3b9602d2015",
+        "task_id": "c0d08172-da86-b6e3-4526-6ec38e05eeec",
+        "idx": 8,
+        "channel": "branch:to:analyst",
+        "type": "null",
+        "blob": {
+          "base64": ""
+        },
+        "task_path": "~__pregel_pull, __start__"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d5a2-652a-bfff-a3b9602d2015",
+        "task_id": "c0d08172-da86-b6e3-4526-6ec38e05eeec",
+        "idx": 0,
+        "channel": "context",
+        "type": "msgpack",
+        "blob": {
+          "base64": "yAcuBZS7bmV3c19mdXR1cmVzLmRvbWFpbi5jb21wYW55rkNvbXBhbnlDb250ZXh0iatwdWJsaWNhdGlvboiiaWSvdGVsZWdyYW06MTIzOjExpnNvdXJjZax0ZWxlZ3JhbToxMjOjdXJstmh0dHBzOi8vdC5tZS9zb3VyY2UvMTGkdGV4dNlAU0JFUiDQvtC/0YPQsdC70LjQutC+0LLQsNC7INC/0L7QstGL0YjQtdC90L3Ri9C5INC/0YDQvtCz0L3QvtC3LqxwdWJsaXNoZWRfYXTZIDIwMjYtMTEtMTdUMTg6NTU6NDAuOTM0MDg4KzAwOjAwqWVkaXRlZF9hdMCsdW5yZWFkX21lZGlhwqZjaGFuZ2WjbmV3pWV2ZW50iKtkZWNpc2lvbl9pZAGocmV2aXNpb27ZQDUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2GoZXZlbnRfaWTZIDFkNzZkNDFjYzYzYTQ5YTBhYmJiOGRkODJlZmQyMWYxpGtpbmSlc2F2ZWSoYmFzaXNfYXTZIDIwMjYtMTEtMTdUMTg6NTU6NDAuOTM0MDg4KzAwOjAwqmFzc2Vzc21lbnTApWxpbmtzkYuucHVibGljYXRpb25faWSvdGVsZWdyYW06MTIzOjExr3B1YmxpY2F0aW9uX3VybLZodHRwczovL3QubWUvc291cmNlLzExsnB1YmxpY2F0aW9uX3NoYTI1NtlAYjZhNjczYTY4YzhmNzY0Nzk4NWI5MGM1NzZkYjRmMzY0ZmYxOTllNzE3Y2ZkNTI3ZWJiYzQzZDNjNzhiMjNlMbtwdWJsaWNhdGlvbl9yZXZpc2lvbl9zaGEyNTbZQDJkNTg2YTcwMDU4MjdiNGVmNDFmZjE5ZTQxZjA4YTU1NGM0Y2QxODcxNzcyZDQ3ZTU4Y2IyODg4MzA4Y2MzYjauY2F0YWxvZ19zaGEyNTbZQDdkN2IzYTE0YjYxMmQzNGI3ZjJhYTFhZGJiN2UzZGMzYjk1YmNkZTg4YTNhYTczMzU0ZjZlODExMmQ2MjMyMWSqY29tcGFueV9pZKRzYmVypGtpbmSmZGlyZWN0pWJhc2lzpmRpcmVjdKVzY29yZcs/8AAAAAAAAKpjb25maWRlbmNlyz/wAAAAAAAAt3JlcXVpcmVzX2FuYWx5c3RfcmV2aWV3wqpjb3JyZWN0aW9uwLRhZmZlY3RlZF9jb21wYW55X2lkc5Gkc2JlcqpjYW5kaWRhdGVzkYeqY29tcGFueV9pZKRzYmVyrGNvbXBhbnlfbmFtZaRTQkVSqHNoYXJlX2lkqnNiZXItc2hhcmWrY29udHJhY3RfaWSuY29udHJvbC1mdXR1cmWxYWxsb3dlZF9mb3JfZW50cnnDpm1hcmtldIWrb2JzZXJ2ZWRfYXTHQwOUqGRhdGV0aW1lqGRhdGV0aW1l2SAyMDI2LTExLTE3VDE4OjU1OjQwLjg2OTI3OCswMDowMK1mcm9taXNvZm9ybWF0qmxhc3RfcHJpY2XLQHLAAAAAAACqb3JkZXJfYm9va4Orb2JzZXJ2ZWRfYXTHQwOUqGRhdGV0aW1lqGRhdGV0aW1l2SAyMDI2LTExLTE3VDE4OjU1OjQyLjkyNjQzNSswMDowMK1mcm9taXNvZm9ybWF0o2JpZIKlcHJpY2XLQHK4AAAAAACtcXVhbnRpdHlfbG90cwWjYXNrgqVwcmljZctAcsgAAAAAAK1xdWFudGl0eV9sb3RzA650cmFkaW5nX3N0YXR1c9kmU0VDVVJJVFlfVFJBRElOR19TVEFUVVNfTk9STUFMX1RSQURJTke6dHJhZGluZ19zdGF0dXNfb2JzZXJ2ZWRfYXTHQwOUqGRhdGV0aW1lqGRhdGV0aW1l2SAyMDI2LTExLTE3VDE4OjU1OjQwLjg2OTI3OCswMDowMK1mcm9taXNvZm9ybWF0tW1hcmtldF9vYnNlcnZhdGlvbl9pZNlAN2QzNTU5MWNiZGY5OTQ4OWUxM2IwNjM0NGE4ZDY4YjNkMjA0NGJmYTI2M2M2YTdmMGUxNDQyMjBlMTUwNzQxM6dhY2NvdW50hatvYnNlcnZlZF9hdMdDA5SoZGF0ZXRpbWWoZGF0ZXRpbWXZIDIwMjYtMTEtMTdUMTg6NTU6NDAuODY5Mjc4KzAwOjAwrWZyb21pc29mb3JtYXSoY3VycmVuY3mjUlVCpmVxdWl0ectA+GoAAAAAALBhdmFpbGFibGVfbWFyZ2luy0D1+QAAAAAAomlkr3NhbmRib3gtYWNjb3VudKhwb3NpdGlvbsCsZW50cnlfcmVhc29uwKxyZWxhdGVkX25ld3OQum9taXR0ZWRfcmVsYXRlZF9uZXdzX2NvdW50ALNtb2RlbF92YWxpZGF0ZV9qc29u"
+        },
+        "task_path": "~__pregel_pull, __start__"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d5a2-652a-bfff-a3b9602d2015",
+        "task_id": "c0d08172-da86-b6e3-4526-6ec38e05eeec",
+        "idx": 1,
+        "channel": "proposal",
+        "type": "null",
+        "blob": {
+          "base64": ""
+        },
+        "task_path": "~__pregel_pull, __start__"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d5a2-652a-bfff-a3b9602d2015",
+        "task_id": "c0d08172-da86-b6e3-4526-6ec38e05eeec",
+        "idx": 2,
+        "channel": "proposal_id",
+        "type": "null",
+        "blob": {
+          "base64": ""
+        },
+        "task_path": "~__pregel_pull, __start__"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d5a2-652a-bfff-a3b9602d2015",
+        "task_id": "c0d08172-da86-b6e3-4526-6ec38e05eeec",
+        "idx": 3,
+        "channel": "review",
+        "type": "null",
+        "blob": {
+          "base64": ""
+        },
+        "task_path": "~__pregel_pull, __start__"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d5a2-652a-bfff-a3b9602d2015",
+        "task_id": "c0d08172-da86-b6e3-4526-6ec38e05eeec",
+        "idx": 4,
+        "channel": "calls",
+        "type": "msgpack",
+        "blob": {
+          "base64": "kA=="
+        },
+        "task_path": "~__pregel_pull, __start__"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d5a6-61f9-8000-5b3096af52c4",
+        "task_id": "28f2271e-6a21-4608-ef56-3690400dbe24",
+        "idx": 1,
+        "channel": "proposal_id",
+        "type": "msgpack",
+        "blob": {
+          "base64": "2Yo1MDFjMTI0MzRkOGQzOTEwNzNjOTI0ZDJlMzQ3N2EwYmU3MDU5ZGRhZmIzZjA2YTkyMWEyNDdjZTk1ZWMzMjdhOnJldmlldzo3YzVkNDBhYTVhZTU2OGMzMjdjNjFkMmY5ODA4ZmIwYmFmNjBhNGNiNzU2ZDI0ZmI1OGEzYzhhZTlhN2YxY2NlOjE="
+        },
+        "task_path": "~__pregel_pull, analyst"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d5a6-61f9-8000-5b3096af52c4",
+        "task_id": "28f2271e-6a21-4608-ef56-3690400dbe24",
+        "idx": 0,
+        "channel": "proposal",
+        "type": "msgpack",
+        "blob": {
+          "base64": "yAJFBZS7bmV3c19mdXR1cmVzLmRvbWFpbi5jb21wYW55r0NvbXBhbnlQcm9wb3NhbIumYWN0aW9upWVudGVyrnB1YmxpY2F0aW9uX2lkr3RlbGVncmFtOjEyMzoxMaRzaWRlpGxvbmerZW50cnlfcHJpY2XLQHLAAAAAAACpc3RvcF9sb3Nzy0ByIAAAAAAAq3Rha2VfcHJvZml0y0B0AAAAAAAApnJlYXNvbtkv0JjRgdGF0L7QtNC90L7QtSDQvtGB0L3QvtCy0LDQvdC40LUg0LLRhdC+0LTQsC6qY29tcGFueV9pZKRzYmVyq2NvbnRyYWN0X2lkrmNvbnRyb2wtZnV0dXJlq2Fzc2Vzc21lbnRzkYSrY29udHJhY3RfaWSuY29udHJvbC1mdXR1cmWmaW1wYWN0qHZlcmlmaWVkpnJlYXNvbqlGb3JlY2FzdC6oZXZpZGVuY2WRgqhyZXZpc2lvbtlANTAxYzEyNDM0ZDhkMzkxMDczYzkyNGQyZTM0NzdhMGJlNzA1OWRkYWZiM2YwNmE5MjFhMjQ3Y2U5NWVjMzI3YaVxdW90ZdlAU0JFUiDQvtC/0YPQsdC70LjQutC+0LLQsNC7INC/0L7QstGL0YjQtdC90L3Ri9C5INC/0YDQvtCz0L3QvtC3Lq9sZXZlbF9yYXRpb25hbGWDpWVudHJ5plF1b3RlLqlzdG9wX2xvc3OoU3VwcG9ydC6rdGFrZV9wcm9maXSnVGFyZ2V0LrNtb2RlbF92YWxpZGF0ZV9qc29u"
+        },
+        "task_path": "~__pregel_pull, analyst"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d5a6-61f9-8000-5b3096af52c4",
+        "task_id": "28f2271e-6a21-4608-ef56-3690400dbe24",
+        "idx": 2,
+        "channel": "calls",
+        "type": "msgpack",
+        "blob": {
+          "base64": "kd4AEqRyb2xlp2FuYWx5c3SkbW9kZatvYnNlcnZhdGlvbq9yZXF1ZXN0ZWRfbW9kZWysdGVzdC9hbmFseXN0qmFnZ3JlZ2F0b3Kqb3BlbnJvdXRlcqxhY3R1YWxfbW9kZWysdGVzdC9hbmFseXN0qHByb3ZpZGVyrFRlc3RQcm92aWRlcrBzZXR0aW5nc192ZXJzaW9u2UA2OGRjYzA4NDY1MWZkOTQ2Y2Q2MzAxZWJjYTQ3YmYyZGViZTgwMDU4NWUwNjExZDdmY2RlY2I2NzM3ODc1MWMypWlucHV0g6djb250ZXh0iatwdWJsaWNhdGlvboiiaWSvdGVsZWdyYW06MTIzOjExpnNvdXJjZax0ZWxlZ3JhbToxMjOjdXJstmh0dHBzOi8vdC5tZS9zb3VyY2UvMTGkdGV4dNlAU0JFUiDQvtC/0YPQsdC70LjQutC+0LLQsNC7INC/0L7QstGL0YjQtdC90L3Ri9C5INC/0YDQvtCz0L3QvtC3LqxwdWJsaXNoZWRfYXTZIDIwMjYtMTEtMTdUMTg6NTU6NDAuOTM0MDg4KzAwOjAwqWVkaXRlZF9hdMCsdW5yZWFkX21lZGlhwqZjaGFuZ2WjbmV3pWV2ZW50iKtkZWNpc2lvbl9pZAGocmV2aXNpb27ZQDUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2GoZXZlbnRfaWTZIDFkNzZkNDFjYzYzYTQ5YTBhYmJiOGRkODJlZmQyMWYxpGtpbmSlc2F2ZWSoYmFzaXNfYXTZIDIwMjYtMTEtMTdUMTg6NTU6NDAuOTM0MDg4KzAwOjAwqmFzc2Vzc21lbnTApWxpbmtzkYuucHVibGljYXRpb25faWSvdGVsZWdyYW06MTIzOjExr3B1YmxpY2F0aW9uX3VybLZodHRwczovL3QubWUvc291cmNlLzExsnB1YmxpY2F0aW9uX3NoYTI1NtlAYjZhNjczYTY4YzhmNzY0Nzk4NWI5MGM1NzZkYjRmMzY0ZmYxOTllNzE3Y2ZkNTI3ZWJiYzQzZDNjNzhiMjNlMbtwdWJsaWNhdGlvbl9yZXZpc2lvbl9zaGEyNTbZQDJkNTg2YTcwMDU4MjdiNGVmNDFmZjE5ZTQxZjA4YTU1NGM0Y2QxODcxNzcyZDQ3ZTU4Y2IyODg4MzA4Y2MzYjauY2F0YWxvZ19zaGEyNTbZQDdkN2IzYTE0YjYxMmQzNGI3ZjJhYTFhZGJiN2UzZGMzYjk1YmNkZTg4YTNhYTczMzU0ZjZlODExMmQ2MjMyMWSqY29tcGFueV9pZKRzYmVypGtpbmSmZGlyZWN0pWJhc2lzpmRpcmVjdKVzY29yZcs/8AAAAAAAAKpjb25maWRlbmNlyz/wAAAAAAAAt3JlcXVpcmVzX2FuYWx5c3RfcmV2aWV3wqpjb3JyZWN0aW9uwLRhZmZlY3RlZF9jb21wYW55X2lkc5Gkc2JlcqpjYW5kaWRhdGVzkYeqY29tcGFueV9pZKRzYmVyrGNvbXBhbnlfbmFtZaRTQkVSqHNoYXJlX2lkqnNiZXItc2hhcmWrY29udHJhY3RfaWSuY29udHJvbC1mdXR1cmWxYWxsb3dlZF9mb3JfZW50cnnDpm1hcmtldIWrb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0MC44NjkyNzhaqmxhc3RfcHJpY2XLQHLAAAAAAACqb3JkZXJfYm9va4Orb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0Mi45MjY0MzVao2JpZIKlcHJpY2XLQHK4AAAAAACtcXVhbnRpdHlfbG90cwWjYXNrgqVwcmljZctAcsgAAAAAAK1xdWFudGl0eV9sb3RzA650cmFkaW5nX3N0YXR1c9kmU0VDVVJJVFlfVFJBRElOR19TVEFUVVNfTk9STUFMX1RSQURJTke6dHJhZGluZ19zdGF0dXNfb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0MC44NjkyNzhatW1hcmtldF9vYnNlcnZhdGlvbl9pZNlAN2QzNTU5MWNiZGY5OTQ4OWUxM2IwNjM0NGE4ZDY4YjNkMjA0NGJmYTI2M2M2YTdmMGUxNDQyMjBlMTUwNzQxM6dhY2NvdW50hatvYnNlcnZlZF9hdLsyMDI2LTExLTE3VDE4OjU1OjQwLjg2OTI3OFqoY3VycmVuY3mjUlVCpmVxdWl0ectA+GoAAAAAALBhdmFpbGFibGVfbWFyZ2luy0D1+QAAAAAAomlkr3NhbmRib3gtYWNjb3VudKhwb3NpdGlvbsCsZW50cnlfcmVhc29uwKxyZWxhdGVkX25ld3OQum9taXR0ZWRfcmVsYXRlZF9uZXdzX2NvdW50AKhwcm9wb3NhbMCmcmV2aWV3wKZvdXRwdXSMpmFjdGlvbqVlbnRlcq5wdWJsaWNhdGlvbl9pZK90ZWxlZ3JhbToxMjM6MTGkc2lkZaRsb25nq2VudHJ5X3ByaWNly0BywAAAAAAAqXN0b3BfbG9zc8tAciAAAAAAAKt0YWtlX3Byb2ZpdMtAdAAAAAAAAKZyZWFzb27ZL9CY0YHRhdC+0LTQvdC+0LUg0L7RgdC90L7QstCw0L3QuNC1INCy0YXQvtC00LAuqmNvbXBhbnlfaWSkc2Jlcqtjb250cmFjdF9pZK5jb250cm9sLWZ1dHVyZathc3Nlc3NtZW50c5GEq2NvbnRyYWN0X2lkrmNvbnRyb2wtZnV0dXJlpmltcGFjdKh2ZXJpZmllZKZyZWFzb26pRm9yZWNhc3QuqGV2aWRlbmNlkYKocmV2aXNpb27ZQDUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2GlcXVvdGXZQFNCRVIg0L7Qv9GD0LHQu9C40LrQvtCy0LDQuyDQv9C+0LLRi9GI0LXQvdC90YvQuSDQv9GA0L7Qs9C90L7Qty6vbGV2ZWxfcmF0aW9uYWxlg6VlbnRyeaZRdW90ZS6pc3RvcF9sb3NzqFN1cHBvcnQuq3Rha2VfcHJvZml0p1RhcmdldC6iaWTZijUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2E6cmV2aWV3OjdjNWQ0MGFhNWFlNTY4YzMyN2M2MWQyZjk4MDhmYjBiYWY2MGE0Y2I3NTZkMjRmYjU4YTNjOGFlOWE3ZjFjY2U6MaVlcnJvcsCldXNhZ2WFrGlucHV0X3Rva2VucxStb3V0cHV0X3Rva2Vucx6sdG90YWxfdG9rZW5zMrNpbnB1dF90b2tlbl9kZXRhaWxzgLRvdXRwdXRfdG9rZW5fZGV0YWlsc4CkY29zdMs/UGJN0vGp/KpzdGFydGVkX2F02SAyMDI2LTExLTE3VDE4OjU1OjQzLjAyMzA2NyswMDowMKhtZXRhZGF0YYaiaWSrZ2VuLWNvbnRyb2yubW9kZWxfcHJvdmlkZXKqb3BlbnJvdXRlcq1maW5pc2hfcmVhc29upHN0b3CsY29zdF9kZXRhaWxzwLJzeXN0ZW1fZmluZ2VycHJpbnTAs29wZW5yb3V0ZXJfbWV0YWRhdGHAqnJhd19vdXRwdXTaAyd7ImFjdGlvbiI6ICJlbnRlciIsICJwdWJsaWNhdGlvbl9pZCI6ICJ0ZWxlZ3JhbToxMjM6MTEiLCAiY29tcGFueV9pZCI6ICJzYmVyIiwgImNvbnRyYWN0X2lkIjogImNvbnRyb2wtZnV0dXJlIiwgInNpZGUiOiAibG9uZyIsICJlbnRyeV9wcmljZSI6IDMwMCwgInN0b3BfbG9zcyI6IDI5MCwgInRha2VfcHJvZml0IjogMzIwLCAicmVhc29uIjogIlx1MDQxOFx1MDQ0MVx1MDQ0NVx1MDQzZVx1MDQzNFx1MDQzZFx1MDQzZVx1MDQzNSBcdTA0M2VcdTA0NDFcdTA0M2RcdTA0M2VcdTA0MzJcdTA0MzBcdTA0M2RcdTA0MzhcdTA0MzUgXHUwNDMyXHUwNDQ1XHUwNDNlXHUwNDM0XHUwNDMwLiIsICJsZXZlbF9yYXRpb25hbGUiOiB7ImVudHJ5IjogIlF1b3RlLiIsICJzdG9wX2xvc3MiOiAiU3VwcG9ydC4iLCAidGFrZV9wcm9maXQiOiAiVGFyZ2V0LiJ9LCAiYXNzZXNzbWVudHMiOiBbeyJjb250cmFjdF9pZCI6ICJjb250cm9sLWZ1dHVyZSIsICJpbXBhY3QiOiAidmVyaWZpZWQiLCAicmVhc29uIjogIkZvcmVjYXN0LiIsICJldmlkZW5jZSI6IFt7InJldmlzaW9uIjogIjUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2EiLCAicXVvdGUiOiAiU0JFUiBcdTA0M2VcdTA0M2ZcdTA0NDNcdTA0MzFcdTA0M2JcdTA0MzhcdTA0M2FcdTA0M2VcdTA0MzJcdTA0MzBcdTA0M2IgXHUwNDNmXHUwNDNlXHUwNDMyXHUwNDRiXHUwNDQ4XHUwNDM1XHUwNDNkXHUwNDNkXHUwNDRiXHUwNDM5IFx1MDQzZlx1MDQ0MFx1MDQzZVx1MDQzM1x1MDQzZFx1MDQzZVx1MDQzNy4ifV19XX2pZm9ybWVkX2F02SAyMDI2LTExLTE3VDE4OjU1OjQzLjE2NjMzMSswMDowMKJhdNkgMjAyNi0xMS0xN1QxODo1NTo0My4xNjYzMzErMDA6MDCqbGF0ZW5jeV9tc8tAYc7ZFocrAg=="
+        },
+        "task_path": "~__pregel_pull, analyst"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d5a6-61f9-8000-5b3096af52c4",
+        "task_id": "28f2271e-6a21-4608-ef56-3690400dbe24",
+        "idx": 3,
+        "channel": "review",
+        "type": "null",
+        "blob": {
+          "base64": ""
+        },
+        "task_path": "~__pregel_pull, analyst"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d5a6-61f9-8000-5b3096af52c4",
+        "task_id": "28f2271e-6a21-4608-ef56-3690400dbe24",
+        "idx": 4,
+        "channel": "previous_review",
+        "type": "null",
+        "blob": {
+          "base64": ""
+        },
+        "task_path": "~__pregel_pull, analyst"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d5a6-61f9-8000-5b3096af52c4",
+        "task_id": "28f2271e-6a21-4608-ef56-3690400dbe24",
+        "idx": 5,
+        "channel": "revisions",
+        "type": "msgpack",
+        "blob": {
+          "base64": "AA=="
+        },
+        "task_path": "~__pregel_pull, analyst"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d5a6-61f9-8000-5b3096af52c4",
+        "task_id": "28f2271e-6a21-4608-ef56-3690400dbe24",
+        "idx": 6,
+        "channel": "branch:to:critic",
+        "type": "null",
+        "blob": {
+          "base64": ""
+        },
+        "task_path": "~__pregel_pull, analyst"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d71f-6d8c-8001-1656aa007d76",
+        "task_id": "183aae19-ee41-26e1-ca34-b89727cd9379",
+        "idx": 0,
+        "channel": "review",
+        "type": "msgpack",
+        "blob": {
+          "base64": "yAFLBZS9bmV3c19mdXR1cmVzLmRvbWFpbi5jb250cmFjdHOmUmV2aWV3hKtwcm9wb3NhbF9pZNmKNTAxYzEyNDM0ZDhkMzkxMDczYzkyNGQyZTM0NzdhMGJlNzA1OWRkYWZiM2YwNmE5MjFhMjQ3Y2U5NWVjMzI3YTpyZXZpZXc6N2M1ZDQwYWE1YWU1NjhjMzI3YzYxZDJmOTgwOGZiMGJhZjYwYTRjYjc1NmQyNGZiNThhM2M4YWU5YTdmMWNjZToxqGFwcHJvdmVkwqpvYmplY3Rpb25zkdkiSW5zdWZmaWNpZW50IGluZGVwZW5kZW50IGV2aWRlbmNlLqZyZWFzb27ZNUNoZWNrZWQgYWdhaW5zdCB0aGUgb3JpZ2luYWwgcHVibGljYXRpb24gYW5kIGNvbnRleHQus21vZGVsX3ZhbGlkYXRlX2pzb24="
+        },
+        "task_path": "~__pregel_pull, critic"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d71f-6d8c-8001-1656aa007d76",
+        "task_id": "183aae19-ee41-26e1-ca34-b89727cd9379",
+        "idx": 1,
+        "channel": "calls",
+        "type": "msgpack",
+        "blob": {
+          "base64": "kt4AEqRyb2xlp2FuYWx5c3SkbW9kZatvYnNlcnZhdGlvbq9yZXF1ZXN0ZWRfbW9kZWysdGVzdC9hbmFseXN0qmFnZ3JlZ2F0b3Kqb3BlbnJvdXRlcqxhY3R1YWxfbW9kZWysdGVzdC9hbmFseXN0qHByb3ZpZGVyrFRlc3RQcm92aWRlcrBzZXR0aW5nc192ZXJzaW9u2UA2OGRjYzA4NDY1MWZkOTQ2Y2Q2MzAxZWJjYTQ3YmYyZGViZTgwMDU4NWUwNjExZDdmY2RlY2I2NzM3ODc1MWMypWlucHV0g6djb250ZXh0iatwdWJsaWNhdGlvboiiaWSvdGVsZWdyYW06MTIzOjExpnNvdXJjZax0ZWxlZ3JhbToxMjOjdXJstmh0dHBzOi8vdC5tZS9zb3VyY2UvMTGkdGV4dNlAU0JFUiDQvtC/0YPQsdC70LjQutC+0LLQsNC7INC/0L7QstGL0YjQtdC90L3Ri9C5INC/0YDQvtCz0L3QvtC3LqxwdWJsaXNoZWRfYXTZIDIwMjYtMTEtMTdUMTg6NTU6NDAuOTM0MDg4KzAwOjAwqWVkaXRlZF9hdMCsdW5yZWFkX21lZGlhwqZjaGFuZ2WjbmV3pWV2ZW50iKtkZWNpc2lvbl9pZAGocmV2aXNpb27ZQDUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2GoZXZlbnRfaWTZIDFkNzZkNDFjYzYzYTQ5YTBhYmJiOGRkODJlZmQyMWYxpGtpbmSlc2F2ZWSoYmFzaXNfYXTZIDIwMjYtMTEtMTdUMTg6NTU6NDAuOTM0MDg4KzAwOjAwqmFzc2Vzc21lbnTApWxpbmtzkYuucHVibGljYXRpb25faWSvdGVsZWdyYW06MTIzOjExr3B1YmxpY2F0aW9uX3VybLZodHRwczovL3QubWUvc291cmNlLzExsnB1YmxpY2F0aW9uX3NoYTI1NtlAYjZhNjczYTY4YzhmNzY0Nzk4NWI5MGM1NzZkYjRmMzY0ZmYxOTllNzE3Y2ZkNTI3ZWJiYzQzZDNjNzhiMjNlMbtwdWJsaWNhdGlvbl9yZXZpc2lvbl9zaGEyNTbZQDJkNTg2YTcwMDU4MjdiNGVmNDFmZjE5ZTQxZjA4YTU1NGM0Y2QxODcxNzcyZDQ3ZTU4Y2IyODg4MzA4Y2MzYjauY2F0YWxvZ19zaGEyNTbZQDdkN2IzYTE0YjYxMmQzNGI3ZjJhYTFhZGJiN2UzZGMzYjk1YmNkZTg4YTNhYTczMzU0ZjZlODExMmQ2MjMyMWSqY29tcGFueV9pZKRzYmVypGtpbmSmZGlyZWN0pWJhc2lzpmRpcmVjdKVzY29yZcs/8AAAAAAAAKpjb25maWRlbmNlyz/wAAAAAAAAt3JlcXVpcmVzX2FuYWx5c3RfcmV2aWV3wqpjb3JyZWN0aW9uwLRhZmZlY3RlZF9jb21wYW55X2lkc5Gkc2JlcqpjYW5kaWRhdGVzkYeqY29tcGFueV9pZKRzYmVyrGNvbXBhbnlfbmFtZaRTQkVSqHNoYXJlX2lkqnNiZXItc2hhcmWrY29udHJhY3RfaWSuY29udHJvbC1mdXR1cmWxYWxsb3dlZF9mb3JfZW50cnnDpm1hcmtldIWrb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0MC44NjkyNzhaqmxhc3RfcHJpY2XLQHLAAAAAAACqb3JkZXJfYm9va4Orb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0Mi45MjY0MzVao2JpZIKlcHJpY2XLQHK4AAAAAACtcXVhbnRpdHlfbG90cwWjYXNrgqVwcmljZctAcsgAAAAAAK1xdWFudGl0eV9sb3RzA650cmFkaW5nX3N0YXR1c9kmU0VDVVJJVFlfVFJBRElOR19TVEFUVVNfTk9STUFMX1RSQURJTke6dHJhZGluZ19zdGF0dXNfb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0MC44NjkyNzhatW1hcmtldF9vYnNlcnZhdGlvbl9pZNlAN2QzNTU5MWNiZGY5OTQ4OWUxM2IwNjM0NGE4ZDY4YjNkMjA0NGJmYTI2M2M2YTdmMGUxNDQyMjBlMTUwNzQxM6dhY2NvdW50hatvYnNlcnZlZF9hdLsyMDI2LTExLTE3VDE4OjU1OjQwLjg2OTI3OFqoY3VycmVuY3mjUlVCpmVxdWl0ectA+GoAAAAAALBhdmFpbGFibGVfbWFyZ2luy0D1+QAAAAAAomlkr3NhbmRib3gtYWNjb3VudKhwb3NpdGlvbsCsZW50cnlfcmVhc29uwKxyZWxhdGVkX25ld3OQum9taXR0ZWRfcmVsYXRlZF9uZXdzX2NvdW50AKhwcm9wb3NhbMCmcmV2aWV3wKZvdXRwdXSMpmFjdGlvbqVlbnRlcq5wdWJsaWNhdGlvbl9pZK90ZWxlZ3JhbToxMjM6MTGkc2lkZaRsb25nq2VudHJ5X3ByaWNly0BywAAAAAAAqXN0b3BfbG9zc8tAciAAAAAAAKt0YWtlX3Byb2ZpdMtAdAAAAAAAAKZyZWFzb27ZL9CY0YHRhdC+0LTQvdC+0LUg0L7RgdC90L7QstCw0L3QuNC1INCy0YXQvtC00LAuqmNvbXBhbnlfaWSkc2Jlcqtjb250cmFjdF9pZK5jb250cm9sLWZ1dHVyZathc3Nlc3NtZW50c5GEq2NvbnRyYWN0X2lkrmNvbnRyb2wtZnV0dXJlpmltcGFjdKh2ZXJpZmllZKZyZWFzb26pRm9yZWNhc3QuqGV2aWRlbmNlkYKocmV2aXNpb27ZQDUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2GlcXVvdGXZQFNCRVIg0L7Qv9GD0LHQu9C40LrQvtCy0LDQuyDQv9C+0LLRi9GI0LXQvdC90YvQuSDQv9GA0L7Qs9C90L7Qty6vbGV2ZWxfcmF0aW9uYWxlg6VlbnRyeaZRdW90ZS6pc3RvcF9sb3NzqFN1cHBvcnQuq3Rha2VfcHJvZml0p1RhcmdldC6iaWTZijUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2E6cmV2aWV3OjdjNWQ0MGFhNWFlNTY4YzMyN2M2MWQyZjk4MDhmYjBiYWY2MGE0Y2I3NTZkMjRmYjU4YTNjOGFlOWE3ZjFjY2U6MaVlcnJvcsCldXNhZ2WFrGlucHV0X3Rva2VucxStb3V0cHV0X3Rva2Vucx6sdG90YWxfdG9rZW5zMrNpbnB1dF90b2tlbl9kZXRhaWxzgLRvdXRwdXRfdG9rZW5fZGV0YWlsc4CkY29zdMs/UGJN0vGp/KpzdGFydGVkX2F02SAyMDI2LTExLTE3VDE4OjU1OjQzLjAyMzA2NyswMDowMKhtZXRhZGF0YYaiaWSrZ2VuLWNvbnRyb2yubW9kZWxfcHJvdmlkZXKqb3BlbnJvdXRlcq1maW5pc2hfcmVhc29upHN0b3CsY29zdF9kZXRhaWxzwLJzeXN0ZW1fZmluZ2VycHJpbnTAs29wZW5yb3V0ZXJfbWV0YWRhdGHAqnJhd19vdXRwdXTaAyd7ImFjdGlvbiI6ICJlbnRlciIsICJwdWJsaWNhdGlvbl9pZCI6ICJ0ZWxlZ3JhbToxMjM6MTEiLCAiY29tcGFueV9pZCI6ICJzYmVyIiwgImNvbnRyYWN0X2lkIjogImNvbnRyb2wtZnV0dXJlIiwgInNpZGUiOiAibG9uZyIsICJlbnRyeV9wcmljZSI6IDMwMCwgInN0b3BfbG9zcyI6IDI5MCwgInRha2VfcHJvZml0IjogMzIwLCAicmVhc29uIjogIlx1MDQxOFx1MDQ0MVx1MDQ0NVx1MDQzZVx1MDQzNFx1MDQzZFx1MDQzZVx1MDQzNSBcdTA0M2VcdTA0NDFcdTA0M2RcdTA0M2VcdTA0MzJcdTA0MzBcdTA0M2RcdTA0MzhcdTA0MzUgXHUwNDMyXHUwNDQ1XHUwNDNlXHUwNDM0XHUwNDMwLiIsICJsZXZlbF9yYXRpb25hbGUiOiB7ImVudHJ5IjogIlF1b3RlLiIsICJzdG9wX2xvc3MiOiAiU3VwcG9ydC4iLCAidGFrZV9wcm9maXQiOiAiVGFyZ2V0LiJ9LCAiYXNzZXNzbWVudHMiOiBbeyJjb250cmFjdF9pZCI6ICJjb250cm9sLWZ1dHVyZSIsICJpbXBhY3QiOiAidmVyaWZpZWQiLCAicmVhc29uIjogIkZvcmVjYXN0LiIsICJldmlkZW5jZSI6IFt7InJldmlzaW9uIjogIjUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2EiLCAicXVvdGUiOiAiU0JFUiBcdTA0M2VcdTA0M2ZcdTA0NDNcdTA0MzFcdTA0M2JcdTA0MzhcdTA0M2FcdTA0M2VcdTA0MzJcdTA0MzBcdTA0M2IgXHUwNDNmXHUwNDNlXHUwNDMyXHUwNDRiXHUwNDQ4XHUwNDM1XHUwNDNkXHUwNDNkXHUwNDRiXHUwNDM5IFx1MDQzZlx1MDQ0MFx1MDQzZVx1MDQzM1x1MDQzZFx1MDQzZVx1MDQzNy4ifV19XX2pZm9ybWVkX2F02SAyMDI2LTExLTE3VDE4OjU1OjQzLjE2NjMzMSswMDowMKJhdNkgMjAyNi0xMS0xN1QxODo1NTo0My4xNjYzMzErMDA6MDCqbGF0ZW5jeV9tc8tAYc7ZFocrAt4AEaRyb2xlpmNyaXRpY6Rtb2Rlq29ic2VydmF0aW9ur3JlcXVlc3RlZF9tb2RlbKt0ZXN0L2NyaXRpY6phZ2dyZWdhdG9yqm9wZW5yb3V0ZXKsYWN0dWFsX21vZGVsq3Rlc3QvY3JpdGljqHByb3ZpZGVyrFRlc3RQcm92aWRlcrBzZXR0aW5nc192ZXJzaW9u2UA2OGRjYzA4NDY1MWZkOTQ2Y2Q2MzAxZWJjYTQ3YmYyZGViZTgwMDU4NWUwNjExZDdmY2RlY2I2NzM3ODc1MWMypWlucHV0g6djb250ZXh0iatwdWJsaWNhdGlvboiiaWSvdGVsZWdyYW06MTIzOjExpnNvdXJjZax0ZWxlZ3JhbToxMjOjdXJstmh0dHBzOi8vdC5tZS9zb3VyY2UvMTGkdGV4dNlAU0JFUiDQvtC/0YPQsdC70LjQutC+0LLQsNC7INC/0L7QstGL0YjQtdC90L3Ri9C5INC/0YDQvtCz0L3QvtC3LqxwdWJsaXNoZWRfYXTZIDIwMjYtMTEtMTdUMTg6NTU6NDAuOTM0MDg4KzAwOjAwqWVkaXRlZF9hdMCsdW5yZWFkX21lZGlhwqZjaGFuZ2WjbmV3pWV2ZW50iKtkZWNpc2lvbl9pZAGocmV2aXNpb27ZQDUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2GoZXZlbnRfaWTZIDFkNzZkNDFjYzYzYTQ5YTBhYmJiOGRkODJlZmQyMWYxpGtpbmSlc2F2ZWSoYmFzaXNfYXTZIDIwMjYtMTEtMTdUMTg6NTU6NDAuOTM0MDg4KzAwOjAwqmFzc2Vzc21lbnTApWxpbmtzkYuucHVibGljYXRpb25faWSvdGVsZWdyYW06MTIzOjExr3B1YmxpY2F0aW9uX3VybLZodHRwczovL3QubWUvc291cmNlLzExsnB1YmxpY2F0aW9uX3NoYTI1NtlAYjZhNjczYTY4YzhmNzY0Nzk4NWI5MGM1NzZkYjRmMzY0ZmYxOTllNzE3Y2ZkNTI3ZWJiYzQzZDNjNzhiMjNlMbtwdWJsaWNhdGlvbl9yZXZpc2lvbl9zaGEyNTbZQDJkNTg2YTcwMDU4MjdiNGVmNDFmZjE5ZTQxZjA4YTU1NGM0Y2QxODcxNzcyZDQ3ZTU4Y2IyODg4MzA4Y2MzYjauY2F0YWxvZ19zaGEyNTbZQDdkN2IzYTE0YjYxMmQzNGI3ZjJhYTFhZGJiN2UzZGMzYjk1YmNkZTg4YTNhYTczMzU0ZjZlODExMmQ2MjMyMWSqY29tcGFueV9pZKRzYmVypGtpbmSmZGlyZWN0pWJhc2lzpmRpcmVjdKVzY29yZcs/8AAAAAAAAKpjb25maWRlbmNlyz/wAAAAAAAAt3JlcXVpcmVzX2FuYWx5c3RfcmV2aWV3wqpjb3JyZWN0aW9uwLRhZmZlY3RlZF9jb21wYW55X2lkc5Gkc2JlcqpjYW5kaWRhdGVzkYeqY29tcGFueV9pZKRzYmVyrGNvbXBhbnlfbmFtZaRTQkVSqHNoYXJlX2lkqnNiZXItc2hhcmWrY29udHJhY3RfaWSuY29udHJvbC1mdXR1cmWxYWxsb3dlZF9mb3JfZW50cnnDpm1hcmtldIWrb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0MC44NjkyNzhaqmxhc3RfcHJpY2XLQHLAAAAAAACqb3JkZXJfYm9va4Orb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0Mi45MjY0MzVao2JpZIKlcHJpY2XLQHK4AAAAAACtcXVhbnRpdHlfbG90cwWjYXNrgqVwcmljZctAcsgAAAAAAK1xdWFudGl0eV9sb3RzA650cmFkaW5nX3N0YXR1c9kmU0VDVVJJVFlfVFJBRElOR19TVEFUVVNfTk9STUFMX1RSQURJTke6dHJhZGluZ19zdGF0dXNfb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0MC44NjkyNzhatW1hcmtldF9vYnNlcnZhdGlvbl9pZNlAN2QzNTU5MWNiZGY5OTQ4OWUxM2IwNjM0NGE4ZDY4YjNkMjA0NGJmYTI2M2M2YTdmMGUxNDQyMjBlMTUwNzQxM6dhY2NvdW50hatvYnNlcnZlZF9hdLsyMDI2LTExLTE3VDE4OjU1OjQwLjg2OTI3OFqoY3VycmVuY3mjUlVCpmVxdWl0ectA+GoAAAAAALBhdmFpbGFibGVfbWFyZ2luy0D1+QAAAAAAomlkr3NhbmRib3gtYWNjb3VudKhwb3NpdGlvbsCsZW50cnlfcmVhc29uwKxyZWxhdGVkX25ld3OQum9taXR0ZWRfcmVsYXRlZF9uZXdzX2NvdW50AKhwcm9wb3NhbIymYWN0aW9upWVudGVyrnB1YmxpY2F0aW9uX2lkr3RlbGVncmFtOjEyMzoxMaRzaWRlpGxvbmerZW50cnlfcHJpY2XLQHLAAAAAAACpc3RvcF9sb3Nzy0ByIAAAAAAAq3Rha2VfcHJvZml0y0B0AAAAAAAApnJlYXNvbtkv0JjRgdGF0L7QtNC90L7QtSDQvtGB0L3QvtCy0LDQvdC40LUg0LLRhdC+0LTQsC6qY29tcGFueV9pZKRzYmVyq2NvbnRyYWN0X2lkrmNvbnRyb2wtZnV0dXJlq2Fzc2Vzc21lbnRzkYSrY29udHJhY3RfaWSuY29udHJvbC1mdXR1cmWmaW1wYWN0qHZlcmlmaWVkpnJlYXNvbqlGb3JlY2FzdC6oZXZpZGVuY2WRgqhyZXZpc2lvbtlANTAxYzEyNDM0ZDhkMzkxMDczYzkyNGQyZTM0NzdhMGJlNzA1OWRkYWZiM2YwNmE5MjFhMjQ3Y2U5NWVjMzI3YaVxdW90ZdlAU0JFUiDQvtC/0YPQsdC70LjQutC+0LLQsNC7INC/0L7QstGL0YjQtdC90L3Ri9C5INC/0YDQvtCz0L3QvtC3Lq9sZXZlbF9yYXRpb25hbGWDpWVudHJ5plF1b3RlLqlzdG9wX2xvc3OoU3VwcG9ydC6rdGFrZV9wcm9maXSnVGFyZ2V0LqJpZNmKNTAxYzEyNDM0ZDhkMzkxMDczYzkyNGQyZTM0NzdhMGJlNzA1OWRkYWZiM2YwNmE5MjFhMjQ3Y2U5NWVjMzI3YTpyZXZpZXc6N2M1ZDQwYWE1YWU1NjhjMzI3YzYxZDJmOTgwOGZiMGJhZjYwYTRjYjc1NmQyNGZiNThhM2M4YWU5YTdmMWNjZToxr3ByZXZpb3VzX3Jldmlld8Cmb3V0cHV0hKtwcm9wb3NhbF9pZNmKNTAxYzEyNDM0ZDhkMzkxMDczYzkyNGQyZTM0NzdhMGJlNzA1OWRkYWZiM2YwNmE5MjFhMjQ3Y2U5NWVjMzI3YTpyZXZpZXc6N2M1ZDQwYWE1YWU1NjhjMzI3YzYxZDJmOTgwOGZiMGJhZjYwYTRjYjc1NmQyNGZiNThhM2M4YWU5YTdmMWNjZToxqGFwcHJvdmVkwqpvYmplY3Rpb25zkdkiSW5zdWZmaWNpZW50IGluZGVwZW5kZW50IGV2aWRlbmNlLqZyZWFzb27ZNUNoZWNrZWQgYWdhaW5zdCB0aGUgb3JpZ2luYWwgcHVibGljYXRpb24gYW5kIGNvbnRleHQupWVycm9ywKV1c2FnZYWsaW5wdXRfdG9rZW5zFK1vdXRwdXRfdG9rZW5zHqx0b3RhbF90b2tlbnMys2lucHV0X3Rva2VuX2RldGFpbHOAtG91dHB1dF90b2tlbl9kZXRhaWxzgKRjb3N0yz9QYk3S8an8qnN0YXJ0ZWRfYXTZIDIwMjYtMTEtMTdUMTg6NTU6NDMuMTc3Mjg2KzAwOjAwqG1ldGFkYXRhhqJpZKtnZW4tY29udHJvbK5tb2RlbF9wcm92aWRlcqpvcGVucm91dGVyrWZpbmlzaF9yZWFzb26kc3RvcKxjb3N0X2RldGFpbHPAsnN5c3RlbV9maW5nZXJwcmludMCzb3BlbnJvdXRlcl9tZXRhZGF0YcCqcmF3X291dHB1dNoBKXsicHJvcG9zYWxfaWQiOiAiNTAxYzEyNDM0ZDhkMzkxMDczYzkyNGQyZTM0NzdhMGJlNzA1OWRkYWZiM2YwNmE5MjFhMjQ3Y2U5NWVjMzI3YTpyZXZpZXc6N2M1ZDQwYWE1YWU1NjhjMzI3YzYxZDJmOTgwOGZiMGJhZjYwYTRjYjc1NmQyNGZiNThhM2M4YWU5YTdmMWNjZToxIiwgImFwcHJvdmVkIjogZmFsc2UsICJvYmplY3Rpb25zIjogWyJJbnN1ZmZpY2llbnQgaW5kZXBlbmRlbnQgZXZpZGVuY2UuIl0sICJyZWFzb24iOiAiQ2hlY2tlZCBhZ2FpbnN0IHRoZSBvcmlnaW5hbCBwdWJsaWNhdGlvbiBhbmQgY29udGV4dC4ifaJhdNkgMjAyNi0xMS0xN1QxODo1NTo0My4yNjMxODUrMDA6MDCqbGF0ZW5jeV9tc8tAVSvGp++dsg=="
+        },
+        "task_path": "~__pregel_pull, critic"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d71f-6d8c-8001-1656aa007d76",
+        "task_id": "183aae19-ee41-26e1-ca34-b89727cd9379",
+        "idx": 2,
+        "channel": "branch:to:analyst",
+        "type": "null",
+        "blob": {
+          "base64": ""
+        },
+        "task_path": "~__pregel_pull, critic"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d80d-6849-8002-4b1655ac20ef",
+        "task_id": "695e4fae-18d3-3859-4fc3-423502af031e",
+        "idx": 0,
+        "channel": "proposal",
+        "type": "msgpack",
+        "blob": {
+          "base64": "yAJFBZS7bmV3c19mdXR1cmVzLmRvbWFpbi5jb21wYW55r0NvbXBhbnlQcm9wb3NhbIumYWN0aW9upWVudGVyrnB1YmxpY2F0aW9uX2lkr3RlbGVncmFtOjEyMzoxMaRzaWRlpGxvbmerZW50cnlfcHJpY2XLQHLQAAAAAACpc3RvcF9sb3Nzy0ByIAAAAAAAq3Rha2VfcHJvZml0y0B0AAAAAAAApnJlYXNvbtkv0JjRgdGF0L7QtNC90L7QtSDQvtGB0L3QvtCy0LDQvdC40LUg0LLRhdC+0LTQsC6qY29tcGFueV9pZKRzYmVyq2NvbnRyYWN0X2lkrmNvbnRyb2wtZnV0dXJlq2Fzc2Vzc21lbnRzkYSrY29udHJhY3RfaWSuY29udHJvbC1mdXR1cmWmaW1wYWN0qHZlcmlmaWVkpnJlYXNvbqlGb3JlY2FzdC6oZXZpZGVuY2WRgqhyZXZpc2lvbtlANTAxYzEyNDM0ZDhkMzkxMDczYzkyNGQyZTM0NzdhMGJlNzA1OWRkYWZiM2YwNmE5MjFhMjQ3Y2U5NWVjMzI3YaVxdW90ZdlAU0JFUiDQvtC/0YPQsdC70LjQutC+0LLQsNC7INC/0L7QstGL0YjQtdC90L3Ri9C5INC/0YDQvtCz0L3QvtC3Lq9sZXZlbF9yYXRpb25hbGWDpWVudHJ5plF1b3RlLqlzdG9wX2xvc3OoU3VwcG9ydC6rdGFrZV9wcm9maXSnVGFyZ2V0LrNtb2RlbF92YWxpZGF0ZV9qc29u"
+        },
+        "task_path": "~__pregel_pull, analyst"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d80d-6849-8002-4b1655ac20ef",
+        "task_id": "695e4fae-18d3-3859-4fc3-423502af031e",
+        "idx": 1,
+        "channel": "proposal_id",
+        "type": "msgpack",
+        "blob": {
+          "base64": "2Yo1MDFjMTI0MzRkOGQzOTEwNzNjOTI0ZDJlMzQ3N2EwYmU3MDU5ZGRhZmIzZjA2YTkyMWEyNDdjZTk1ZWMzMjdhOnJldmlldzo3YzVkNDBhYTVhZTU2OGMzMjdjNjFkMmY5ODA4ZmIwYmFmNjBhNGNiNzU2ZDI0ZmI1OGEzYzhhZTlhN2YxY2NlOjM="
+        },
+        "task_path": "~__pregel_pull, analyst"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d80d-6849-8002-4b1655ac20ef",
+        "task_id": "695e4fae-18d3-3859-4fc3-423502af031e",
+        "idx": 2,
+        "channel": "calls",
+        "type": "msgpack",
+        "blob": {
+          "base64": "k94AEqRyb2xlp2FuYWx5c3SkbW9kZatvYnNlcnZhdGlvbq9yZXF1ZXN0ZWRfbW9kZWysdGVzdC9hbmFseXN0qmFnZ3JlZ2F0b3Kqb3BlbnJvdXRlcqxhY3R1YWxfbW9kZWysdGVzdC9hbmFseXN0qHByb3ZpZGVyrFRlc3RQcm92aWRlcrBzZXR0aW5nc192ZXJzaW9u2UA2OGRjYzA4NDY1MWZkOTQ2Y2Q2MzAxZWJjYTQ3YmYyZGViZTgwMDU4NWUwNjExZDdmY2RlY2I2NzM3ODc1MWMypWlucHV0g6djb250ZXh0iatwdWJsaWNhdGlvboiiaWSvdGVsZWdyYW06MTIzOjExpnNvdXJjZax0ZWxlZ3JhbToxMjOjdXJstmh0dHBzOi8vdC5tZS9zb3VyY2UvMTGkdGV4dNlAU0JFUiDQvtC/0YPQsdC70LjQutC+0LLQsNC7INC/0L7QstGL0YjQtdC90L3Ri9C5INC/0YDQvtCz0L3QvtC3LqxwdWJsaXNoZWRfYXTZIDIwMjYtMTEtMTdUMTg6NTU6NDAuOTM0MDg4KzAwOjAwqWVkaXRlZF9hdMCsdW5yZWFkX21lZGlhwqZjaGFuZ2WjbmV3pWV2ZW50iKtkZWNpc2lvbl9pZAGocmV2aXNpb27ZQDUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2GoZXZlbnRfaWTZIDFkNzZkNDFjYzYzYTQ5YTBhYmJiOGRkODJlZmQyMWYxpGtpbmSlc2F2ZWSoYmFzaXNfYXTZIDIwMjYtMTEtMTdUMTg6NTU6NDAuOTM0MDg4KzAwOjAwqmFzc2Vzc21lbnTApWxpbmtzkYuucHVibGljYXRpb25faWSvdGVsZWdyYW06MTIzOjExr3B1YmxpY2F0aW9uX3VybLZodHRwczovL3QubWUvc291cmNlLzExsnB1YmxpY2F0aW9uX3NoYTI1NtlAYjZhNjczYTY4YzhmNzY0Nzk4NWI5MGM1NzZkYjRmMzY0ZmYxOTllNzE3Y2ZkNTI3ZWJiYzQzZDNjNzhiMjNlMbtwdWJsaWNhdGlvbl9yZXZpc2lvbl9zaGEyNTbZQDJkNTg2YTcwMDU4MjdiNGVmNDFmZjE5ZTQxZjA4YTU1NGM0Y2QxODcxNzcyZDQ3ZTU4Y2IyODg4MzA4Y2MzYjauY2F0YWxvZ19zaGEyNTbZQDdkN2IzYTE0YjYxMmQzNGI3ZjJhYTFhZGJiN2UzZGMzYjk1YmNkZTg4YTNhYTczMzU0ZjZlODExMmQ2MjMyMWSqY29tcGFueV9pZKRzYmVypGtpbmSmZGlyZWN0pWJhc2lzpmRpcmVjdKVzY29yZcs/8AAAAAAAAKpjb25maWRlbmNlyz/wAAAAAAAAt3JlcXVpcmVzX2FuYWx5c3RfcmV2aWV3wqpjb3JyZWN0aW9uwLRhZmZlY3RlZF9jb21wYW55X2lkc5Gkc2JlcqpjYW5kaWRhdGVzkYeqY29tcGFueV9pZKRzYmVyrGNvbXBhbnlfbmFtZaRTQkVSqHNoYXJlX2lkqnNiZXItc2hhcmWrY29udHJhY3RfaWSuY29udHJvbC1mdXR1cmWxYWxsb3dlZF9mb3JfZW50cnnDpm1hcmtldIWrb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0MC44NjkyNzhaqmxhc3RfcHJpY2XLQHLAAAAAAACqb3JkZXJfYm9va4Orb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0Mi45MjY0MzVao2JpZIKlcHJpY2XLQHK4AAAAAACtcXVhbnRpdHlfbG90cwWjYXNrgqVwcmljZctAcsgAAAAAAK1xdWFudGl0eV9sb3RzA650cmFkaW5nX3N0YXR1c9kmU0VDVVJJVFlfVFJBRElOR19TVEFUVVNfTk9STUFMX1RSQURJTke6dHJhZGluZ19zdGF0dXNfb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0MC44NjkyNzhatW1hcmtldF9vYnNlcnZhdGlvbl9pZNlAN2QzNTU5MWNiZGY5OTQ4OWUxM2IwNjM0NGE4ZDY4YjNkMjA0NGJmYTI2M2M2YTdmMGUxNDQyMjBlMTUwNzQxM6dhY2NvdW50hatvYnNlcnZlZF9hdLsyMDI2LTExLTE3VDE4OjU1OjQwLjg2OTI3OFqoY3VycmVuY3mjUlVCpmVxdWl0ectA+GoAAAAAALBhdmFpbGFibGVfbWFyZ2luy0D1+QAAAAAAomlkr3NhbmRib3gtYWNjb3VudKhwb3NpdGlvbsCsZW50cnlfcmVhc29uwKxyZWxhdGVkX25ld3OQum9taXR0ZWRfcmVsYXRlZF9uZXdzX2NvdW50AKhwcm9wb3NhbMCmcmV2aWV3wKZvdXRwdXSMpmFjdGlvbqVlbnRlcq5wdWJsaWNhdGlvbl9pZK90ZWxlZ3JhbToxMjM6MTGkc2lkZaRsb25nq2VudHJ5X3ByaWNly0BywAAAAAAAqXN0b3BfbG9zc8tAciAAAAAAAKt0YWtlX3Byb2ZpdMtAdAAAAAAAAKZyZWFzb27ZL9CY0YHRhdC+0LTQvdC+0LUg0L7RgdC90L7QstCw0L3QuNC1INCy0YXQvtC00LAuqmNvbXBhbnlfaWSkc2Jlcqtjb250cmFjdF9pZK5jb250cm9sLWZ1dHVyZathc3Nlc3NtZW50c5GEq2NvbnRyYWN0X2lkrmNvbnRyb2wtZnV0dXJlpmltcGFjdKh2ZXJpZmllZKZyZWFzb26pRm9yZWNhc3QuqGV2aWRlbmNlkYKocmV2aXNpb27ZQDUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2GlcXVvdGXZQFNCRVIg0L7Qv9GD0LHQu9C40LrQvtCy0LDQuyDQv9C+0LLRi9GI0LXQvdC90YvQuSDQv9GA0L7Qs9C90L7Qty6vbGV2ZWxfcmF0aW9uYWxlg6VlbnRyeaZRdW90ZS6pc3RvcF9sb3NzqFN1cHBvcnQuq3Rha2VfcHJvZml0p1RhcmdldC6iaWTZijUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2E6cmV2aWV3OjdjNWQ0MGFhNWFlNTY4YzMyN2M2MWQyZjk4MDhmYjBiYWY2MGE0Y2I3NTZkMjRmYjU4YTNjOGFlOWE3ZjFjY2U6MaVlcnJvcsCldXNhZ2WFrGlucHV0X3Rva2VucxStb3V0cHV0X3Rva2Vucx6sdG90YWxfdG9rZW5zMrNpbnB1dF90b2tlbl9kZXRhaWxzgLRvdXRwdXRfdG9rZW5fZGV0YWlsc4CkY29zdMs/UGJN0vGp/KpzdGFydGVkX2F02SAyMDI2LTExLTE3VDE4OjU1OjQzLjAyMzA2NyswMDowMKhtZXRhZGF0YYaiaWSrZ2VuLWNvbnRyb2yubW9kZWxfcHJvdmlkZXKqb3BlbnJvdXRlcq1maW5pc2hfcmVhc29upHN0b3CsY29zdF9kZXRhaWxzwLJzeXN0ZW1fZmluZ2VycHJpbnTAs29wZW5yb3V0ZXJfbWV0YWRhdGHAqnJhd19vdXRwdXTaAyd7ImFjdGlvbiI6ICJlbnRlciIsICJwdWJsaWNhdGlvbl9pZCI6ICJ0ZWxlZ3JhbToxMjM6MTEiLCAiY29tcGFueV9pZCI6ICJzYmVyIiwgImNvbnRyYWN0X2lkIjogImNvbnRyb2wtZnV0dXJlIiwgInNpZGUiOiAibG9uZyIsICJlbnRyeV9wcmljZSI6IDMwMCwgInN0b3BfbG9zcyI6IDI5MCwgInRha2VfcHJvZml0IjogMzIwLCAicmVhc29uIjogIlx1MDQxOFx1MDQ0MVx1MDQ0NVx1MDQzZVx1MDQzNFx1MDQzZFx1MDQzZVx1MDQzNSBcdTA0M2VcdTA0NDFcdTA0M2RcdTA0M2VcdTA0MzJcdTA0MzBcdTA0M2RcdTA0MzhcdTA0MzUgXHUwNDMyXHUwNDQ1XHUwNDNlXHUwNDM0XHUwNDMwLiIsICJsZXZlbF9yYXRpb25hbGUiOiB7ImVudHJ5IjogIlF1b3RlLiIsICJzdG9wX2xvc3MiOiAiU3VwcG9ydC4iLCAidGFrZV9wcm9maXQiOiAiVGFyZ2V0LiJ9LCAiYXNzZXNzbWVudHMiOiBbeyJjb250cmFjdF9pZCI6ICJjb250cm9sLWZ1dHVyZSIsICJpbXBhY3QiOiAidmVyaWZpZWQiLCAicmVhc29uIjogIkZvcmVjYXN0LiIsICJldmlkZW5jZSI6IFt7InJldmlzaW9uIjogIjUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2EiLCAicXVvdGUiOiAiU0JFUiBcdTA0M2VcdTA0M2ZcdTA0NDNcdTA0MzFcdTA0M2JcdTA0MzhcdTA0M2FcdTA0M2VcdTA0MzJcdTA0MzBcdTA0M2IgXHUwNDNmXHUwNDNlXHUwNDMyXHUwNDRiXHUwNDQ4XHUwNDM1XHUwNDNkXHUwNDNkXHUwNDRiXHUwNDM5IFx1MDQzZlx1MDQ0MFx1MDQzZVx1MDQzM1x1MDQzZFx1MDQzZVx1MDQzNy4ifV19XX2pZm9ybWVkX2F02SAyMDI2LTExLTE3VDE4OjU1OjQzLjE2NjMzMSswMDowMKJhdNkgMjAyNi0xMS0xN1QxODo1NTo0My4xNjYzMzErMDA6MDCqbGF0ZW5jeV9tc8tAYc7ZFocrAt4AEaRyb2xlpmNyaXRpY6Rtb2Rlq29ic2VydmF0aW9ur3JlcXVlc3RlZF9tb2RlbKt0ZXN0L2NyaXRpY6phZ2dyZWdhdG9yqm9wZW5yb3V0ZXKsYWN0dWFsX21vZGVsq3Rlc3QvY3JpdGljqHByb3ZpZGVyrFRlc3RQcm92aWRlcrBzZXR0aW5nc192ZXJzaW9u2UA2OGRjYzA4NDY1MWZkOTQ2Y2Q2MzAxZWJjYTQ3YmYyZGViZTgwMDU4NWUwNjExZDdmY2RlY2I2NzM3ODc1MWMypWlucHV0g6djb250ZXh0iatwdWJsaWNhdGlvboiiaWSvdGVsZWdyYW06MTIzOjExpnNvdXJjZax0ZWxlZ3JhbToxMjOjdXJstmh0dHBzOi8vdC5tZS9zb3VyY2UvMTGkdGV4dNlAU0JFUiDQvtC/0YPQsdC70LjQutC+0LLQsNC7INC/0L7QstGL0YjQtdC90L3Ri9C5INC/0YDQvtCz0L3QvtC3LqxwdWJsaXNoZWRfYXTZIDIwMjYtMTEtMTdUMTg6NTU6NDAuOTM0MDg4KzAwOjAwqWVkaXRlZF9hdMCsdW5yZWFkX21lZGlhwqZjaGFuZ2WjbmV3pWV2ZW50iKtkZWNpc2lvbl9pZAGocmV2aXNpb27ZQDUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2GoZXZlbnRfaWTZIDFkNzZkNDFjYzYzYTQ5YTBhYmJiOGRkODJlZmQyMWYxpGtpbmSlc2F2ZWSoYmFzaXNfYXTZIDIwMjYtMTEtMTdUMTg6NTU6NDAuOTM0MDg4KzAwOjAwqmFzc2Vzc21lbnTApWxpbmtzkYuucHVibGljYXRpb25faWSvdGVsZWdyYW06MTIzOjExr3B1YmxpY2F0aW9uX3VybLZodHRwczovL3QubWUvc291cmNlLzExsnB1YmxpY2F0aW9uX3NoYTI1NtlAYjZhNjczYTY4YzhmNzY0Nzk4NWI5MGM1NzZkYjRmMzY0ZmYxOTllNzE3Y2ZkNTI3ZWJiYzQzZDNjNzhiMjNlMbtwdWJsaWNhdGlvbl9yZXZpc2lvbl9zaGEyNTbZQDJkNTg2YTcwMDU4MjdiNGVmNDFmZjE5ZTQxZjA4YTU1NGM0Y2QxODcxNzcyZDQ3ZTU4Y2IyODg4MzA4Y2MzYjauY2F0YWxvZ19zaGEyNTbZQDdkN2IzYTE0YjYxMmQzNGI3ZjJhYTFhZGJiN2UzZGMzYjk1YmNkZTg4YTNhYTczMzU0ZjZlODExMmQ2MjMyMWSqY29tcGFueV9pZKRzYmVypGtpbmSmZGlyZWN0pWJhc2lzpmRpcmVjdKVzY29yZcs/8AAAAAAAAKpjb25maWRlbmNlyz/wAAAAAAAAt3JlcXVpcmVzX2FuYWx5c3RfcmV2aWV3wqpjb3JyZWN0aW9uwLRhZmZlY3RlZF9jb21wYW55X2lkc5Gkc2JlcqpjYW5kaWRhdGVzkYeqY29tcGFueV9pZKRzYmVyrGNvbXBhbnlfbmFtZaRTQkVSqHNoYXJlX2lkqnNiZXItc2hhcmWrY29udHJhY3RfaWSuY29udHJvbC1mdXR1cmWxYWxsb3dlZF9mb3JfZW50cnnDpm1hcmtldIWrb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0MC44NjkyNzhaqmxhc3RfcHJpY2XLQHLAAAAAAACqb3JkZXJfYm9va4Orb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0Mi45MjY0MzVao2JpZIKlcHJpY2XLQHK4AAAAAACtcXVhbnRpdHlfbG90cwWjYXNrgqVwcmljZctAcsgAAAAAAK1xdWFudGl0eV9sb3RzA650cmFkaW5nX3N0YXR1c9kmU0VDVVJJVFlfVFJBRElOR19TVEFUVVNfTk9STUFMX1RSQURJTke6dHJhZGluZ19zdGF0dXNfb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0MC44NjkyNzhatW1hcmtldF9vYnNlcnZhdGlvbl9pZNlAN2QzNTU5MWNiZGY5OTQ4OWUxM2IwNjM0NGE4ZDY4YjNkMjA0NGJmYTI2M2M2YTdmMGUxNDQyMjBlMTUwNzQxM6dhY2NvdW50hatvYnNlcnZlZF9hdLsyMDI2LTExLTE3VDE4OjU1OjQwLjg2OTI3OFqoY3VycmVuY3mjUlVCpmVxdWl0ectA+GoAAAAAALBhdmFpbGFibGVfbWFyZ2luy0D1+QAAAAAAomlkr3NhbmRib3gtYWNjb3VudKhwb3NpdGlvbsCsZW50cnlfcmVhc29uwKxyZWxhdGVkX25ld3OQum9taXR0ZWRfcmVsYXRlZF9uZXdzX2NvdW50AKhwcm9wb3NhbIymYWN0aW9upWVudGVyrnB1YmxpY2F0aW9uX2lkr3RlbGVncmFtOjEyMzoxMaRzaWRlpGxvbmerZW50cnlfcHJpY2XLQHLAAAAAAACpc3RvcF9sb3Nzy0ByIAAAAAAAq3Rha2VfcHJvZml0y0B0AAAAAAAApnJlYXNvbtkv0JjRgdGF0L7QtNC90L7QtSDQvtGB0L3QvtCy0LDQvdC40LUg0LLRhdC+0LTQsC6qY29tcGFueV9pZKRzYmVyq2NvbnRyYWN0X2lkrmNvbnRyb2wtZnV0dXJlq2Fzc2Vzc21lbnRzkYSrY29udHJhY3RfaWSuY29udHJvbC1mdXR1cmWmaW1wYWN0qHZlcmlmaWVkpnJlYXNvbqlGb3JlY2FzdC6oZXZpZGVuY2WRgqhyZXZpc2lvbtlANTAxYzEyNDM0ZDhkMzkxMDczYzkyNGQyZTM0NzdhMGJlNzA1OWRkYWZiM2YwNmE5MjFhMjQ3Y2U5NWVjMzI3YaVxdW90ZdlAU0JFUiDQvtC/0YPQsdC70LjQutC+0LLQsNC7INC/0L7QstGL0YjQtdC90L3Ri9C5INC/0YDQvtCz0L3QvtC3Lq9sZXZlbF9yYXRpb25hbGWDpWVudHJ5plF1b3RlLqlzdG9wX2xvc3OoU3VwcG9ydC6rdGFrZV9wcm9maXSnVGFyZ2V0LqJpZNmKNTAxYzEyNDM0ZDhkMzkxMDczYzkyNGQyZTM0NzdhMGJlNzA1OWRkYWZiM2YwNmE5MjFhMjQ3Y2U5NWVjMzI3YTpyZXZpZXc6N2M1ZDQwYWE1YWU1NjhjMzI3YzYxZDJmOTgwOGZiMGJhZjYwYTRjYjc1NmQyNGZiNThhM2M4YWU5YTdmMWNjZToxr3ByZXZpb3VzX3Jldmlld8Cmb3V0cHV0hKtwcm9wb3NhbF9pZNmKNTAxYzEyNDM0ZDhkMzkxMDczYzkyNGQyZTM0NzdhMGJlNzA1OWRkYWZiM2YwNmE5MjFhMjQ3Y2U5NWVjMzI3YTpyZXZpZXc6N2M1ZDQwYWE1YWU1NjhjMzI3YzYxZDJmOTgwOGZiMGJhZjYwYTRjYjc1NmQyNGZiNThhM2M4YWU5YTdmMWNjZToxqGFwcHJvdmVkwqpvYmplY3Rpb25zkdkiSW5zdWZmaWNpZW50IGluZGVwZW5kZW50IGV2aWRlbmNlLqZyZWFzb27ZNUNoZWNrZWQgYWdhaW5zdCB0aGUgb3JpZ2luYWwgcHVibGljYXRpb24gYW5kIGNvbnRleHQupWVycm9ywKV1c2FnZYWsaW5wdXRfdG9rZW5zFK1vdXRwdXRfdG9rZW5zHqx0b3RhbF90b2tlbnMys2lucHV0X3Rva2VuX2RldGFpbHOAtG91dHB1dF90b2tlbl9kZXRhaWxzgKRjb3N0yz9QYk3S8an8qnN0YXJ0ZWRfYXTZIDIwMjYtMTEtMTdUMTg6NTU6NDMuMTc3Mjg2KzAwOjAwqG1ldGFkYXRhhqJpZKtnZW4tY29udHJvbK5tb2RlbF9wcm92aWRlcqpvcGVucm91dGVyrWZpbmlzaF9yZWFzb26kc3RvcKxjb3N0X2RldGFpbHPAsnN5c3RlbV9maW5nZXJwcmludMCzb3BlbnJvdXRlcl9tZXRhZGF0YcCqcmF3X291dHB1dNoBKXsicHJvcG9zYWxfaWQiOiAiNTAxYzEyNDM0ZDhkMzkxMDczYzkyNGQyZTM0NzdhMGJlNzA1OWRkYWZiM2YwNmE5MjFhMjQ3Y2U5NWVjMzI3YTpyZXZpZXc6N2M1ZDQwYWE1YWU1NjhjMzI3YzYxZDJmOTgwOGZiMGJhZjYwYTRjYjc1NmQyNGZiNThhM2M4YWU5YTdmMWNjZToxIiwgImFwcHJvdmVkIjogZmFsc2UsICJvYmplY3Rpb25zIjogWyJJbnN1ZmZpY2llbnQgaW5kZXBlbmRlbnQgZXZpZGVuY2UuIl0sICJyZWFzb24iOiAiQ2hlY2tlZCBhZ2FpbnN0IHRoZSBvcmlnaW5hbCBwdWJsaWNhdGlvbiBhbmQgY29udGV4dC4ifaJhdNkgMjAyNi0xMS0xN1QxODo1NTo0My4yNjMxODUrMDA6MDCqbGF0ZW5jeV9tc8tAVSvGp++dst4AEqRyb2xlp2FuYWx5c3SkbW9kZatvYnNlcnZhdGlvbq9yZXF1ZXN0ZWRfbW9kZWysdGVzdC9hbmFseXN0qmFnZ3JlZ2F0b3Kqb3BlbnJvdXRlcqxhY3R1YWxfbW9kZWysdGVzdC9hbmFseXN0qHByb3ZpZGVyrFRlc3RQcm92aWRlcrBzZXR0aW5nc192ZXJzaW9u2UA2OGRjYzA4NDY1MWZkOTQ2Y2Q2MzAxZWJjYTQ3YmYyZGViZTgwMDU4NWUwNjExZDdmY2RlY2I2NzM3ODc1MWMypWlucHV0g6djb250ZXh0iatwdWJsaWNhdGlvboiiaWSvdGVsZWdyYW06MTIzOjExpnNvdXJjZax0ZWxlZ3JhbToxMjOjdXJstmh0dHBzOi8vdC5tZS9zb3VyY2UvMTGkdGV4dNlAU0JFUiDQvtC/0YPQsdC70LjQutC+0LLQsNC7INC/0L7QstGL0YjQtdC90L3Ri9C5INC/0YDQvtCz0L3QvtC3LqxwdWJsaXNoZWRfYXTZIDIwMjYtMTEtMTdUMTg6NTU6NDAuOTM0MDg4KzAwOjAwqWVkaXRlZF9hdMCsdW5yZWFkX21lZGlhwqZjaGFuZ2WjbmV3pWV2ZW50iKtkZWNpc2lvbl9pZAGocmV2aXNpb27ZQDUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2GoZXZlbnRfaWTZIDFkNzZkNDFjYzYzYTQ5YTBhYmJiOGRkODJlZmQyMWYxpGtpbmSlc2F2ZWSoYmFzaXNfYXTZIDIwMjYtMTEtMTdUMTg6NTU6NDAuOTM0MDg4KzAwOjAwqmFzc2Vzc21lbnTApWxpbmtzkYuucHVibGljYXRpb25faWSvdGVsZWdyYW06MTIzOjExr3B1YmxpY2F0aW9uX3VybLZodHRwczovL3QubWUvc291cmNlLzExsnB1YmxpY2F0aW9uX3NoYTI1NtlAYjZhNjczYTY4YzhmNzY0Nzk4NWI5MGM1NzZkYjRmMzY0ZmYxOTllNzE3Y2ZkNTI3ZWJiYzQzZDNjNzhiMjNlMbtwdWJsaWNhdGlvbl9yZXZpc2lvbl9zaGEyNTbZQDJkNTg2YTcwMDU4MjdiNGVmNDFmZjE5ZTQxZjA4YTU1NGM0Y2QxODcxNzcyZDQ3ZTU4Y2IyODg4MzA4Y2MzYjauY2F0YWxvZ19zaGEyNTbZQDdkN2IzYTE0YjYxMmQzNGI3ZjJhYTFhZGJiN2UzZGMzYjk1YmNkZTg4YTNhYTczMzU0ZjZlODExMmQ2MjMyMWSqY29tcGFueV9pZKRzYmVypGtpbmSmZGlyZWN0pWJhc2lzpmRpcmVjdKVzY29yZcs/8AAAAAAAAKpjb25maWRlbmNlyz/wAAAAAAAAt3JlcXVpcmVzX2FuYWx5c3RfcmV2aWV3wqpjb3JyZWN0aW9uwLRhZmZlY3RlZF9jb21wYW55X2lkc5Gkc2JlcqpjYW5kaWRhdGVzkYeqY29tcGFueV9pZKRzYmVyrGNvbXBhbnlfbmFtZaRTQkVSqHNoYXJlX2lkqnNiZXItc2hhcmWrY29udHJhY3RfaWSuY29udHJvbC1mdXR1cmWxYWxsb3dlZF9mb3JfZW50cnnDpm1hcmtldIWrb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0MC44NjkyNzhaqmxhc3RfcHJpY2XLQHLAAAAAAACqb3JkZXJfYm9va4Orb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0Mi45MjY0MzVao2JpZIKlcHJpY2XLQHK4AAAAAACtcXVhbnRpdHlfbG90cwWjYXNrgqVwcmljZctAcsgAAAAAAK1xdWFudGl0eV9sb3RzA650cmFkaW5nX3N0YXR1c9kmU0VDVVJJVFlfVFJBRElOR19TVEFUVVNfTk9STUFMX1RSQURJTke6dHJhZGluZ19zdGF0dXNfb2JzZXJ2ZWRfYXS7MjAyNi0xMS0xN1QxODo1NTo0MC44NjkyNzhatW1hcmtldF9vYnNlcnZhdGlvbl9pZNlAN2QzNTU5MWNiZGY5OTQ4OWUxM2IwNjM0NGE4ZDY4YjNkMjA0NGJmYTI2M2M2YTdmMGUxNDQyMjBlMTUwNzQxM6dhY2NvdW50hatvYnNlcnZlZF9hdLsyMDI2LTExLTE3VDE4OjU1OjQwLjg2OTI3OFqoY3VycmVuY3mjUlVCpmVxdWl0ectA+GoAAAAAALBhdmFpbGFibGVfbWFyZ2luy0D1+QAAAAAAomlkr3NhbmRib3gtYWNjb3VudKhwb3NpdGlvbsCsZW50cnlfcmVhc29uwKxyZWxhdGVkX25ld3OQum9taXR0ZWRfcmVsYXRlZF9uZXdzX2NvdW50AKhwcm9wb3NhbIymYWN0aW9upWVudGVyrnB1YmxpY2F0aW9uX2lkr3RlbGVncmFtOjEyMzoxMaRzaWRlpGxvbmerZW50cnlfcHJpY2XLQHLAAAAAAACpc3RvcF9sb3Nzy0ByIAAAAAAAq3Rha2VfcHJvZml0y0B0AAAAAAAApnJlYXNvbtkv0JjRgdGF0L7QtNC90L7QtSDQvtGB0L3QvtCy0LDQvdC40LUg0LLRhdC+0LTQsC6qY29tcGFueV9pZKRzYmVyq2NvbnRyYWN0X2lkrmNvbnRyb2wtZnV0dXJlq2Fzc2Vzc21lbnRzkYSrY29udHJhY3RfaWSuY29udHJvbC1mdXR1cmWmaW1wYWN0qHZlcmlmaWVkpnJlYXNvbqlGb3JlY2FzdC6oZXZpZGVuY2WRgqhyZXZpc2lvbtlANTAxYzEyNDM0ZDhkMzkxMDczYzkyNGQyZTM0NzdhMGJlNzA1OWRkYWZiM2YwNmE5MjFhMjQ3Y2U5NWVjMzI3YaVxdW90ZdlAU0JFUiDQvtC/0YPQsdC70LjQutC+0LLQsNC7INC/0L7QstGL0YjQtdC90L3Ri9C5INC/0YDQvtCz0L3QvtC3Lq9sZXZlbF9yYXRpb25hbGWDpWVudHJ5plF1b3RlLqlzdG9wX2xvc3OoU3VwcG9ydC6rdGFrZV9wcm9maXSnVGFyZ2V0LqJpZNmKNTAxYzEyNDM0ZDhkMzkxMDczYzkyNGQyZTM0NzdhMGJlNzA1OWRkYWZiM2YwNmE5MjFhMjQ3Y2U5NWVjMzI3YTpyZXZpZXc6N2M1ZDQwYWE1YWU1NjhjMzI3YzYxZDJmOTgwOGZiMGJhZjYwYTRjYjc1NmQyNGZiNThhM2M4YWU5YTdmMWNjZToxpnJldmlld4SrcHJvcG9zYWxfaWTZijUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2E6cmV2aWV3OjdjNWQ0MGFhNWFlNTY4YzMyN2M2MWQyZjk4MDhmYjBiYWY2MGE0Y2I3NTZkMjRmYjU4YTNjOGFlOWE3ZjFjY2U6MahhcHByb3ZlZMKqb2JqZWN0aW9uc5HZIkluc3VmZmljaWVudCBpbmRlcGVuZGVudCBldmlkZW5jZS6mcmVhc29u2TVDaGVja2VkIGFnYWluc3QgdGhlIG9yaWdpbmFsIHB1YmxpY2F0aW9uIGFuZCBjb250ZXh0LqZvdXRwdXSMpmFjdGlvbqVlbnRlcq5wdWJsaWNhdGlvbl9pZK90ZWxlZ3JhbToxMjM6MTGkc2lkZaRsb25nq2VudHJ5X3ByaWNly0By0AAAAAAAqXN0b3BfbG9zc8tAciAAAAAAAKt0YWtlX3Byb2ZpdMtAdAAAAAAAAKZyZWFzb27ZL9CY0YHRhdC+0LTQvdC+0LUg0L7RgdC90L7QstCw0L3QuNC1INCy0YXQvtC00LAuqmNvbXBhbnlfaWSkc2Jlcqtjb250cmFjdF9pZK5jb250cm9sLWZ1dHVyZathc3Nlc3NtZW50c5GEq2NvbnRyYWN0X2lkrmNvbnRyb2wtZnV0dXJlpmltcGFjdKh2ZXJpZmllZKZyZWFzb26pRm9yZWNhc3QuqGV2aWRlbmNlkYKocmV2aXNpb27ZQDUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2GlcXVvdGXZQFNCRVIg0L7Qv9GD0LHQu9C40LrQvtCy0LDQuyDQv9C+0LLRi9GI0LXQvdC90YvQuSDQv9GA0L7Qs9C90L7Qty6vbGV2ZWxfcmF0aW9uYWxlg6VlbnRyeaZRdW90ZS6pc3RvcF9sb3NzqFN1cHBvcnQuq3Rha2VfcHJvZml0p1RhcmdldC6iaWTZijUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2E6cmV2aWV3OjdjNWQ0MGFhNWFlNTY4YzMyN2M2MWQyZjk4MDhmYjBiYWY2MGE0Y2I3NTZkMjRmYjU4YTNjOGFlOWE3ZjFjY2U6M6VlcnJvcsCldXNhZ2WFrGlucHV0X3Rva2VucxStb3V0cHV0X3Rva2Vucx6sdG90YWxfdG9rZW5zMrNpbnB1dF90b2tlbl9kZXRhaWxzgLRvdXRwdXRfdG9rZW5fZGV0YWlsc4CkY29zdMs/UGJN0vGp/KpzdGFydGVkX2F02SAyMDI2LTExLTE3VDE4OjU1OjQzLjI3MzIxMiswMDowMKhtZXRhZGF0YYaiaWSrZ2VuLWNvbnRyb2yubW9kZWxfcHJvdmlkZXKqb3BlbnJvdXRlcq1maW5pc2hfcmVhc29upHN0b3CsY29zdF9kZXRhaWxzwLJzeXN0ZW1fZmluZ2VycHJpbnTAs29wZW5yb3V0ZXJfbWV0YWRhdGHAqnJhd19vdXRwdXTaAyd7ImFjdGlvbiI6ICJlbnRlciIsICJwdWJsaWNhdGlvbl9pZCI6ICJ0ZWxlZ3JhbToxMjM6MTEiLCAiY29tcGFueV9pZCI6ICJzYmVyIiwgImNvbnRyYWN0X2lkIjogImNvbnRyb2wtZnV0dXJlIiwgInNpZGUiOiAibG9uZyIsICJlbnRyeV9wcmljZSI6IDMwMSwgInN0b3BfbG9zcyI6IDI5MCwgInRha2VfcHJvZml0IjogMzIwLCAicmVhc29uIjogIlx1MDQxOFx1MDQ0MVx1MDQ0NVx1MDQzZVx1MDQzNFx1MDQzZFx1MDQzZVx1MDQzNSBcdTA0M2VcdTA0NDFcdTA0M2RcdTA0M2VcdTA0MzJcdTA0MzBcdTA0M2RcdTA0MzhcdTA0MzUgXHUwNDMyXHUwNDQ1XHUwNDNlXHUwNDM0XHUwNDMwLiIsICJsZXZlbF9yYXRpb25hbGUiOiB7ImVudHJ5IjogIlF1b3RlLiIsICJzdG9wX2xvc3MiOiAiU3VwcG9ydC4iLCAidGFrZV9wcm9maXQiOiAiVGFyZ2V0LiJ9LCAiYXNzZXNzbWVudHMiOiBbeyJjb250cmFjdF9pZCI6ICJjb250cm9sLWZ1dHVyZSIsICJpbXBhY3QiOiAidmVyaWZpZWQiLCAicmVhc29uIjogIkZvcmVjYXN0LiIsICJldmlkZW5jZSI6IFt7InJldmlzaW9uIjogIjUwMWMxMjQzNGQ4ZDM5MTA3M2M5MjRkMmUzNDc3YTBiZTcwNTlkZGFmYjNmMDZhOTIxYTI0N2NlOTVlYzMyN2EiLCAicXVvdGUiOiAiU0JFUiBcdTA0M2VcdTA0M2ZcdTA0NDNcdTA0MzFcdTA0M2JcdTA0MzhcdTA0M2FcdTA0M2VcdTA0MzJcdTA0MzBcdTA0M2IgXHUwNDNmXHUwNDNlXHUwNDMyXHUwNDRiXHUwNDQ4XHUwNDM1XHUwNDNkXHUwNDNkXHUwNDRiXHUwNDM5IFx1MDQzZlx1MDQ0MFx1MDQzZVx1MDQzM1x1MDQzZFx1MDQzZVx1MDQzNy4ifV19XX2pZm9ybWVkX2F02SAyMDI2LTExLTE3VDE4OjU1OjQzLjI4MjA2MyswMDowMKJhdNkgMjAyNi0xMS0xN1QxODo1NTo0My4yODIwNjMrMDA6MDCqbGF0ZW5jeV9tc8tAH6TdLxqfvg=="
+        },
+        "task_path": "~__pregel_pull, analyst"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d80d-6849-8002-4b1655ac20ef",
+        "task_id": "695e4fae-18d3-3859-4fc3-423502af031e",
+        "idx": 3,
+        "channel": "review",
+        "type": "null",
+        "blob": {
+          "base64": ""
+        },
+        "task_path": "~__pregel_pull, analyst"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d80d-6849-8002-4b1655ac20ef",
+        "task_id": "695e4fae-18d3-3859-4fc3-423502af031e",
+        "idx": 4,
+        "channel": "previous_review",
+        "type": "msgpack",
+        "blob": {
+          "base64": "yAFLBZS9bmV3c19mdXR1cmVzLmRvbWFpbi5jb250cmFjdHOmUmV2aWV3hKtwcm9wb3NhbF9pZNmKNTAxYzEyNDM0ZDhkMzkxMDczYzkyNGQyZTM0NzdhMGJlNzA1OWRkYWZiM2YwNmE5MjFhMjQ3Y2U5NWVjMzI3YTpyZXZpZXc6N2M1ZDQwYWE1YWU1NjhjMzI3YzYxZDJmOTgwOGZiMGJhZjYwYTRjYjc1NmQyNGZiNThhM2M4YWU5YTdmMWNjZToxqGFwcHJvdmVkwqpvYmplY3Rpb25zkdkiSW5zdWZmaWNpZW50IGluZGVwZW5kZW50IGV2aWRlbmNlLqZyZWFzb27ZNUNoZWNrZWQgYWdhaW5zdCB0aGUgb3JpZ2luYWwgcHVibGljYXRpb24gYW5kIGNvbnRleHQus21vZGVsX3ZhbGlkYXRlX2pzb24="
+        },
+        "task_path": "~__pregel_pull, analyst"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d80d-6849-8002-4b1655ac20ef",
+        "task_id": "695e4fae-18d3-3859-4fc3-423502af031e",
+        "idx": 5,
+        "channel": "revisions",
+        "type": "msgpack",
+        "blob": {
+          "base64": "AQ=="
+        },
+        "task_path": "~__pregel_pull, analyst"
+      },
+      {
+        "thread_id": "501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce",
+        "checkpoint_ns": "",
+        "checkpoint_id": "1f1e2b87-d80d-6849-8002-4b1655ac20ef",
+        "task_id": "695e4fae-18d3-3859-4fc3-423502af031e",
+        "idx": 6,
+        "channel": "branch:to:critic",
+        "type": "null",
+        "blob": {
+          "base64": ""
+        },
+        "task_path": "~__pregel_pull, analyst"
+      }
+    ]
+  },
+  "files": {
+    "catalog.json": "{\n  \"operations\": {\n    \"catalog\": {\n      \"availability\": \"available\",\n      \"data\": [\n        {\n          \"company_id\": \"sber\",\n          \"company_name\": \"SBER\",\n          \"ticker\": \"SBER\",\n          \"share_id\": \"sber-share\"\n        },\n        {\n          \"company_id\": \"vtb\",\n          \"company_name\": \"VTB\",\n          \"ticker\": \"VTB\",\n          \"share_id\": \"vtb-share\"\n        }\n      ]\n    }\n  }\n}\n",
+    "decisions.json": "{\n  \"model\": \"parallel/decisions-fast:free\",\n  \"timeout_ms\": 60000,\n  \"batch_size\": 40,\n  \"min_relevance\": 0.5,\n  \"min_basis_probability\": 0.6\n}\n",
+    "event.json": "{\n  \"recorded_at\": \"2026-11-17T18:55:42.511463+00:00\",\n  \"event_id\": \"1d76d41cc63a49a0abbb8dd82efd21f1\",\n  \"kind\": \"saved\",\n  \"basis_at\": \"2026-11-17T18:55:40.934088+00:00\",\n  \"assessment\": null,\n  \"call\": null,\n  \"analysis_company_ids\": [\n    \"sber\"\n  ],\n  \"decision_id\": 1,\n  \"revision\": \"501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a\",\n  \"publication\": {\n    \"source\": \"telegram:123\",\n    \"external_id\": \"11\",\n    \"url\": \"https://t.me/source/11\",\n    \"text\": \"SBER опубликовал повышенный прогноз.\",\n    \"published_at\": \"2026-11-17T18:55:40.934088+00:00\",\n    \"received_at\": \"2026-11-17T18:55:40.934088+00:00\",\n    \"edited_at\": null,\n    \"unread_media\": false,\n    \"change\": \"new\",\n    \"id\": \"telegram:123:11\"\n  },\n  \"links\": [\n    {\n      \"publication_id\": \"telegram:123:11\",\n      \"publication_url\": \"https://t.me/source/11\",\n      \"publication_sha256\": \"b6a673a68c8f7647985b90c576db4f364ff199e717cfd527ebbc43d3c78b23e1\",\n      \"publication_revision_sha256\": \"2d586a7005827b4ef41ff19e41f08a554c4cd1871772d47e58cb2888308cc3b6\",\n      \"catalog_sha256\": \"7d7b3a14b612d34b7f2aa1adbb7e3dc3b95bcde88a3aa73354f6e8112d62321d\",\n      \"company_id\": \"sber\",\n      \"kind\": \"direct\",\n      \"basis\": \"direct\",\n      \"score\": 1.0,\n      \"confidence\": 1.0,\n      \"requires_analyst_review\": false\n    }\n  ]\n}\n",
+    "futures-catalog.json": "{\n  \"fetched_at\": \"2026-11-17T18:55:40.869278+00:00\",\n  \"categories\": {\n    \"financial\": \"Финансы\"\n  },\n  \"assets\": [\n    {\n      \"name\": \"sber\",\n      \"categories\": [\n        \"financial\"\n      ],\n      \"underlying_position_uid\": \"sber-share\",\n      \"contracts\": [\n        {\n          \"uid\": \"control-future\",\n          \"ticker\": \"control-future\",\n          \"api_trade_available\": true,\n          \"last_trade\": \"2026-11-18T18:55:40.869278+00:00\"\n        }\n      ]\n    },\n    {\n      \"name\": \"vtb\",\n      \"categories\": [\n        \"financial\"\n      ],\n      \"underlying_position_uid\": \"vtb-share\",\n      \"contracts\": [\n        {\n          \"uid\": \"vtb-future\",\n          \"ticker\": \"vtb-future\",\n          \"api_trade_available\": true,\n          \"last_trade\": \"2026-11-18T18:55:40.869278+00:00\"\n        }\n      ]\n    }\n  ]\n}\n",
+    "instrument.json": "{\n  \"at\": \"2026-11-17T18:55:42.548914+00:00\",\n  \"status\": \"completed\",\n  \"requested_model\": \"parallel/decisions-fast:free\",\n  \"candidates\": {\n    \"contract_0\": {\n      \"contract_id\": \"control-future\",\n      \"company_id\": \"sber\",\n      \"company_names\": [\n        \"SBER\"\n      ],\n      \"ticker\": \"control-future\",\n      \"underlying\": \"sber\",\n      \"last_trade\": \"2026-11-18T18:55:40.869278+00:00\"\n    }\n  },\n  \"error\": null,\n  \"selected\": {\n    \"contract_id\": \"control-future\",\n    \"company_id\": \"sber\",\n    \"company_names\": [\n      \"SBER\"\n    ],\n    \"ticker\": \"control-future\",\n    \"underlying\": \"sber\",\n    \"last_trade\": \"2026-11-18T18:55:40.869278+00:00\"\n  },\n  \"answer\": {\n    \"type\": \"choice\",\n    \"choice\": \"contract_0\",\n    \"probabilities\": {\n      \"contract_0\": 1.0,\n      \"none\": 0.0\n    },\n    \"confidence\": 1.0\n  },\n  \"metadata\": {\n    \"model\": \"parallel/decisions-fast:free\",\n    \"id\": \"instrument-result\",\n    \"provider\": null,\n    \"usage\": null\n  }\n}\n",
+    "position-status.json": "{\n  \"at\": \"2026-11-17T18:55:42.541061+00:00\",\n  \"started_at\": \"2026-11-17T18:55:42.525548+00:00\",\n  \"status\": \"completed\",\n  \"reason\": null\n}\n",
+    "publication.json": "{\n  \"source\": \"telegram:123\",\n  \"external_id\": \"11\",\n  \"url\": \"https://t.me/source/11\",\n  \"text\": \"SBER опубликовал повышенный прогноз.\",\n  \"published_at\": \"2026-11-17T18:55:40.934088+00:00\",\n  \"received_at\": \"2026-11-17T18:55:40.934088+00:00\",\n  \"edited_at\": null,\n  \"unread_media\": false,\n  \"change\": \"new\",\n  \"id\": \"telegram:123:11\"\n}\n",
+    "review-status.json": "{\n  \"at\": \"2026-11-17T18:55:42.943319+00:00\",\n  \"status\": \"processing\"\n}\n",
+    "review.json": "{\"analyst\": {\"model\": \"test/analyst\", \"aggregator\": \"openrouter\"}, \"critic\": {\"model\": \"test/critic\", \"aggregator\": \"openrouter\"}}",
+    "runtime.json": "{\n  \"data_dir\": \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\tmpqe05bf8r\",\n  \"catalog\": \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\tmpqe05bf8r\\\\catalog.json\",\n  \"account_id\": \"sandbox-account\",\n  \"mode\": \"observation\",\n  \"analysis_strategy\": \"fixed\",\n  \"order_transport\": \"rest\",\n  \"chat_aggregator\": \"openrouter\",\n  \"coordinator\": null,\n  \"sources\": \"C:\\\\Users\\\\user\\\\PROJECTS\\\\trader\\\\backend\\\\news_futures\\\\adapters\\\\telegram-sources.json\",\n  \"session\": \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\tmpqe05bf8r\\\\telegram.session\",\n  \"decisions\": \"C:\\\\Users\\\\user\\\\PROJECTS\\\\trader\\\\backend\\\\news_futures\\\\application\\\\analysis\\\\decisions-model.json\",\n  \"review\": \"C:\\\\Users\\\\user\\\\AppData\\\\Local\\\\Temp\\\\tmpqe05bf8r\\\\models.json\",\n  \"groq\": \"C:\\\\Users\\\\user\\\\PROJECTS\\\\trader\\\\backend\\\\news_futures\\\\application\\\\analysis\\\\groq-models.json\",\n  \"futures_categories\": \"C:\\\\Users\\\\user\\\\PROJECTS\\\\trader\\\\backend\\\\news_futures\\\\adapters\\\\tbank\\\\futures-categories.json\",\n  \"agent_limits\": {\n    \"max_turns\": 8,\n    \"max_reads\": 7,\n    \"max_reviews\": 2,\n    \"input_budget\": 24000,\n    \"output_budget\": 4000,\n    \"run_seconds\": 45,\n    \"call_timeout_ms\": 10000,\n    \"news_limit\": 8,\n    \"news_bytes\": 5000\n  },\n  \"events_calendar\": \"C:\\\\Users\\\\user\\\\PROJECTS\\\\trader\\\\backend\\\\news_futures\\\\application\\\\analysis\\\\events-calendar.json\",\n  \"sector_benchmarks\": {},\n  \"signal_timeout_seconds\": 60,\n  \"futures_refresh_seconds\": 86400,\n  \"broker_refresh_seconds\": 15,\n  \"ca_file\": null\n}\n",
+    "snapshot-status.json": "{\n  \"at\": \"2026-11-17T18:55:42.934961+00:00\",\n  \"started_at\": \"2026-11-17T18:55:42.902175+00:00\",\n  \"status\": \"completed\",\n  \"reason\": null\n}\n",
+    "snapshot.json": "{\n  \"account\": {\n    \"observed_at\": \"2026-11-17T18:55:40.869278Z\",\n    \"currency\": \"RUB\",\n    \"equity\": 100000.0,\n    \"available_margin\": 90000.0,\n    \"id\": \"sandbox-account\"\n  },\n  \"position\": null,\n  \"instruments\": [\n    {\n      \"company_id\": \"sber\",\n      \"company_name\": \"SBER\",\n      \"share_id\": \"sber-share\",\n      \"contract_id\": \"control-future\",\n      \"allowed_for_entry\": true,\n      \"market\": {\n        \"observed_at\": \"2026-11-17T18:55:40.869278Z\",\n        \"last_price\": 300.0,\n        \"order_book\": {\n          \"observed_at\": \"2026-11-17T18:55:42.926435Z\",\n          \"bid\": {\n            \"price\": 299.5,\n            \"quantity_lots\": 5\n          },\n          \"ask\": {\n            \"price\": 300.5,\n            \"quantity_lots\": 3\n          }\n        },\n        \"trading_status\": \"SECURITY_TRADING_STATUS_NORMAL_TRADING\",\n        \"trading_status_observed_at\": \"2026-11-17T18:55:40.869278Z\"\n      },\n      \"market_observation_id\": \"7d35591cbdf99489e13b06344a8d68b3d2044bfa263c6a7f0e144220e1507413\"\n    }\n  ]\n}\n",
+    "market/7d35591cbdf99489e13b06344a8d68b3d2044bfa263c6a7f0e144220e1507413.json": "{\n  \"contract_id\": \"control-future\",\n  \"market\": {\n    \"observed_at\": \"2026-11-17T18:55:40.869278Z\",\n    \"last_price\": 300.0,\n    \"order_book\": {\n      \"observed_at\": \"2026-11-17T18:55:42.926435Z\",\n      \"bid\": {\n        \"price\": 299.5,\n        \"quantity_lots\": 5\n      },\n      \"ask\": {\n        \"price\": 300.5,\n        \"quantity_lots\": 3\n      }\n    },\n    \"trading_status\": \"SECURITY_TRADING_STATUS_NORMAL_TRADING\",\n    \"trading_status_observed_at\": \"2026-11-17T18:55:40.869278Z\"\n  },\n  \"received_at\": \"2026-11-17T18:55:42.926435Z\",\n  \"price_unit\": \"points\",\n  \"limit_buy_available\": true,\n  \"limit_sell_available\": true\n}\n",
+    "review/7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce/call-01.json": "{\n  \"role\": \"analyst\",\n  \"mode\": \"observation\",\n  \"requested_model\": \"test/analyst\",\n  \"aggregator\": \"openrouter\",\n  \"actual_model\": \"test/analyst\",\n  \"provider\": \"TestProvider\",\n  \"settings_version\": \"68dcc084651fd946cd6301ebca47bf2debe800585e0611d7fcdecb67378751c2\",\n  \"input\": {\n    \"context\": {\n      \"publication\": {\n        \"id\": \"telegram:123:11\",\n        \"source\": \"telegram:123\",\n        \"url\": \"https://t.me/source/11\",\n        \"text\": \"SBER опубликовал повышенный прогноз.\",\n        \"published_at\": \"2026-11-17T18:55:40.934088+00:00\",\n        \"edited_at\": null,\n        \"unread_media\": false,\n        \"change\": \"new\"\n      },\n      \"event\": {\n        \"decision_id\": 1,\n        \"revision\": \"501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a\",\n        \"event_id\": \"1d76d41cc63a49a0abbb8dd82efd21f1\",\n        \"kind\": \"saved\",\n        \"basis_at\": \"2026-11-17T18:55:40.934088+00:00\",\n        \"assessment\": null,\n        \"links\": [\n          {\n            \"publication_id\": \"telegram:123:11\",\n            \"publication_url\": \"https://t.me/source/11\",\n            \"publication_sha256\": \"b6a673a68c8f7647985b90c576db4f364ff199e717cfd527ebbc43d3c78b23e1\",\n            \"publication_revision_sha256\": \"2d586a7005827b4ef41ff19e41f08a554c4cd1871772d47e58cb2888308cc3b6\",\n            \"catalog_sha256\": \"7d7b3a14b612d34b7f2aa1adbb7e3dc3b95bcde88a3aa73354f6e8112d62321d\",\n            \"company_id\": \"sber\",\n            \"kind\": \"direct\",\n            \"basis\": \"direct\",\n            \"score\": 1.0,\n            \"confidence\": 1.0,\n            \"requires_analyst_review\": false\n          }\n        ],\n        \"correction\": null\n      },\n      \"affected_company_ids\": [\n        \"sber\"\n      ],\n      \"candidates\": [\n        {\n          \"company_id\": \"sber\",\n          \"company_name\": \"SBER\",\n          \"share_id\": \"sber-share\",\n          \"contract_id\": \"control-future\",\n          \"allowed_for_entry\": true,\n          \"market\": {\n            \"observed_at\": \"2026-11-17T18:55:40.869278Z\",\n            \"last_price\": 300.0,\n            \"order_book\": {\n              \"observed_at\": \"2026-11-17T18:55:42.926435Z\",\n              \"bid\": {\n                \"price\": 299.5,\n                \"quantity_lots\": 5\n              },\n              \"ask\": {\n                \"price\": 300.5,\n                \"quantity_lots\": 3\n              }\n            },\n            \"trading_status\": \"SECURITY_TRADING_STATUS_NORMAL_TRADING\",\n            \"trading_status_observed_at\": \"2026-11-17T18:55:40.869278Z\"\n          },\n          \"market_observation_id\": \"7d35591cbdf99489e13b06344a8d68b3d2044bfa263c6a7f0e144220e1507413\"\n        }\n      ],\n      \"account\": {\n        \"observed_at\": \"2026-11-17T18:55:40.869278Z\",\n        \"currency\": \"RUB\",\n        \"equity\": 100000.0,\n        \"available_margin\": 90000.0,\n        \"id\": \"sandbox-account\"\n      },\n      \"position\": null,\n      \"entry_reason\": null,\n      \"related_news\": [],\n      \"omitted_related_news_count\": 0\n    },\n    \"proposal\": null,\n    \"review\": null\n  },\n  \"output\": {\n    \"action\": \"enter\",\n    \"publication_id\": \"telegram:123:11\",\n    \"side\": \"long\",\n    \"entry_price\": 300.0,\n    \"stop_loss\": 290.0,\n    \"take_profit\": 320.0,\n    \"reason\": \"Исходное основание входа.\",\n    \"company_id\": \"sber\",\n    \"contract_id\": \"control-future\",\n    \"assessments\": [\n      {\n        \"contract_id\": \"control-future\",\n        \"impact\": \"verified\",\n        \"reason\": \"Forecast.\",\n        \"evidence\": [\n          {\n            \"revision\": \"501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a\",\n            \"quote\": \"SBER опубликовал повышенный прогноз.\"\n          }\n        ]\n      }\n    ],\n    \"level_rationale\": {\n      \"entry\": \"Quote.\",\n      \"stop_loss\": \"Support.\",\n      \"take_profit\": \"Target.\"\n    },\n    \"id\": \"501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce:1\"\n  },\n  \"error\": null,\n  \"usage\": {\n    \"input_tokens\": 20,\n    \"output_tokens\": 30,\n    \"total_tokens\": 50,\n    \"input_token_details\": {},\n    \"output_token_details\": {}\n  },\n  \"cost\": 0.001,\n  \"started_at\": \"2026-11-17T18:55:43.023067+00:00\",\n  \"metadata\": {\n    \"id\": \"gen-control\",\n    \"model_provider\": \"openrouter\",\n    \"finish_reason\": \"stop\",\n    \"cost_details\": null,\n    \"system_fingerprint\": null,\n    \"openrouter_metadata\": null\n  },\n  \"raw_output\": \"{\\\"action\\\": \\\"enter\\\", \\\"publication_id\\\": \\\"telegram:123:11\\\", \\\"company_id\\\": \\\"sber\\\", \\\"contract_id\\\": \\\"control-future\\\", \\\"side\\\": \\\"long\\\", \\\"entry_price\\\": 300, \\\"stop_loss\\\": 290, \\\"take_profit\\\": 320, \\\"reason\\\": \\\"\\\\u0418\\\\u0441\\\\u0445\\\\u043e\\\\u0434\\\\u043d\\\\u043e\\\\u0435 \\\\u043e\\\\u0441\\\\u043d\\\\u043e\\\\u0432\\\\u0430\\\\u043d\\\\u0438\\\\u0435 \\\\u0432\\\\u0445\\\\u043e\\\\u0434\\\\u0430.\\\", \\\"level_rationale\\\": {\\\"entry\\\": \\\"Quote.\\\", \\\"stop_loss\\\": \\\"Support.\\\", \\\"take_profit\\\": \\\"Target.\\\"}, \\\"assessments\\\": [{\\\"contract_id\\\": \\\"control-future\\\", \\\"impact\\\": \\\"verified\\\", \\\"reason\\\": \\\"Forecast.\\\", \\\"evidence\\\": [{\\\"revision\\\": \\\"501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a\\\", \\\"quote\\\": \\\"SBER \\\\u043e\\\\u043f\\\\u0443\\\\u0431\\\\u043b\\\\u0438\\\\u043a\\\\u043e\\\\u0432\\\\u0430\\\\u043b \\\\u043f\\\\u043e\\\\u0432\\\\u044b\\\\u0448\\\\u0435\\\\u043d\\\\u043d\\\\u044b\\\\u0439 \\\\u043f\\\\u0440\\\\u043e\\\\u0433\\\\u043d\\\\u043e\\\\u0437.\\\"}]}]}\",\n  \"formed_at\": \"2026-11-17T18:55:43.166331+00:00\",\n  \"at\": \"2026-11-17T18:55:43.166331+00:00\",\n  \"latency_ms\": 142.464\n}\n",
+    "review/7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce/call-02.json": "{\n  \"role\": \"critic\",\n  \"mode\": \"observation\",\n  \"requested_model\": \"test/critic\",\n  \"aggregator\": \"openrouter\",\n  \"actual_model\": \"test/critic\",\n  \"provider\": \"TestProvider\",\n  \"settings_version\": \"68dcc084651fd946cd6301ebca47bf2debe800585e0611d7fcdecb67378751c2\",\n  \"input\": {\n    \"context\": {\n      \"publication\": {\n        \"id\": \"telegram:123:11\",\n        \"source\": \"telegram:123\",\n        \"url\": \"https://t.me/source/11\",\n        \"text\": \"SBER опубликовал повышенный прогноз.\",\n        \"published_at\": \"2026-11-17T18:55:40.934088+00:00\",\n        \"edited_at\": null,\n        \"unread_media\": false,\n        \"change\": \"new\"\n      },\n      \"event\": {\n        \"decision_id\": 1,\n        \"revision\": \"501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a\",\n        \"event_id\": \"1d76d41cc63a49a0abbb8dd82efd21f1\",\n        \"kind\": \"saved\",\n        \"basis_at\": \"2026-11-17T18:55:40.934088+00:00\",\n        \"assessment\": null,\n        \"links\": [\n          {\n            \"publication_id\": \"telegram:123:11\",\n            \"publication_url\": \"https://t.me/source/11\",\n            \"publication_sha256\": \"b6a673a68c8f7647985b90c576db4f364ff199e717cfd527ebbc43d3c78b23e1\",\n            \"publication_revision_sha256\": \"2d586a7005827b4ef41ff19e41f08a554c4cd1871772d47e58cb2888308cc3b6\",\n            \"catalog_sha256\": \"7d7b3a14b612d34b7f2aa1adbb7e3dc3b95bcde88a3aa73354f6e8112d62321d\",\n            \"company_id\": \"sber\",\n            \"kind\": \"direct\",\n            \"basis\": \"direct\",\n            \"score\": 1.0,\n            \"confidence\": 1.0,\n            \"requires_analyst_review\": false\n          }\n        ],\n        \"correction\": null\n      },\n      \"affected_company_ids\": [\n        \"sber\"\n      ],\n      \"candidates\": [\n        {\n          \"company_id\": \"sber\",\n          \"company_name\": \"SBER\",\n          \"share_id\": \"sber-share\",\n          \"contract_id\": \"control-future\",\n          \"allowed_for_entry\": true,\n          \"market\": {\n            \"observed_at\": \"2026-11-17T18:55:40.869278Z\",\n            \"last_price\": 300.0,\n            \"order_book\": {\n              \"observed_at\": \"2026-11-17T18:55:42.926435Z\",\n              \"bid\": {\n                \"price\": 299.5,\n                \"quantity_lots\": 5\n              },\n              \"ask\": {\n                \"price\": 300.5,\n                \"quantity_lots\": 3\n              }\n            },\n            \"trading_status\": \"SECURITY_TRADING_STATUS_NORMAL_TRADING\",\n            \"trading_status_observed_at\": \"2026-11-17T18:55:40.869278Z\"\n          },\n          \"market_observation_id\": \"7d35591cbdf99489e13b06344a8d68b3d2044bfa263c6a7f0e144220e1507413\"\n        }\n      ],\n      \"account\": {\n        \"observed_at\": \"2026-11-17T18:55:40.869278Z\",\n        \"currency\": \"RUB\",\n        \"equity\": 100000.0,\n        \"available_margin\": 90000.0,\n        \"id\": \"sandbox-account\"\n      },\n      \"position\": null,\n      \"entry_reason\": null,\n      \"related_news\": [],\n      \"omitted_related_news_count\": 0\n    },\n    \"proposal\": {\n      \"action\": \"enter\",\n      \"publication_id\": \"telegram:123:11\",\n      \"side\": \"long\",\n      \"entry_price\": 300.0,\n      \"stop_loss\": 290.0,\n      \"take_profit\": 320.0,\n      \"reason\": \"Исходное основание входа.\",\n      \"company_id\": \"sber\",\n      \"contract_id\": \"control-future\",\n      \"assessments\": [\n        {\n          \"contract_id\": \"control-future\",\n          \"impact\": \"verified\",\n          \"reason\": \"Forecast.\",\n          \"evidence\": [\n            {\n              \"revision\": \"501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a\",\n              \"quote\": \"SBER опубликовал повышенный прогноз.\"\n            }\n          ]\n        }\n      ],\n      \"level_rationale\": {\n        \"entry\": \"Quote.\",\n        \"stop_loss\": \"Support.\",\n        \"take_profit\": \"Target.\"\n      },\n      \"id\": \"501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce:1\"\n    },\n    \"previous_review\": null\n  },\n  \"output\": {\n    \"proposal_id\": \"501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce:1\",\n    \"approved\": false,\n    \"objections\": [\n      \"Insufficient independent evidence.\"\n    ],\n    \"reason\": \"Checked against the original publication and context.\"\n  },\n  \"error\": null,\n  \"usage\": {\n    \"input_tokens\": 20,\n    \"output_tokens\": 30,\n    \"total_tokens\": 50,\n    \"input_token_details\": {},\n    \"output_token_details\": {}\n  },\n  \"cost\": 0.001,\n  \"started_at\": \"2026-11-17T18:55:43.177286+00:00\",\n  \"metadata\": {\n    \"id\": \"gen-control\",\n    \"model_provider\": \"openrouter\",\n    \"finish_reason\": \"stop\",\n    \"cost_details\": null,\n    \"system_fingerprint\": null,\n    \"openrouter_metadata\": null\n  },\n  \"raw_output\": \"{\\\"proposal_id\\\": \\\"501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce:1\\\", \\\"approved\\\": false, \\\"objections\\\": [\\\"Insufficient independent evidence.\\\"], \\\"reason\\\": \\\"Checked against the original publication and context.\\\"}\",\n  \"at\": \"2026-11-17T18:55:43.263185+00:00\",\n  \"latency_ms\": 84.684\n}\n",
+    "review/7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce/call-03.json": "{\n  \"role\": \"analyst\",\n  \"mode\": \"observation\",\n  \"requested_model\": \"test/analyst\",\n  \"aggregator\": \"openrouter\",\n  \"actual_model\": \"test/analyst\",\n  \"provider\": \"TestProvider\",\n  \"settings_version\": \"68dcc084651fd946cd6301ebca47bf2debe800585e0611d7fcdecb67378751c2\",\n  \"input\": {\n    \"context\": {\n      \"publication\": {\n        \"id\": \"telegram:123:11\",\n        \"source\": \"telegram:123\",\n        \"url\": \"https://t.me/source/11\",\n        \"text\": \"SBER опубликовал повышенный прогноз.\",\n        \"published_at\": \"2026-11-17T18:55:40.934088+00:00\",\n        \"edited_at\": null,\n        \"unread_media\": false,\n        \"change\": \"new\"\n      },\n      \"event\": {\n        \"decision_id\": 1,\n        \"revision\": \"501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a\",\n        \"event_id\": \"1d76d41cc63a49a0abbb8dd82efd21f1\",\n        \"kind\": \"saved\",\n        \"basis_at\": \"2026-11-17T18:55:40.934088+00:00\",\n        \"assessment\": null,\n        \"links\": [\n          {\n            \"publication_id\": \"telegram:123:11\",\n            \"publication_url\": \"https://t.me/source/11\",\n            \"publication_sha256\": \"b6a673a68c8f7647985b90c576db4f364ff199e717cfd527ebbc43d3c78b23e1\",\n            \"publication_revision_sha256\": \"2d586a7005827b4ef41ff19e41f08a554c4cd1871772d47e58cb2888308cc3b6\",\n            \"catalog_sha256\": \"7d7b3a14b612d34b7f2aa1adbb7e3dc3b95bcde88a3aa73354f6e8112d62321d\",\n            \"company_id\": \"sber\",\n            \"kind\": \"direct\",\n            \"basis\": \"direct\",\n            \"score\": 1.0,\n            \"confidence\": 1.0,\n            \"requires_analyst_review\": false\n          }\n        ],\n        \"correction\": null\n      },\n      \"affected_company_ids\": [\n        \"sber\"\n      ],\n      \"candidates\": [\n        {\n          \"company_id\": \"sber\",\n          \"company_name\": \"SBER\",\n          \"share_id\": \"sber-share\",\n          \"contract_id\": \"control-future\",\n          \"allowed_for_entry\": true,\n          \"market\": {\n            \"observed_at\": \"2026-11-17T18:55:40.869278Z\",\n            \"last_price\": 300.0,\n            \"order_book\": {\n              \"observed_at\": \"2026-11-17T18:55:42.926435Z\",\n              \"bid\": {\n                \"price\": 299.5,\n                \"quantity_lots\": 5\n              },\n              \"ask\": {\n                \"price\": 300.5,\n                \"quantity_lots\": 3\n              }\n            },\n            \"trading_status\": \"SECURITY_TRADING_STATUS_NORMAL_TRADING\",\n            \"trading_status_observed_at\": \"2026-11-17T18:55:40.869278Z\"\n          },\n          \"market_observation_id\": \"7d35591cbdf99489e13b06344a8d68b3d2044bfa263c6a7f0e144220e1507413\"\n        }\n      ],\n      \"account\": {\n        \"observed_at\": \"2026-11-17T18:55:40.869278Z\",\n        \"currency\": \"RUB\",\n        \"equity\": 100000.0,\n        \"available_margin\": 90000.0,\n        \"id\": \"sandbox-account\"\n      },\n      \"position\": null,\n      \"entry_reason\": null,\n      \"related_news\": [],\n      \"omitted_related_news_count\": 0\n    },\n    \"proposal\": {\n      \"action\": \"enter\",\n      \"publication_id\": \"telegram:123:11\",\n      \"side\": \"long\",\n      \"entry_price\": 300.0,\n      \"stop_loss\": 290.0,\n      \"take_profit\": 320.0,\n      \"reason\": \"Исходное основание входа.\",\n      \"company_id\": \"sber\",\n      \"contract_id\": \"control-future\",\n      \"assessments\": [\n        {\n          \"contract_id\": \"control-future\",\n          \"impact\": \"verified\",\n          \"reason\": \"Forecast.\",\n          \"evidence\": [\n            {\n              \"revision\": \"501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a\",\n              \"quote\": \"SBER опубликовал повышенный прогноз.\"\n            }\n          ]\n        }\n      ],\n      \"level_rationale\": {\n        \"entry\": \"Quote.\",\n        \"stop_loss\": \"Support.\",\n        \"take_profit\": \"Target.\"\n      },\n      \"id\": \"501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce:1\"\n    },\n    \"review\": {\n      \"proposal_id\": \"501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce:1\",\n      \"approved\": false,\n      \"objections\": [\n        \"Insufficient independent evidence.\"\n      ],\n      \"reason\": \"Checked against the original publication and context.\"\n    }\n  },\n  \"output\": {\n    \"action\": \"enter\",\n    \"publication_id\": \"telegram:123:11\",\n    \"side\": \"long\",\n    \"entry_price\": 301.0,\n    \"stop_loss\": 290.0,\n    \"take_profit\": 320.0,\n    \"reason\": \"Исходное основание входа.\",\n    \"company_id\": \"sber\",\n    \"contract_id\": \"control-future\",\n    \"assessments\": [\n      {\n        \"contract_id\": \"control-future\",\n        \"impact\": \"verified\",\n        \"reason\": \"Forecast.\",\n        \"evidence\": [\n          {\n            \"revision\": \"501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a\",\n            \"quote\": \"SBER опубликовал повышенный прогноз.\"\n          }\n        ]\n      }\n    ],\n    \"level_rationale\": {\n      \"entry\": \"Quote.\",\n      \"stop_loss\": \"Support.\",\n      \"take_profit\": \"Target.\"\n    },\n    \"id\": \"501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce:3\"\n  },\n  \"error\": null,\n  \"usage\": {\n    \"input_tokens\": 20,\n    \"output_tokens\": 30,\n    \"total_tokens\": 50,\n    \"input_token_details\": {},\n    \"output_token_details\": {}\n  },\n  \"cost\": 0.001,\n  \"started_at\": \"2026-11-17T18:55:43.273212+00:00\",\n  \"metadata\": {\n    \"id\": \"gen-control\",\n    \"model_provider\": \"openrouter\",\n    \"finish_reason\": \"stop\",\n    \"cost_details\": null,\n    \"system_fingerprint\": null,\n    \"openrouter_metadata\": null\n  },\n  \"raw_output\": \"{\\\"action\\\": \\\"enter\\\", \\\"publication_id\\\": \\\"telegram:123:11\\\", \\\"company_id\\\": \\\"sber\\\", \\\"contract_id\\\": \\\"control-future\\\", \\\"side\\\": \\\"long\\\", \\\"entry_price\\\": 301, \\\"stop_loss\\\": 290, \\\"take_profit\\\": 320, \\\"reason\\\": \\\"\\\\u0418\\\\u0441\\\\u0445\\\\u043e\\\\u0434\\\\u043d\\\\u043e\\\\u0435 \\\\u043e\\\\u0441\\\\u043d\\\\u043e\\\\u0432\\\\u0430\\\\u043d\\\\u0438\\\\u0435 \\\\u0432\\\\u0445\\\\u043e\\\\u0434\\\\u0430.\\\", \\\"level_rationale\\\": {\\\"entry\\\": \\\"Quote.\\\", \\\"stop_loss\\\": \\\"Support.\\\", \\\"take_profit\\\": \\\"Target.\\\"}, \\\"assessments\\\": [{\\\"contract_id\\\": \\\"control-future\\\", \\\"impact\\\": \\\"verified\\\", \\\"reason\\\": \\\"Forecast.\\\", \\\"evidence\\\": [{\\\"revision\\\": \\\"501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a\\\", \\\"quote\\\": \\\"SBER \\\\u043e\\\\u043f\\\\u0443\\\\u0431\\\\u043b\\\\u0438\\\\u043a\\\\u043e\\\\u0432\\\\u0430\\\\u043b \\\\u043f\\\\u043e\\\\u0432\\\\u044b\\\\u0448\\\\u0435\\\\u043d\\\\u043d\\\\u044b\\\\u0439 \\\\u043f\\\\u0440\\\\u043e\\\\u0433\\\\u043d\\\\u043e\\\\u0437.\\\"}]}]}\",\n  \"formed_at\": \"2026-11-17T18:55:43.282063+00:00\",\n  \"at\": \"2026-11-17T18:55:43.282063+00:00\",\n  \"latency_ms\": 7.911\n}\n",
+    "review/7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce/call-04.json": "{\n  \"role\": \"critic\",\n  \"mode\": \"observation\",\n  \"requested_model\": \"test/critic\",\n  \"aggregator\": \"openrouter\",\n  \"actual_model\": null,\n  \"provider\": null,\n  \"settings_version\": \"68dcc084651fd946cd6301ebca47bf2debe800585e0611d7fcdecb67378751c2\",\n  \"input\": {\n    \"context\": {\n      \"publication\": {\n        \"id\": \"telegram:123:11\",\n        \"source\": \"telegram:123\",\n        \"url\": \"https://t.me/source/11\",\n        \"text\": \"SBER опубликовал повышенный прогноз.\",\n        \"published_at\": \"2026-11-17T18:55:40.934088+00:00\",\n        \"edited_at\": null,\n        \"unread_media\": false,\n        \"change\": \"new\"\n      },\n      \"event\": {\n        \"decision_id\": 1,\n        \"revision\": \"501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a\",\n        \"event_id\": \"1d76d41cc63a49a0abbb8dd82efd21f1\",\n        \"kind\": \"saved\",\n        \"basis_at\": \"2026-11-17T18:55:40.934088+00:00\",\n        \"assessment\": null,\n        \"links\": [\n          {\n            \"publication_id\": \"telegram:123:11\",\n            \"publication_url\": \"https://t.me/source/11\",\n            \"publication_sha256\": \"b6a673a68c8f7647985b90c576db4f364ff199e717cfd527ebbc43d3c78b23e1\",\n            \"publication_revision_sha256\": \"2d586a7005827b4ef41ff19e41f08a554c4cd1871772d47e58cb2888308cc3b6\",\n            \"catalog_sha256\": \"7d7b3a14b612d34b7f2aa1adbb7e3dc3b95bcde88a3aa73354f6e8112d62321d\",\n            \"company_id\": \"sber\",\n            \"kind\": \"direct\",\n            \"basis\": \"direct\",\n            \"score\": 1.0,\n            \"confidence\": 1.0,\n            \"requires_analyst_review\": false\n          }\n        ],\n        \"correction\": null\n      },\n      \"affected_company_ids\": [\n        \"sber\"\n      ],\n      \"candidates\": [\n        {\n          \"company_id\": \"sber\",\n          \"company_name\": \"SBER\",\n          \"share_id\": \"sber-share\",\n          \"contract_id\": \"control-future\",\n          \"allowed_for_entry\": true,\n          \"market\": {\n            \"observed_at\": \"2026-11-17T18:55:40.869278Z\",\n            \"last_price\": 300.0,\n            \"order_book\": {\n              \"observed_at\": \"2026-11-17T18:55:42.926435Z\",\n              \"bid\": {\n                \"price\": 299.5,\n                \"quantity_lots\": 5\n              },\n              \"ask\": {\n                \"price\": 300.5,\n                \"quantity_lots\": 3\n              }\n            },\n            \"trading_status\": \"SECURITY_TRADING_STATUS_NORMAL_TRADING\",\n            \"trading_status_observed_at\": \"2026-11-17T18:55:40.869278Z\"\n          },\n          \"market_observation_id\": \"7d35591cbdf99489e13b06344a8d68b3d2044bfa263c6a7f0e144220e1507413\"\n        }\n      ],\n      \"account\": {\n        \"observed_at\": \"2026-11-17T18:55:40.869278Z\",\n        \"currency\": \"RUB\",\n        \"equity\": 100000.0,\n        \"available_margin\": 90000.0,\n        \"id\": \"sandbox-account\"\n      },\n      \"position\": null,\n      \"entry_reason\": null,\n      \"related_news\": [],\n      \"omitted_related_news_count\": 0\n    },\n    \"proposal\": {\n      \"action\": \"enter\",\n      \"publication_id\": \"telegram:123:11\",\n      \"side\": \"long\",\n      \"entry_price\": 301.0,\n      \"stop_loss\": 290.0,\n      \"take_profit\": 320.0,\n      \"reason\": \"Исходное основание входа.\",\n      \"company_id\": \"sber\",\n      \"contract_id\": \"control-future\",\n      \"assessments\": [\n        {\n          \"contract_id\": \"control-future\",\n          \"impact\": \"verified\",\n          \"reason\": \"Forecast.\",\n          \"evidence\": [\n            {\n              \"revision\": \"501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a\",\n              \"quote\": \"SBER опубликовал повышенный прогноз.\"\n            }\n          ]\n        }\n      ],\n      \"level_rationale\": {\n        \"entry\": \"Quote.\",\n        \"stop_loss\": \"Support.\",\n        \"take_profit\": \"Target.\"\n      },\n      \"id\": \"501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce:3\"\n    },\n    \"previous_review\": {\n      \"proposal_id\": \"501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a:review:7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce:1\",\n      \"approved\": false,\n      \"objections\": [\n        \"Insufficient independent evidence.\"\n      ],\n      \"reason\": \"Checked against the original publication and context.\"\n    }\n  },\n  \"output\": null,\n  \"error\": null,\n  \"usage\": null,\n  \"cost\": null,\n  \"started_at\": \"2026-11-17T18:55:43.292813+00:00\",\n  \"at\": \"2026-11-17T18:55:43.297987+00:00\",\n  \"latency_ms\": 3.72\n}\n",
+    "review/7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce/context.json": "{\n  \"publication\": {\n    \"id\": \"telegram:123:11\",\n    \"source\": \"telegram:123\",\n    \"url\": \"https://t.me/source/11\",\n    \"text\": \"SBER опубликовал повышенный прогноз.\",\n    \"published_at\": \"2026-11-17T18:55:40.934088+00:00\",\n    \"edited_at\": null,\n    \"unread_media\": false,\n    \"change\": \"new\"\n  },\n  \"event\": {\n    \"decision_id\": 1,\n    \"revision\": \"501c12434d8d391073c924d2e3477a0be7059ddafb3f06a921a247ce95ec327a\",\n    \"event_id\": \"1d76d41cc63a49a0abbb8dd82efd21f1\",\n    \"kind\": \"saved\",\n    \"basis_at\": \"2026-11-17T18:55:40.934088+00:00\",\n    \"assessment\": null,\n    \"links\": [\n      {\n        \"publication_id\": \"telegram:123:11\",\n        \"publication_url\": \"https://t.me/source/11\",\n        \"publication_sha256\": \"b6a673a68c8f7647985b90c576db4f364ff199e717cfd527ebbc43d3c78b23e1\",\n        \"publication_revision_sha256\": \"2d586a7005827b4ef41ff19e41f08a554c4cd1871772d47e58cb2888308cc3b6\",\n        \"catalog_sha256\": \"7d7b3a14b612d34b7f2aa1adbb7e3dc3b95bcde88a3aa73354f6e8112d62321d\",\n        \"company_id\": \"sber\",\n        \"kind\": \"direct\",\n        \"basis\": \"direct\",\n        \"score\": 1.0,\n        \"confidence\": 1.0,\n        \"requires_analyst_review\": false\n      }\n    ],\n    \"correction\": null\n  },\n  \"affected_company_ids\": [\n    \"sber\"\n  ],\n  \"candidates\": [\n    {\n      \"company_id\": \"sber\",\n      \"company_name\": \"SBER\",\n      \"share_id\": \"sber-share\",\n      \"contract_id\": \"control-future\",\n      \"allowed_for_entry\": true,\n      \"market\": {\n        \"observed_at\": \"2026-11-17T18:55:40.869278Z\",\n        \"last_price\": 300.0,\n        \"order_book\": {\n          \"observed_at\": \"2026-11-17T18:55:42.926435Z\",\n          \"bid\": {\n            \"price\": 299.5,\n            \"quantity_lots\": 5\n          },\n          \"ask\": {\n            \"price\": 300.5,\n            \"quantity_lots\": 3\n          }\n        },\n        \"trading_status\": \"SECURITY_TRADING_STATUS_NORMAL_TRADING\",\n        \"trading_status_observed_at\": \"2026-11-17T18:55:40.869278Z\"\n      },\n      \"market_observation_id\": \"7d35591cbdf99489e13b06344a8d68b3d2044bfa263c6a7f0e144220e1507413\"\n    }\n  ],\n  \"account\": {\n    \"observed_at\": \"2026-11-17T18:55:40.869278Z\",\n    \"currency\": \"RUB\",\n    \"equity\": 100000.0,\n    \"available_margin\": 90000.0,\n    \"id\": \"sandbox-account\"\n  },\n  \"position\": null,\n  \"entry_reason\": null,\n  \"related_news\": [],\n  \"omitted_related_news_count\": 0\n}\n",
+    "review/7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce/publication.json": "{\n  \"id\": \"telegram:123:11\",\n  \"source\": \"telegram:123\",\n  \"url\": \"https://t.me/source/11\",\n  \"text\": \"SBER опубликовал повышенный прогноз.\",\n  \"published_at\": \"2026-11-17T18:55:40.934088+00:00\",\n  \"edited_at\": null,\n  \"unread_media\": false,\n  \"change\": \"new\"\n}\n",
+    "review/7c5d40aa5ae568c327c61d2f9808fb0baf60a4cb756d24fb58a3c8ae9a7f1cce/settings.json": "{\n  \"version\": \"68dcc084651fd946cd6301ebca47bf2debe800585e0611d7fcdecb67378751c2\",\n  \"analyst\": {\n    \"model\": \"test/analyst\",\n    \"aggregator\": \"openrouter\",\n    \"max_tokens\": 2048,\n    \"temperature\": null,\n    \"timeout_ms\": 60000\n  },\n  \"critic\": {\n    \"model\": \"test/critic\",\n    \"aggregator\": \"openrouter\",\n    \"max_tokens\": 2048,\n    \"temperature\": null,\n    \"timeout_ms\": 60000\n  },\n  \"related_news_bytes\": 40000\n}\n",
+    "route/batch-001.json": "{\n  \"company_ids\": [\n    \"sber\",\n    \"vtb\"\n  ],\n  \"request_id\": \"jev-result\",\n  \"actual_model\": \"parallel/decisions-fast:free\",\n  \"provider\": null,\n  \"usage\": null,\n  \"answers\": {\n    \"sber\": {\n      \"type\": \"choice\",\n      \"choice\": \"direct\",\n      \"probabilities\": {\n        \"direct\": 1.0,\n        \"industry\": 0.0,\n        \"commodity\": 0.0,\n        \"regulation\": 0.0,\n        \"uncertain\": 0.0,\n        \"none\": 0.0\n      },\n      \"confidence\": 1.0\n    },\n    \"vtb\": {\n      \"type\": \"choice\",\n      \"choice\": \"none\",\n      \"probabilities\": {\n        \"direct\": 0.0,\n        \"industry\": 0.0,\n        \"commodity\": 0.0,\n        \"regulation\": 0.0,\n        \"uncertain\": 0.0,\n        \"none\": 1.0\n      },\n      \"confidence\": 1.0\n    }\n  },\n  \"error\": null,\n  \"at\": \"2026-11-17T18:55:42.463058+00:00\",\n  \"elapsed_ms\": 1\n}\n",
+    "route/catalog.json": "{\n  \"sber\": {\n    \"names\": [\n      \"SBER\"\n    ],\n    \"tickers\": [\n      \"SBER\"\n    ]\n  },\n  \"vtb\": {\n    \"names\": [\n      \"VTB\"\n    ],\n    \"tickers\": [\n      \"VTB\"\n    ]\n  }\n}\n",
+    "route/category.json": "{\n  \"status\": \"completed\",\n  \"requested_model\": \"parallel/decisions-fast:free\",\n  \"categories\": {\n    \"financial\": \"Финансы\"\n  },\n  \"at\": \"2026-11-17T18:55:42.453008+00:00\",\n  \"error\": null,\n  \"selected\": [\n    \"financial\"\n  ],\n  \"candidates\": [\n    \"sber\",\n    \"vtb\"\n  ],\n  \"answers\": {\n    \"financial\": {\n      \"type\": \"choice\",\n      \"choice\": \"related\",\n      \"probabilities\": {\n        \"related\": 1.0,\n        \"unrelated\": 0.0\n      },\n      \"confidence\": 1.0\n    }\n  },\n  \"actual_model\": \"parallel/decisions-fast:free\",\n  \"provider\": null\n}\n",
+    "route/publication.json": "{\n  \"source\": \"telegram:123\",\n  \"external_id\": \"11\",\n  \"url\": \"https://t.me/source/11\",\n  \"text\": \"SBER опубликовал повышенный прогноз.\",\n  \"published_at\": \"2026-11-17T18:55:40.934088+00:00\",\n  \"received_at\": \"2026-11-17T18:55:40.934088+00:00\",\n  \"edited_at\": null,\n  \"unread_media\": false,\n  \"change\": \"new\",\n  \"id\": \"telegram:123:11\"\n}\n",
+    "route/settings.json": "{\n  \"version\": \"bfddc20a91c9a41a4224b11281f50375e1c697552f1a2800d0e9f4a27513551c\",\n  \"model\": \"parallel/decisions-fast:free\",\n  \"timeout_ms\": 60000,\n  \"batch_size\": 40,\n  \"min_relevance\": 0.5,\n  \"min_basis_probability\": 0.6\n}\n",
+    "route/trace.json": "{\n  \"at\": \"2026-11-17T18:55:42.473050+00:00\",\n  \"publication_id\": \"telegram:123:11\",\n  \"publication_url\": \"https://t.me/source/11\",\n  \"publication_sha256\": \"b6a673a68c8f7647985b90c576db4f364ff199e717cfd527ebbc43d3c78b23e1\",\n  \"publication_revision_sha256\": \"2d586a7005827b4ef41ff19e41f08a554c4cd1871772d47e58cb2888308cc3b6\",\n  \"catalog_sha256\": \"7d7b3a14b612d34b7f2aa1adbb7e3dc3b95bcde88a3aa73354f6e8112d62321d\",\n  \"links\": [\n    {\n      \"publication_id\": \"telegram:123:11\",\n      \"publication_url\": \"https://t.me/source/11\",\n      \"publication_sha256\": \"b6a673a68c8f7647985b90c576db4f364ff199e717cfd527ebbc43d3c78b23e1\",\n      \"publication_revision_sha256\": \"2d586a7005827b4ef41ff19e41f08a554c4cd1871772d47e58cb2888308cc3b6\",\n      \"catalog_sha256\": \"7d7b3a14b612d34b7f2aa1adbb7e3dc3b95bcde88a3aa73354f6e8112d62321d\",\n      \"company_id\": \"sber\",\n      \"kind\": \"direct\",\n      \"basis\": \"direct\",\n      \"score\": 1.0,\n      \"confidence\": 1.0,\n      \"requires_analyst_review\": false\n    }\n  ],\n  \"batches\": [\n    {\n      \"company_ids\": [\n        \"sber\",\n        \"vtb\"\n      ],\n      \"request_id\": \"jev-result\",\n      \"actual_model\": \"parallel/decisions-fast:free\",\n      \"provider\": null,\n      \"usage\": null,\n      \"error\": null,\n      \"at\": \"2026-11-17T18:55:42.463058+00:00\",\n      \"elapsed_ms\": 1\n    }\n  ],\n  \"error\": null,\n  \"mode\": \"openrouter_decisions\",\n  \"status\": \"completed\",\n  \"settings_version\": \"bfddc20a91c9a41a4224b11281f50375e1c697552f1a2800d0e9f4a27513551c\",\n  \"requested_model\": \"parallel/decisions-fast:free\",\n  \"actual_model\": \"parallel/decisions-fast:free\",\n  \"candidate_count\": 2,\n  \"cost_usd\": null\n}\n"
+  }
+}

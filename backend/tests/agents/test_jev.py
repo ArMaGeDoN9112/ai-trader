@@ -6,11 +6,11 @@ import unittest
 import httpx
 from pydantic import ValidationError
 
-from news_futures.domain.contracts import AnalysisContext
-from news_futures.application.analysis.review import control_context
-from news_futures.adapters.models.decisions import choices
-from news_futures.application.analysis.routing import route_publication
-from news_futures.domain.publications import publication_digest
+from news_futures.schemas.contracts import AnalysisContext
+from news_futures.agents.review import control_context
+from news_futures.llm_clients.decisions import choices
+from news_futures.agents.routing import route_publication
+from news_futures.dataflows.publications import publication_digest
 from tests.support.routing import answer
 
 

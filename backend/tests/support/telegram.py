@@ -2,8 +2,8 @@
 
 from datetime import datetime, timedelta
 
-from news_futures.adapters.telegram import Difference, Source
-from news_futures.domain.publications import Publication, utc_now
+from news_futures.dataflows.telegram import Difference, Source
+from news_futures.dataflows.publications import Publication, utc_now
 
 class ControlledTransport:
     def __init__(self) -> None:
