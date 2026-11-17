@@ -6,10 +6,10 @@ from unittest import TestCase
 from unittest.mock import AsyncMock, patch
 
 import httpx
+from jsonschema import ValidationError
 from mcp import types
 
-from news_futures.brokers.diagnostic_reads import schema_digest
-from news_futures.brokers.mcp_orders import MARKET_READS, TBankMCPReader
+from news_futures.brokers.mcp_orders import TBankMCPReader
 from news_futures.brokers.tbank import TBankReader
 
 
@@ -43,7 +43,7 @@ class MarketReadsTest(TestCase):
             candle, = reader.read_candles(now, now + timedelta(minutes=2))
             self.assertEqual((candle.started_at, candle.close, candle.volume_lots), (now, 300.0, 42))
 
-    def test_mcp_book_requires_the_reviewed_read_only_tool(self) -> None:
+    def test_mcp_book_accepts_current_schema_and_requires_valid_read_only_calls(self) -> None:
         name = 'invest_get_orderbook'
         tool = types.Tool(name=name, annotations=types.ToolAnnotations(readOnlyHint=True), inputSchema={
             'type': 'object', 'required': ['instrumentId', 'depth'],
@@ -64,14 +64,23 @@ class MarketReadsTest(TestCase):
         with httpx.Client(trust_env=False) as client:
             reader = TBankMCPReader(client, 'account', 'future', 'company', None)
             with (patch.object(reader, 'instrument', return_value='FUT_TEST'),
-                  patch.object(reader, '_session', side_effect=connected),
-                  patch.dict(MARKET_READS, {'GetOrderBook': (name, schema_digest(tool))})):
+                  patch.object(reader, '_session', side_effect=connected)):
                 book = reader.read_order_book()
                 assert book.bid is not None
                 self.assertEqual(book.bid.price, 299.5)
                 self.assertIsNone(book.ask)
                 session.call_tool.assert_awaited_once_with(name, arguments={'instrumentId': 'FUT_TEST', 'depth': 1})
-                tool.annotations = types.ToolAnnotations(readOnlyHint=False)
-                with self.assertRaisesRegex(ValueError, 'mcp_market_tool_schema_changed'):
+                tool.description = 'Updated order book description'
+                tool.inputSchema['properties']['optionalField'] = {'type': 'string'}
+                tool.outputSchema = {'type': 'object', 'properties': {'optionalField': {'type': 'string'}}}
+                self.assertEqual(reader.read_order_book(), book)
+                self.assertEqual(session.call_tool.await_count, 2)
+                tool.inputSchema['properties']['depth'] = {'type': 'string'}
+                with self.assertRaises(ValidationError):
                     reader.read_order_book()
-                self.assertEqual(session.call_tool.await_count, 1)
+                self.assertEqual(session.call_tool.await_count, 2)
+                tool.inputSchema['properties']['depth'] = {'type': 'integer'}
+                tool.annotations = types.ToolAnnotations(readOnlyHint=False)
+                with self.assertRaisesRegex(ValueError, 'mcp_market_tool_not_read_only'):
+                    reader.read_order_book()
+                self.assertEqual(session.call_tool.await_count, 2)

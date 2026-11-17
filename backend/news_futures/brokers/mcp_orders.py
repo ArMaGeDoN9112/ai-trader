@@ -15,7 +15,6 @@ from mcp.client.streamable_http import streamable_http_client
 from referencing import Registry
 
 from news_futures.credentials import load_token
-from news_futures.brokers.diagnostic_reads import schema_digest
 from news_futures.brokers.diagnostics import SANDBOX_URL
 from news_futures.brokers.tbank import POINTS, STOP_TYPES, TBankReader, broker_read_timeout, identifier
 from news_futures.trading.execution import Fill
@@ -34,8 +33,8 @@ FIELDS = {
     CANCEL_STOP: ({'accountId', 'stopOrderId'}, 'time'),
 }
 MARKET_READS = {
-    'GetOrderBook': ('invest_get_orderbook', '60d11dbbfe05c213be87fead46e0b5ebae9203ac8925deb96eb05856a9119787'),
-    'GetCandles': ('invest_get_candles', '277376f5d15b1526fc8cb627b220c90255f043abae9c6d84642ff00aff45f315'),
+    'GetOrderBook': 'invest_get_orderbook',
+    'GetCandles': 'invest_get_candles',
 }
 
 
@@ -64,14 +63,14 @@ class TBankMCPReader(TBankReader):
                     yield session
 
     def _market_data(self, method: str, **args: Any) -> dict[str, Any]:
-        name, digest = MARKET_READS[method]
+        name = MARKET_READS[method]
         instrument = self.instrument()
-        return asyncio.run(self._read_market_tool(name, digest, {'instrumentId': instrument, **args}))
+        return asyncio.run(self._read_market_tool(name, {'instrumentId': instrument, **args}))
 
     def _market_price(self, value: Any) -> float:
         return float(Decimal(identifier(value['value'])))
 
-    async def _read_market_tool(self, name: str, digest: str, args: dict[str, Any]) -> dict[str, Any]:
+    async def _read_market_tool(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
         async with self._session(broker_read_timeout(10)) as session:
             tools: list[types.Tool] = []
             cursor = None
@@ -86,8 +85,9 @@ class TBankMCPReader(TBankReader):
             if len(tools) != 1:
                 raise ValueError('mcp_market_tool_missing_or_ambiguous')
             tool = tools[0]
-            if not tool.annotations or tool.annotations.readOnlyHint is not True or schema_digest(tool) != digest:
-                raise ValueError('mcp_market_tool_schema_changed')
+            if not tool.annotations or tool.annotations.readOnlyHint is not True:
+                raise ValueError('mcp_market_tool_not_read_only')
+            Draft202012Validator.check_schema(tool.inputSchema)
             Draft202012Validator(tool.inputSchema, registry=Registry()).validate(args)
             result = await session.call_tool(name, arguments=args)
             if result.isError or not isinstance(result.structuredContent, dict):

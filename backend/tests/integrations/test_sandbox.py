@@ -17,7 +17,6 @@ from news_futures.cli import main
 from news_futures.brokers.diagnostics import (
     Binding, CAPABILITIES, READS, SANDBOX_URL, Settings, diagnose, run_sandbox,
 )
-from news_futures.brokers.diagnostic_reads import schema_digest
 
 
 NOW = datetime(2026, 11, 6, 10, tzinfo=timezone.utc)
@@ -119,7 +118,7 @@ class SandboxTest(unittest.TestCase):
         for feature in ('oco', 'reduce_only', 'atomic_entry'):
             self.assertEqual(report[feature], 'not_verified')
 
-    def test_tbank_profile_combines_reviewed_reads_and_refuses_schema_drift(self) -> None:
+    def test_tbank_profile_uses_current_schemas_and_rejects_invalid_arguments(self) -> None:
         responses: dict[str, dict[str, Any]] = {
             'list_broker_accounts': {'accounts': [{'id': 'demo'}]},
             'get_portfolio': {'totalAmountPortfolio': {'currency': 'rub', 'value': '0'}},
@@ -145,7 +144,6 @@ class SandboxTest(unittest.TestCase):
         tools = [types.Tool(name='invest_' + name, description=name, inputSchema={'type': 'object'},
                             annotations=types.ToolAnnotations(readOnlyHint=name in responses))
                  for name in (*responses, 'create_order')]
-        digests = {tool.name.removeprefix('invest_'): schema_digest(tool) for tool in tools}
         calls: list[tuple[str, dict[str, Any]]] = []
 
         class TBankSession:
@@ -157,7 +155,7 @@ class SandboxTest(unittest.TestCase):
                 return types.CallToolResult(content=[], structuredContent=responses[name.removeprefix('invest_')])
 
         settings = Settings(environment='sandbox', endpoint=SANDBOX_URL, tbank_contract='TESTZ6_SPBFUT')
-        with tempfile.TemporaryDirectory() as tmp, patch('news_futures.brokers.diagnostic_reads.SCHEMAS', digests):
+        with tempfile.TemporaryDirectory() as tmp:
             report = asyncio.run(diagnose(TBankSession(), settings, Path(tmp) / 'ok',
                                          token=TOKEN, source='control', now=NOW))
             self.assertEqual(report['status'], 'data_confirmed')
@@ -171,12 +169,22 @@ class SandboxTest(unittest.TestCase):
             self.assertEqual([args['direction'] for name, args in calls if name == 'invest_get_order_price'],
                              ['ORDER_DIRECTION_BUY', 'ORDER_DIRECTION_SELL'])
             self.assertNotIn('invest_create_order', [name for name, _ in calls])
-            next(tool for tool in tools if tool.name == 'invest_get_market_values').description = 'Changed schema'
+            quote_tool = next(tool for tool in tools if tool.name == 'invest_get_market_values')
+            quote_tool.description = 'Updated market values description'
+            quote_tool.inputSchema['properties'] = {'optionalField': {'type': 'string'}}
+            quote_tool.outputSchema = {'type': 'object', 'properties': {'optionalField': {'type': 'string'}}}
             calls.clear()
             report = asyncio.run(diagnose(TBankSession(), settings, Path(tmp) / 'changed',
                                          token=TOKEN, source='control', now=NOW))
+            self.assertEqual(report['status'], 'data_confirmed')
+            self.assertIn('invest_get_market_values', [name for name, _ in calls])
+            self.assertNotIn('invest_create_order', [name for name, _ in calls])
+            quote_tool.inputSchema['required'] = ['optionalField']
+            calls.clear()
+            report = asyncio.run(diagnose(TBankSession(), settings, Path(tmp) / 'incompatible',
+                                         token=TOKEN, source='control', now=NOW))
             self.assertEqual(report['status'], 'limited')
-            self.assertEqual(report['tbank_responses']['quote']['limitation'], 'tool_or_schema_changed')
+            self.assertEqual(report['tbank_responses']['quote']['limitation'], 'invalid_arguments')
             self.assertNotIn('invest_get_market_values', [name for name, _ in calls])
 
     def test_no_bindings_reports_missing_capabilities_without_guessing(self) -> None:

@@ -1,7 +1,5 @@
 """Normalize the reviewed T-Invest sandbox MCP responses for ticket 04."""
 
-from hashlib import sha256
-import json
 from typing import Any
 
 from jsonschema import Draft202012Validator
@@ -9,32 +7,6 @@ from mcp import types
 from referencing import Registry
 
 from news_futures.brokers.diagnostics import Binding, CompanyShare, Session, extract, positive
-
-
-# Description, input and output schemas from the live sandbox inventory of 2026-11-08.
-SCHEMAS = {
-    'find_instrument': '926fc2f9de9be843b56df7883059504ed8e33746308a9a65370325059b534d23',
-    'list_assets': '6e2df879087feb9e0df51439fa0c3bfdca492823a7aecbd2f38b38b660f1bc34',
-    'list_shares': '3b6ae00623ca87eb592109cefcb10d3564828bea999521e5a76d54d8982d482e',
-    'get_market_values': 'c6959770afa9024f2468deb03baaf3c598a63dbdeeadfae36c61311439ee0eb9',
-    'get_trading_statuses': 'b006dd0bb8fbce41b17ae7074eb9adf6168f76be307380f7e111a5aec8175a85',
-    'get_portfolio': '7c4b9c1e763b2fe83bbf4067a73e73c87184659f684ee477cf052db096eca099',
-    'get_positions': '9c782eefe9b1c9e4324028350ebec6cf95f8b806c6860a5c704561efb0d28f2f',
-    'create_order': '7e59cd9d31af8bca171a72163398321a97d210fb4f1291533ea486aac6ab7f42',
-    'get_order_price': '72080bd595880c994cc4155a0516859b5dc4dc75836878c6aa76c8ba5af7a944',
-    'get_orders': 'd200bbc3f3469f686ffe23b1250939fd592c728b128b5a40639de7b3d5aaa83e',
-    'cancel_stoporder': 'fc0e7289990408815c77c5e371022d69dc5ce5a70b3daf14b1f1466e40789610',
-    'create_stoporder': '9c8008a56f82f5479583c02fbdb7363973f0d08f847f7ab7d93fa245a594ab08',
-    'get_stoporders': '0dcd7575ed5eeedad6d4a505addffe6aecfe96ece1a4f283ea527b748bd8f81f',
-    'list_broker_accounts': '80474cf8307037fc114c307bd580df8a48f1e31054cc1c8b9c0e3d00e27794c8',
-    'get_future': '352ff3608f35a476bb0b8d9ef7ed8984cdaf65e52d4671024a12c701073570ed',
-}
-
-
-def schema_digest(tool: types.Tool) -> str:
-    schema = json.dumps([tool.description, tool.inputSchema, tool.outputSchema],
-                        sort_keys=True, separators=(',', ':'))
-    return sha256(schema.encode()).hexdigest()
 
 
 def one_instrument(rows: list[dict[str, Any]], ticker: str, class_code: str) -> dict[str, Any]:
@@ -51,21 +23,22 @@ async def read_tbank(session: Session, tools: dict[str, types.Tool], instrument:
     report['tbank_responses'] = responses
     data: dict[str, Any] = {}
 
-    def reviewed(name: str) -> types.Tool:
+    def available_tool(name: str) -> types.Tool:
         tool = tools.get(f'invest_{name}')
-        if tool is None or schema_digest(tool) != SCHEMAS[name]:
-            raise ValueError('tool_or_schema_changed')
+        if tool is None:
+            raise ValueError('tool_missing')
         return tool
 
     async def read(label: str, name: str, **args: Any) -> dict[str, Any]:
         item = responses[label] = {'tool': f'invest_{name}', 'availability': 'unavailable'}
-        limitation = 'tool_or_schema_changed'
+        limitation = 'tool_missing'
         try:
-            tool = reviewed(name)
+            tool = available_tool(name)
             limitation = 'read_only_not_declared'
             if not tool.annotations or tool.annotations.readOnlyHint is not True:
                 raise ValueError(limitation)
             limitation = 'invalid_arguments'
+            Draft202012Validator.check_schema(tool.inputSchema)
             Draft202012Validator(tool.inputSchema, registry=Registry()).validate(args)
             limitation = 'tool_call_or_response_failed'
             result = await session.call_tool(tool.name, args)
@@ -90,7 +63,7 @@ async def read_tbank(session: Session, tools: dict[str, types.Tool], instrument:
                             ('create_tp', 'create_stoporder'), ('read_stops', 'get_stoporders'),
                             ('cancel_stop', 'cancel_stoporder')):
         try:
-            tool = reviewed(name)
+            tool = available_tool(name)
             capability = {'availability': 'schema_reviewed_not_exercised', 'tool': tool.name}
             if operation in ('create_sl', 'create_tp'):
                 stop_type = {'create_sl': 'STOP_ORDER_TYPE_STOP_LOSS',
