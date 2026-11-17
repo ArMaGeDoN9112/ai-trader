@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import Field
 
 from news_futures.application.catalog import load_catalog
+from news_futures.application.analysis.calendar import CALENDAR, EventCalendar
 from news_futures.application.analysis.routing import DecisionsSettings
 from news_futures.application.analysis.tool_agent import AgentLimits
 from news_futures.common.errors import RuntimeErrorInfo
@@ -34,6 +35,8 @@ class RuntimeSettings(Contract):
     groq: Path = GROQ_SETTINGS
     futures_categories: Path = FUTURES_CATEGORIES
     agent_limits: AgentLimits = AgentLimits()
+    events_calendar: Path = CALENDAR
+    sector_benchmarks: dict[Nonempty, Nonempty] = Field(default_factory=dict)
     signal_timeout_seconds: int = Field(default=60, gt=0)
     futures_refresh_seconds: int = Field(default=86400, gt=0)
     broker_refresh_seconds: int = Field(default=15, gt=0)
@@ -96,6 +99,13 @@ def cycle_inputs(settings: RuntimeSettings, models: dict[str, str] | None = None
         except (OSError, ValueError, KeyError, TypeError) as error:
             raise RuntimeErrorInfo(f'Проверьте файл настройки {field}.') from error
         inputs[field] = content
+    if settings.analysis_strategy == 'tool_agent':
+        try:
+            calendar = settings.events_calendar.read_bytes()
+            EventCalendar.model_validate_json(calendar)
+        except (OSError, ValueError) as error:
+            raise RuntimeErrorInfo('Проверьте файл настройки events_calendar.') from error
+        inputs['events-calendar'] = calendar
     if models is None and aggregator is None:
         return inputs
     options = json.loads(inputs['review'])

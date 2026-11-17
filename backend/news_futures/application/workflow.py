@@ -23,7 +23,7 @@ from news_futures.application.analysis.team_dto import EventEvidence
 from news_futures.application.analysis.tool_agent import TEAM_DIRECTORY, run_tool_agent
 from news_futures.application.artifact_paths import market_path, review_path
 from news_futures.application.config import RuntimeSettings
-from news_futures.application.ports.broker import MarketReading, NoSupportedFutures, ReadMarket
+from news_futures.application.ports.broker import MarketReading, NoSupportedFutures, ReadCandles, ReadComparison, ReadMarket
 from news_futures.application.ports.models import AnalysisModels, BatchDecision, Choose
 from news_futures.application.ports.storage import EventStore, PublicationStore, RuntimeStorage
 from news_futures.common.artifacts import move_artifact, replace_json
@@ -65,7 +65,8 @@ class NewsState(TypedDict, total=False):
 
 def analyze_news(
     settings: RuntimeSettings, directory: Path, publication: dict[str, Any], revision: str, *,
-    contracts: dict[str, str], read_market: ReadMarket, deadline: datetime,
+    contracts: dict[str, str], read_market: ReadMarket, read_candles: ReadCandles,
+    read_comparison: ReadComparison, deadline: datetime,
     current_position: Callable[[], OpenPosition | None],
     stop: Event, models: AnalysisModels, storage: RuntimeStorage,
 ) -> NewsState:
@@ -212,7 +213,8 @@ def analyze_news(
                 directory, revision, event, settings.account_id, {uid: contracts[uid]}, events,
                 lambda contract, timeout: observe(contract, timeout, current), current,
                 check_stop, checkpointer, settings.coordinator,
-                settings.agent_limits, chat, deadline=deadline,
+                settings.agent_limits, chat, deadline=deadline, read_candles=read_candles, read_comparison=read_comparison,
+                received_at=datetime.fromisoformat(publication['received_at']),
             )
             result: NewsState = {'status': outcome.status, 'reason': outcome.reason}
             if outcome.proposal is not None:

@@ -5,7 +5,8 @@ import { Badge, Empty, Panel, Step } from './ui';
 
 const roleNames = { coordinator: 'Координатор', analyst: 'Аналитик', critic: 'Критик' };
 const modelStages = new Set(['category', 'route', 'event', 'instrument', 'tool_selection']);
-const tools = new Set(['get_company_news', 'get_market_context', 'agent_tool']);
+const tools = new Set(['get_company_news', 'get_market_context', 'get_market_reaction',
+  'get_event_versions', 'compare_market', 'get_upcoming_events', 'agent_tool']);
 const nodeHeight = 56;
 const rowHeight = 84;
 const inset = 14;

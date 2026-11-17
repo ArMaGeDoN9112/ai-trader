@@ -160,6 +160,9 @@ const steps = {
   agent: 'Решение команды', coordinator: 'Координатор',
   tool_selection: 'Выбор инструмента', analyze: 'Передать аналитику',
   get_company_news: 'Поиск новостей компании', get_market_context: 'Проверка рынка',
+  get_market_reaction: 'Реакция цены и объёма',
+  get_event_versions: 'Версии и источники события', compare_market: 'Сравнение с рынком',
+  get_upcoming_events: 'Календарь событий',
   agent_tool: 'Вызов инструмента',
 };
 

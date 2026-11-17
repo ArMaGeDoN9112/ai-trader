@@ -353,8 +353,13 @@ class RuntimeAcceptance(RiskFixture):
         candidate_path, = (decision_dir / 'candidates').glob('*.json')
         self.assertEqual(json.loads(candidate_path.read_bytes())['observation_id'], observation_id)
         self.assertEqual([tool['function']['name'] for tool in endpoint.requests[2]['tools']],
-                         ['AnalystAnswer', 'get_market_context'])
+                         ['AnalystAnswer', 'get_market_context', 'get_market_reaction',
+                          'get_event_versions', 'compare_market', 'get_upcoming_events'])
         read_result = endpoint.requests[3]['messages'][-1]
+        self.assertEqual(json.loads(read_result['content'])['spread_points'], 1.0)
+        self.assertEqual(calls[4]['output']['instrument']['market']['order_book']['ask']['quantity_lots'], 3)
+        self.assertEqual(calls[4]['output']['instrument']['market']['trading_status'],
+                         'SECURITY_TRADING_STATUS_NORMAL_TRADING')
         self.assertEqual((read_result['role'], read_result['tool_call_id']),
                          ('tool', 'call-get_market_context'))
         self.assertEqual([call['handoff_to'] for call in calls if 'handoff_to' in call],
@@ -407,6 +412,41 @@ class RuntimeAcceptance(RiskFixture):
         self.assertGreaterEqual(result['queue_wait_ms'], 60_000)
         self.assertEqual(self.category_requests, [])
         self.write_broker.assert_not_called()
+
+    def test_market_reaction_respects_contract_scope_and_reaches_the_critic(self) -> None:
+        self.tool_agent()
+        incoming = self.news(self.market, 'SBER опубликовал прогноз.')
+        with patch.object(self.broker, 'read_candles', wraps=self.broker.read_candles) as read_candles:
+            self.serve(self.delegate(), self.tool_call('get_market_reaction', {'contract_id': 'vtb-future'}),
+                       self.tool_call('get_market_reaction', {'contract_id': self.contract_id}), self.market_call(),
+                       self.analyst_answer(self.proposal('enter', incoming)), review())
+        read_candles.assert_called_once()
+        report = self.report(incoming)
+        self.assertEqual(report['result']['status'], 'candidate')
+        failed, completed = [call for call in report['agent']['calls'] if call['kind'] == 'get_market_reaction']
+        self.assertEqual(failed['error'], 'unknown_contract')
+        evidence = completed['output']
+        self.assertEqual(evidence['since_receipt']['reaction_candles'], 0)
+        self.assertIsNone(evidence['since_receipt']['reaction_volume_lots'])
+        self.assertEqual(report['agent']['calls'][-1]['input']['context']['market_reaction'], evidence)
+
+    def test_archive_comparison_and_calendar_evidence_reach_the_critic(self) -> None:
+        self.tool_agent()
+        incoming = self.news(self.market, 'SBER опубликовал прогноз: https://example.com/report')
+        self.serve(self.delegate(), self.tool_call('get_event_versions', {}),
+                   self.tool_call('compare_market', {'contract_id': self.contract_id}),
+                   self.tool_call('get_upcoming_events', {}),
+                   self.tool_call('get_company_news', {'company_id': 'sber'}),
+                   self.tool_call('get_market_reaction', {'contract_id': self.contract_id}), self.market_call(),
+                   self.analyst_answer(self.proposal('enter', incoming)), review())
+        report = self.report(incoming)
+        self.assertEqual(report['result']['status'], 'candidate')
+        versions, comparison, calendar = report['agent']['calls'][-1]['input']['context']['extra_evidence']
+        self.assertEqual(versions['earliest_archived']['cited_urls'], ['https://example.com/report'])
+        self.assertEqual(comparison['instruments']['underlying'], 'uid-sber-share')
+        self.assertEqual(comparison['instruments']['sector'], 'abaaa0fe-472d-4240-9679-144dd382e6ce')
+        self.assertEqual(comparison['since_receipt']['change_bps'], {})
+        self.assertFalse(calendar['issuer_covered'])
 
     def test_deadline_between_analyst_and_critic_discards_the_signal(self) -> None:
         self.sandbox()

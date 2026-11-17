@@ -4,6 +4,7 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 import json
 from pathlib import Path
+from statistics import mean
 from time import perf_counter
 from typing import Literal, TypedDict
 
@@ -15,6 +16,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command
 from pydantic import BaseModel, Field
 
+from news_futures.application.analysis.calendar import EventCalendar
 from news_futures.application.analysis.decisions import (
     ANALYST_RULES, CONTEXT_RULES, CRITIC_RULES, check_company_proposal, news_record,
 )
@@ -22,10 +24,13 @@ from news_futures.application.analysis.events import event_report
 from news_futures.application.analysis.team_dto import (
     AgentCall, AgentOutcome, AgentState, AgentTrace, AnalystAnswer, AnalystInput, AnalystTask,
     Assignment, CoordinatorInput, CriticTask, EventEvidence, IdentifiedProposal, MarketObservation, MissingData,
-    NewsObservation, ProposalContext, RevisionFeedback, SkippedStep, ToolError, ToolRequest, ToolRequested,
-    get_company_news, get_market_context,
+    CalendarObservation, ComparisonObservation, EventVersionsObservation, NewsObservation, ProposalContext,
+    ReactionObservation, ReactionWindow, RevisionFeedback, SkippedStep, ToolError, ToolObservation, ToolRequest,
+    ToolRequested, compare_market, get_company_news, get_event_versions, get_market_context, get_market_reaction,
+    get_upcoming_events,
 )
-from news_futures.application.ports.broker import NoSupportedFutures, ReadMarket
+from news_futures.application.analysis.tool_evidence import MINUTE, REACTION_BASELINE, compare_candles, event_versions
+from news_futures.application.ports.broker import NoSupportedFutures, ReadCandles, ReadComparison, ReadMarket
 from news_futures.application.ports.models import ChatModel
 from news_futures.application.ports.storage import EventStore
 from news_futures.common.artifacts import replace_json
@@ -48,6 +53,8 @@ skip, insufficient_data), reason and company_id (null unless delegating)."""
 ANALYST_SYSTEM = READ_ONLY + """Investigate the assigned company and contract using
 the supplied evidence. Require current market context before proposing an entry.
 Read earlier publications when they could corroborate or contradict the hypothesis.
+Use archived versions to check what changed. Cited links are leads, not verified primary sources.
+Use matched market returns to distinguish broad moves from company moves. A calendar covers only supplied schedules.
 Use one tool per turn. Request only data for the assigned company or contract.
 On revision, address each objection with evidence or stop. Finish with the AnalystAnswer tool.
 Use a null proposal and a nonempty list of specific gaps if data is insufficient.
@@ -56,7 +63,9 @@ For a proposal return an empty missing_data list.
 CRITIC_SYSTEM = READ_ONLY + '\n\n'.join((CONTEXT_RULES, CRITIC_RULES))
 
 
-TOOLS = {schema.__name__: schema for schema in (get_company_news, get_market_context)}
+TOOLS = {schema.__name__: schema for schema in (
+    get_company_news, get_market_context, get_market_reaction, get_event_versions, compare_market, get_upcoming_events,
+)}
 
 
 def encoded(value: object) -> str:
@@ -92,7 +101,8 @@ def run_tool_agent(
     events: EventStore, read_market: ReadMarket,
     check_current: Callable[[], str | None], check_stop: Callable[[], None],
     checkpointer: BaseCheckpointSaver[str], coordinator: RoleSettings | None, limits: AgentLimits,
-    model_factory: ChatModel, *, deadline: datetime,
+    model_factory: ChatModel, *, deadline: datetime, read_candles: ReadCandles,
+    read_comparison: ReadComparison, received_at: datetime,
 ) -> AgentOutcome:
     settings = Settings.model_validate_json((directory / 'review.json').read_bytes())
     lead = coordinator or settings.analyst
@@ -206,9 +216,45 @@ def run_tool_agent(
         account = AccountBalance.model_validate(snapshot.account.model_dump(exclude={'id'}))
         if not fresh(instrument.market.observed_at) or not fresh(account.observed_at):
             raise RuntimeErrorInfo('stale_market_context')
+        book = instrument.market.order_book
+        spread = round(book.ask.price - book.bid.price, 9) if book and book.bid and book.ask else None
         return MarketObservation(company_id=instrument.company_id, instrument=instrument, account=account,
                                  price_unit=observation.price_unit, limit_buy_available=observation.limit_buy_available,
-                                 limit_sell_available=observation.limit_sell_available, observation_id=observation.id)
+                                 limit_sell_available=observation.limit_sell_available, observation_id=observation.id,
+                                 spread_points=spread)
+
+    def market_window() -> tuple[datetime, datetime, datetime]:
+        published_at = datetime.fromisoformat(publication.published_at)
+        now = utc_now()
+        if not published_at <= received_at <= now:
+            raise RuntimeErrorInfo('invalid_reaction_timing')
+        end = now.replace(second=0, microsecond=0)
+        start = published_at.replace(second=0, microsecond=0) - REACTION_BASELINE
+        return published_at, start, end
+
+    def market_reaction(state: AgentState, uid: str, key: str) -> ReactionObservation:
+        published_at, start, end = market_window()
+        candles = read_candles(uid, start, end, min(limits.call_timeout_ms, limit(state)) / 1000)
+
+        def window(anchor: datetime) -> ReactionWindow:
+            before = [bar for bar in candles if anchor - REACTION_BASELINE <= bar.started_at
+                      and bar.started_at + MINUTE <= anchor]
+            after = [bar for bar in candles if anchor <= bar.started_at and bar.started_at + MINUTE <= end]
+            baseline = before[-1] if before else None
+            latest = after[-1] if after else None
+            return ReactionWindow(
+                anchor_at=anchor, baseline_close_at=baseline.started_at + MINUTE if baseline else None,
+                latest_close_at=latest.started_at + MINUTE if latest else None,
+                price_change_bps=round((latest.close / baseline.close - 1) * 10_000, 2) if baseline and latest else None,
+                baseline_candles=len(before), reaction_candles=len(after),
+                baseline_avg_lots=mean(bar.volume_lots for bar in before) if before else None,
+                reaction_volume_lots=sum(bar.volume_lots for bar in after) if after else None,
+                reaction_avg_lots=mean(bar.volume_lots for bar in after) if after else None,
+            )
+
+        return ReactionObservation(company_id=contracts[uid], contract_id=uid, as_of=end,
+                                   since_publication=window(published_at), since_receipt=window(received_at),
+                                   observation_id=key)
 
     def analyst(state: AgentState, record: AgentCall) -> None:
         if state.turns >= limits.max_turns:
@@ -235,9 +281,14 @@ def run_tool_agent(
         instruments = {item.instrument.contract_id: item.instrument for item in market}
         account = market[-1].account if market else None
         news = {row.revision: row for item in observations if isinstance(item, NewsObservation) for row in item.news}
+        reaction = next((item for item in observations if isinstance(item, ReactionObservation)), None)
+        extra = [item for item in observations if isinstance(item, (
+            EventVersionsObservation, ComparisonObservation, CalendarObservation,
+        ))]
         context = ProposalContext(publication=publication, event=trigger, affected_company_ids=[state.company_id],
                                   candidates=list(instruments.values()),
-                                  related_news=list(news.values()), account=account, position=None, entry_reason=None)
+                                  related_news=list(news.values()), account=account, position=None, entry_reason=None,
+                                  market_reaction=reaction, extra_evidence=extra)
         record.input = AnalystInput(context=context, proposal=state.proposal, review=state.review)
         if result.proposal is None:
             if not result.missing_data or any(not item for item in result.missing_data):
@@ -305,7 +356,7 @@ def run_tool_agent(
         record.tool = name
         record.tool_call_id = request.id
         record.arguments = args
-        output: NewsObservation | MarketObservation | ToolError
+        output: ToolObservation | ToolError
         try:
             schema = TOOLS.get(name)
             if schema is None:
@@ -320,11 +371,31 @@ def run_tool_agent(
                     if parsed.company_id != state.company_id:
                         raise RuntimeErrorInfo('unknown_company')
                     output = company_news(parsed, key)
+                elif isinstance(parsed, get_event_versions):
+                    assert state.company_id is not None
+                    output = event_versions(events.history(), event, state.company_id, key)
+                elif isinstance(parsed, get_upcoming_events):
+                    assert state.company_id is not None
+                    calendar = EventCalendar.model_validate_json((directory.parent / 'events-calendar.json').read_bytes())
+                    now = utc_now()
+                    output = CalendarObservation(company_id=state.company_id, observation_id=key,
+                                                 checked_on=calendar.checked_on, through=now + timedelta(days=45),
+                                                 issuer_covered=any(item.company_id == state.company_id for item in calendar.events),
+                                                 events=calendar.upcoming(state.company_id, now))
                 else:
-                    assert isinstance(parsed, get_market_context)
-                    if contracts.get(parsed.contract_id) != state.company_id:
+                    assert isinstance(parsed, (get_market_context, get_market_reaction, compare_market))
+                    uid = parsed.contract_id
+                    if contracts.get(uid) != state.company_id:
                         raise RuntimeErrorInfo('unknown_contract')
-                    output = market_context(state, parsed)
+                    if isinstance(parsed, get_market_context):
+                        output = market_context(state, parsed)
+                    elif isinstance(parsed, get_market_reaction):
+                        output = market_reaction(state, uid, key)
+                    else:
+                        published_at, start, end = market_window()
+                        series = read_comparison(uid, start, end, min(limits.call_timeout_ms, limit(state)) / 1000)
+                        output = compare_candles(series, company=contracts[uid], key=key, published_at=published_at,
+                                                 received_at=received_at, end=end)
                 limit(state)
                 state.observations[key] = output
             record.output = output

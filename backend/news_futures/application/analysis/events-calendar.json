@@ -1,0 +1,16 @@
+{
+  "checked_on": "2026-11-17",
+  "events": [
+    {"starts_at": "2026-11-26", "kind": "earnings", "company_id": "d68f33b3-76d9-423b-a656-b2580cb0c9f2", "title": "Финансовые результаты Московской биржи за III квартал по МСФО", "source_url": "https://www.moex.com/ru/about/investoram-i-aktsioneram/kalendar-investora"},
+    {"starts_at": "2026-12-01", "kind": "corporate", "company_id": "d68f33b3-76d9-423b-a656-b2580cb0c9f2", "title": "Московская биржа: публикация объёмов торгов за ноябрь", "source_url": "https://www.moex.com/ru/about/investoram-i-aktsioneram/kalendar-investora"},
+    {"starts_at": "2026-12-18T13:30:00+03:00", "kind": "macro", "company_id": null, "title": "Решение Банка России по ключевой ставке", "source_url": "https://www.cbr.ru/dkp/cal_mp/"},
+    {"starts_at": "2027-02-12T13:30:00+03:00", "kind": "macro", "company_id": null, "title": "Решение Банка России по ключевой ставке", "source_url": "https://www.cbr.ru/dkp/cal_mp/"},
+    {"starts_at": "2027-03-19T13:30:00+03:00", "kind": "macro", "company_id": null, "title": "Решение Банка России по ключевой ставке", "source_url": "https://www.cbr.ru/dkp/cal_mp/"},
+    {"starts_at": "2027-04-30T13:30:00+03:00", "kind": "macro", "company_id": null, "title": "Решение Банка России по ключевой ставке", "source_url": "https://www.cbr.ru/dkp/cal_mp/"},
+    {"starts_at": "2027-06-11T13:30:00+03:00", "kind": "macro", "company_id": null, "title": "Решение Банка России по ключевой ставке", "source_url": "https://www.cbr.ru/dkp/cal_mp/"},
+    {"starts_at": "2027-07-30T13:30:00+03:00", "kind": "macro", "company_id": null, "title": "Решение Банка России по ключевой ставке", "source_url": "https://www.cbr.ru/dkp/cal_mp/"},
+    {"starts_at": "2027-09-10T13:30:00+03:00", "kind": "macro", "company_id": null, "title": "Решение Банка России по ключевой ставке", "source_url": "https://www.cbr.ru/dkp/cal_mp/"},
+    {"starts_at": "2027-10-22T13:30:00+03:00", "kind": "macro", "company_id": null, "title": "Решение Банка России по ключевой ставке", "source_url": "https://www.cbr.ru/dkp/cal_mp/"},
+    {"starts_at": "2027-12-17T13:30:00+03:00", "kind": "macro", "company_id": null, "title": "Решение Банка России по ключевой ставке", "source_url": "https://www.cbr.ru/dkp/cal_mp/"}
+  ]
+}

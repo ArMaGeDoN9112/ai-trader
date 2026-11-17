@@ -12,7 +12,7 @@ from urllib.parse import parse_qsl, urlsplit
 from news_futures.adapters.postgres.database import connect, has_table
 from news_futures.adapters.postgres.publications import Archive
 from news_futures.adapters.postgres.trades import journal_events
-from news_futures.application.analysis.tool_agent import TEAM_DIRECTORY
+from news_futures.application.analysis.tool_agent import TEAM_DIRECTORY, TOOLS
 from news_futures.domain.publications import TEST_SOURCE
 from news_futures.domain.publications import publication_digest
 
@@ -417,7 +417,7 @@ def trace_view(root: Path, account: str, key: str) -> dict[str, Any] | None:
         for call in agent.get('calls', []):
             kind = call['kind']
             step(f'0/agent/{call["id"]}', kind if kind in {
-                'coordinator', 'tool_selection', 'analyst', 'critic', 'get_company_news', 'get_market_context',
+                'coordinator', 'tool_selection', 'analyst', 'critic', *TOOLS,
             } else 'agent_tool', call['status'], at=call.get('started_at'), input=call.get('input'),
                  output=fields(call, 'output', 'arguments', 'tool', 'tool_call_id', 'error', 'requested_model', 'actual_model',
                                'provider', 'latency_ms', 'cost', 'usage', 'handoff_to'))

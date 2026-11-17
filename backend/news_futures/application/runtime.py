@@ -22,10 +22,20 @@ from news_futures.application.workflow import Shutdown, analyze_news, signal_dea
 from news_futures.common.artifacts import replace_json
 from news_futures.common.errors import error_code
 from news_futures.common.paths import persistent_path
-from news_futures.domain.company import CompanyProposal, OpenPosition, SignalCandidate
+from news_futures.domain.company import CompanyProposal, MinuteCandle, OpenPosition, SignalCandidate
+from news_futures.domain.catalog import listed_futures
 from news_futures.domain.contracts import Aggregator
 from news_futures.domain.publications import TEST_SOURCE, publication_digest, utc_now
 from news_futures.domain.terms import CloseIntent
+
+
+IMOEX_UID = '4821c9aa-36e8-4743-b37c-861e58581b25'
+SECTOR_INDEX_UIDS = {
+    'financial': 'abaaa0fe-472d-4240-9679-144dd382e6ce',
+    'consumer': '7ad47d78-8e53-4b52-a2ef-c0b7ab580850',
+    'oil_gas': 'cb58b054-84a6-4939-99b1-d0cab7e7d8d1',
+    'metals_mining': 'e130b83b-5c97-4b71-b638-f1c7faeaf5ae',
+}
 
 
 class Runtime:
@@ -237,10 +247,32 @@ class Runtime:
             with self.read_limit(seconds):
                 return self.account.observe(catalog, uid, contracts[uid])
 
+        def read_candles(uid: str, start: datetime, end: datetime, seconds: float) -> list[MinuteCandle]:
+            with self.read_limit(seconds):
+                return self.account.reader(uid, contracts[uid]).read_candles(start, end)
+
+        def read_comparison(uid: str, start: datetime, end: datetime,
+                            seconds: float) -> dict[str, tuple[str, list[MinuteCandle]]]:
+            company = contracts[uid]
+            contract = listed_futures(json.loads(futures_path.read_bytes()))[uid]
+            with self.read_limit(seconds):
+                reader = self.account.reader(uid, company)
+                references = {'underlying': reader.resolve_share(contract['share_id']), 'IMOEX': IMOEX_UID}
+                sectors = SECTOR_INDEX_UIDS.keys() & set(contract['categories'])
+                sector = previous.sector_benchmarks.get(company)
+                if sector is None and len(sectors) == 1:
+                    sector = SECTOR_INDEX_UIDS[sectors.pop()]
+                if sector:
+                    references['sector'] = sector
+                return {'future': (uid, reader.read_candles(start, end))} | {
+                    key: (instrument, reader.read_reference_candles(instrument, start, end))
+                    for key, instrument in references.items()
+                }
+
         state = analyze_news(
             previous, directory, publication, result['revision'], contracts=contracts, read_market=read_market,
             current_position=lambda: self.position, stop=self.stop, models=self.models, storage=self.storage,
-            deadline=deadline,
+            deadline=deadline, read_candles=read_candles, read_comparison=read_comparison,
         )
         result.update(stage=state['stage'], status=state['status'], reason=state.get('reason'))
         if 'decision_id' in state:
